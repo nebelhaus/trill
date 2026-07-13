@@ -47,7 +47,7 @@ struct InboxView: View {
             model.select(selection)
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active, model.providerMode == .platformIMessage {
+            if phase == .active, model.providerMode == .messages {
                 model.load()
             }
         }
@@ -346,7 +346,7 @@ private struct ConversationRowButton: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
-        .accessibilityLabel("\(conversation.displayName), \(conversation.service == .sms ? "SMS" : "iMessage")")
+        .accessibilityLabel("\(conversation.displayName), \(conversation.service.displayLabel)")
     }
 
     private var hasUnread: Bool {

@@ -25,7 +25,7 @@ struct NativeMessagesApp: App {
                 reload: { inboxModel.load() },
                 toggleSidebar: { inboxModel.toggleSidebar() },
                 useFixture: { inboxModel.switchProvider(to: .fixture) },
-                usePlatformIMessage: { inboxModel.switchProvider(to: .platformIMessage) },
+                useMessages: { inboxModel.switchProvider(to: .messages) },
                 zoomIn: { uiScale = min(UIZoom.range.upperBound, uiScale + UIZoom.step) },
                 zoomOut: { uiScale = max(UIZoom.range.lowerBound, uiScale - UIZoom.step) },
                 zoomReset: { uiScale = 1.0 }

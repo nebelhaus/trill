@@ -64,6 +64,15 @@ final class ConversationModel: ObservableObject {
         }
     }
 
+    /// Merges a message arriving from the live event stream.
+    func appendLive(_ message: Message) {
+        guard conversation?.id == message.conversationID else { return }
+        guard state == .loaded || state == .empty else { return }
+        guard !messages.contains(where: { $0.id == message.id }) else { return }
+        messages = (messages + [message]).sorted(by: Self.chronological)
+        state = .loaded
+    }
+
     func loadOlder() async {
         guard let conversation, let nextBefore, !isLoadingOlder else { return }
         isLoadingOlder = true

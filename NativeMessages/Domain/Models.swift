@@ -3,6 +3,7 @@ import Foundation
 enum MessageServiceKind: String, Codable, Sendable {
     case iMessage
     case sms
+    case rcs
     case unknown
 }
 

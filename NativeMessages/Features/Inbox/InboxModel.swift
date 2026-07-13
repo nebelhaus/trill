@@ -3,14 +3,14 @@ import Foundation
 
 enum ProviderMode: String, CaseIterable, Identifiable, Sendable {
     case fixture
-    case platformIMessage
+    case messages
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .fixture: "Synthetic Fixtures"
-        case .platformIMessage: "Messages (Safety-gated)"
+        case .messages: "Messages"
         }
     }
 }
@@ -46,10 +46,15 @@ final class InboxModel: ObservableObject {
     private let database: AppDatabase
     private var repository: MessagesRepository
     private var loadTask: Task<Void, Never>?
+    private var eventTask: Task<Void, Never>?
+    private static let providerModeKey = "providerMode"
 
     init(database: AppDatabase) {
         self.database = database
-        let repository = MessagesRepository(provider: FixtureProvider(), database: database)
+        let mode = UserDefaults.standard.string(forKey: Self.providerModeKey)
+            .flatMap(ProviderMode.init(rawValue:)) ?? .messages
+        providerMode = mode
+        let repository = MessagesRepository(provider: Self.makeProvider(mode), database: database)
         self.repository = repository
         conversationModel = ConversationModel(repository: repository)
         composerModel = ComposerModel(database: database)
@@ -57,6 +62,14 @@ final class InboxModel: ObservableObject {
 
     deinit {
         loadTask?.cancel()
+        eventTask?.cancel()
+    }
+
+    private static func makeProvider(_ mode: ProviderMode) -> any MessagesProvider {
+        switch mode {
+        case .fixture: FixtureProvider()
+        case .messages: LiveIMessageProvider()
+        }
     }
 
     func load() {
@@ -89,6 +102,7 @@ final class InboxModel: ObservableObject {
                 pinnedIDs = loadedPins
                 conversations = sort(loadedPage.conversations)
                 state = conversations.isEmpty ? .empty : .loaded
+                startEventStream()
             } catch is CancellationError {
                 return
             } catch {
@@ -102,17 +116,14 @@ final class InboxModel: ObservableObject {
     func switchProvider(to mode: ProviderMode) {
         guard mode != providerMode else { return }
         providerMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: Self.providerModeKey)
         selectedConversationID = nil
         conversations = []
+        eventTask?.cancel()
         conversationModel.clear()
-        composerModel.select(nil, capabilities: ProviderCapabilities(), health: .fixture)
+        composerModel.select(nil, capabilities: ProviderCapabilities(), health: .fixture, sendAction: nil)
 
-        let provider: any MessagesProvider
-        switch mode {
-        case .fixture: provider = FixtureProvider()
-        case .platformIMessage: provider = PlatformIMessageProvider()
-        }
-        repository = MessagesRepository(provider: provider, database: database)
+        repository = MessagesRepository(provider: Self.makeProvider(mode), database: database)
         conversationModel.updateRepository(repository)
         load()
     }
@@ -122,11 +133,55 @@ final class InboxModel: ObservableObject {
         guard conversationModel.conversation?.id != id else { return }
         guard let conversation = conversations.first(where: { $0.id == id }) else {
             conversationModel.clear()
-            composerModel.select(nil, capabilities: capabilities, health: health)
+            composerModel.select(nil, capabilities: capabilities, health: health, sendAction: nil)
             return
         }
         conversationModel.select(conversation)
-        composerModel.select(conversation.id, capabilities: capabilities, health: health)
+        let repository = repository
+        composerModel.select(conversation.id, capabilities: capabilities, health: health) { text in
+            try await repository.send(SendRequest(
+                operationID: UUID(),
+                conversationID: conversation.id,
+                text: text,
+                attachments: []
+            ))
+        }
+    }
+
+    // MARK: - Live events
+
+    private func startEventStream() {
+        eventTask?.cancel()
+        guard capabilities.supports(.watchLiveEvents) else { return }
+        let repository = repository
+        eventTask = Task { [weak self] in
+            let stream = await repository.eventStream()
+            do {
+                for try await event in stream {
+                    guard let self, !Task.isCancelled else { return }
+                    self.handle(event)
+                }
+            } catch {
+                AppLog.ui.error("Event stream ended error=\(String(describing: type(of: error)), privacy: .public)")
+            }
+        }
+    }
+
+    private func handle(_ event: ProviderEvent) {
+        switch event {
+        case let .messageAdded(message, _):
+            conversationModel.appendLive(message)
+        case let .conversationUpdated(conversation, _):
+            if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+                conversations[index] = conversation
+            } else {
+                conversations.append(conversation)
+            }
+            conversations = sort(conversations)
+            if state == .empty { state = .loaded }
+        case let .healthChanged(updated):
+            health = updated
+        }
     }
 
     func togglePin(_ id: ConversationID) {

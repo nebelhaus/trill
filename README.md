@@ -1,18 +1,26 @@
 # Native Messages
 
-Native Messages is a SwiftUI foundation for a provider-neutral macOS Messages client. The current milestone is intentionally safe-by-default: a deterministic synthetic provider drives the complete inbox and timeline UI, while the real Messages adapter is compiled but safety-gated.
+Native Messages is a provider-neutral macOS Messages client in SwiftUI. The live provider reads your real conversations straight from Apple's `chat.db` (always read-only) and sends by driving Messages.app over Apple Events; a deterministic synthetic provider remains available for development.
 
 ## What works
 
 - Native macOS 14+ split-view app with conversation sidebar, paged timeline, ⌘K search palette, pins, draft persistence, health UI, keyboard commands, and accessibility labels.
 - Flat dark UI on the Nebelung palette (desaturated Catppuccin) with a selectable accent, display density, and ⌘+/⌘−/⌘0 zoom — see `NativeMessages/DesignSystem/`.
+- **Live Messages provider** (`Providers/LiveIMessage/`): read-only SQL over `chat.db` for iMessage/SMS/RCS conversations, messages, reactions, replies, attachments, and search (including typedstream `attributedBody` decoding); sending via AppleScript to Messages.app; new-message polling for live updates; contact-name resolution via the Contacts framework.
 - Synthetic iMessage, SMS, and group conversations with long history, reactions, replies, image/file metadata, and missing-attachment states.
 - Provider-neutral IDs, models, capabilities, pagination, events, and send outcomes.
 - App-owned SQLite migrations for pins, drafts, and provider cursors.
-- Exact integration of [`beeper/platform-imessage`](https://github.com/beeper/platform-imessage) 0.24.4 and mapping tests for its public `PlatformSDK` DTOs.
 - Read-only Messages database permission/schema probe.
 
-Real Messages reads and sends are **not enabled**. Version 0.24.4 constructs its public `PlatformAPI` with index creation enabled, which can write indexes into Apple's `chat.db`. The adapter therefore never constructs `PlatformAPI`; see [ADR 0001](docs/architecture-decisions/0001-messages-provider.md).
+The live provider never writes to `chat.db` — every connection is `SQLITE_OPEN_READONLY` and sends go through Messages.app, which owns its own persistence. The older [`beeper/platform-imessage`](https://github.com/beeper/platform-imessage) adapter remains in the tree but unused by the UI: its public `PlatformAPI` can create indexes in `chat.db`, which is why it was gated (see [ADR 0001](docs/architecture-decisions/0001-messages-provider.md)) and ultimately bypassed in favor of the direct reader.
+
+## Permissions
+
+- **Full Disk Access** — required to read `~/Library/Messages/chat.db`. Grant it to the built app bundle (not Terminal) in System Settings → Privacy & Security.
+- **Automation ("control Messages")** — prompted on first send.
+- **Contacts** — optional; resolves handles to names. Denying it shows raw phone numbers/emails.
+
+Marking conversations as read is not possible (that would require writing to `chat.db`), so unread badges reflect Messages.app's own state.
 
 ## Requirements
 

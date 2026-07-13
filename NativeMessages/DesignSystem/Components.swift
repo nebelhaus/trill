@@ -80,22 +80,39 @@ struct EmptyStateView: View {
     }
 }
 
-/// Tiny uppercase service tag ("SMS" / "IMESSAGE").
+extension MessageServiceKind {
+    var displayLabel: String {
+        switch self {
+        case .iMessage: "iMessage"
+        case .sms: "SMS"
+        case .rcs: "RCS"
+        case .unknown: "Chat"
+        }
+    }
+
+    var chipColor: Color {
+        switch self {
+        case .iMessage: Rice.blue
+        case .sms: Rice.green
+        case .rcs: Rice.teal
+        case .unknown: Rice.overlay0
+        }
+    }
+}
+
+/// Tiny uppercase service tag ("SMS" / "RCS" / "IMESSAGE").
 struct ServiceChip: View {
     let service: MessageServiceKind
 
     var body: some View {
-        Text(service == .sms ? "SMS" : "iMessage")
+        Text(service.displayLabel)
             .riceFont(9, .semibold)
             .kerning(0.4)
             .textCase(.uppercase)
-            .foregroundStyle(service == .sms ? Rice.green : Rice.blue)
+            .foregroundStyle(service.chipColor)
             .padding(.horizontal, 5)
             .padding(.vertical, 1.5)
-            .background(
-                (service == .sms ? Rice.green : Rice.blue).opacity(0.14),
-                in: RoundedRectangle(cornerRadius: 4, style: .continuous)
-            )
+            .background(service.chipColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
     }
 }
 

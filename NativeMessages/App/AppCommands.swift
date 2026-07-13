@@ -5,7 +5,7 @@ struct AppCommands: Commands {
     let reload: () -> Void
     let toggleSidebar: () -> Void
     let useFixture: () -> Void
-    let usePlatformIMessage: () -> Void
+    let useMessages: () -> Void
     let zoomIn: () -> Void
     let zoomOut: () -> Void
     let zoomReset: () -> Void
@@ -19,7 +19,7 @@ struct AppCommands: Commands {
             Divider()
             Menu("Provider") {
                 Button("Synthetic Fixtures", action: useFixture)
-                Button("Messages (Safety-gated)", action: usePlatformIMessage)
+                Button("Messages", action: useMessages)
             }
         }
 

@@ -51,6 +51,12 @@ actor MessagesRepository {
         return result
     }
 
+    func send(_ request: SendRequest) async throws -> SendOutcome {
+        let outcome = try await provider.send(request)
+        AppLog.repository.info("Send completed operation=\(request.operationID, privacy: .public)")
+        return outcome
+    }
+
     func search(_ query: MessageSearchQuery) async throws -> MessageSearchPage {
         let result = try await provider.search(query)
         AppLog.repository.info("Search completed count=\(result.messages.count, privacy: .public)")

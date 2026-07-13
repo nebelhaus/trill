@@ -24,25 +24,39 @@ struct ComposerView: View {
                     .accessibilityLabel("Message draft")
 
                 Button {
-                    // Sending is capability-gated and intentionally unavailable.
+                    Task { await model.send() }
                 } label: {
-                    Image(systemName: "arrow.up")
-                        .riceFont(13, .bold)
-                        .foregroundStyle(canSend ? Rice.crust : Rice.overlay0)
-                        .frame(width: 28 * scale, height: 28 * scale)
-                        .background(canSend ? accent : Rice.surface0, in: Circle())
+                    Group {
+                        if model.isSending {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.up")
+                                .riceFont(13, .bold)
+                                .foregroundStyle(canSend ? Rice.crust : Rice.overlay0)
+                        }
+                    }
+                    .frame(width: 28 * scale, height: 28 * scale)
+                    .background(canSend ? accent : Rice.surface0, in: Circle())
                 }
                 .buttonStyle(.plain)
-                .disabled(!canSend)
-                .help(model.disabledExplanation)
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(!canSend || model.isSending)
+                .help(model.isSendEnabled ? "Send (⌘↩)" : model.disabledExplanation)
                 .accessibilityLabel("Send message")
-                .accessibilityHint(model.disabledExplanation)
             }
 
-            Text(model.disabledExplanation)
-                .riceFont(10)
-                .foregroundStyle(Rice.overlay0)
-                .lineLimit(2)
+            if let feedback = model.sendFeedback {
+                Text(feedback)
+                    .riceFont(10)
+                    .foregroundStyle(Rice.red)
+                    .lineLimit(2)
+            } else if !model.disabledExplanation.isEmpty {
+                Text(model.disabledExplanation)
+                    .riceFont(10)
+                    .foregroundStyle(Rice.overlay0)
+                    .lineLimit(2)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
