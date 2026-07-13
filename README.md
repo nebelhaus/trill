@@ -7,6 +7,7 @@ Native Messages is a provider-neutral macOS Messages client in SwiftUI. The live
 - Native macOS 14+ split-view app with conversation sidebar, paged timeline, ⌘K search palette, pins, draft persistence, health UI, keyboard commands, and accessibility labels.
 - Flat dark UI on the Nebelung palette (desaturated Catppuccin) with a selectable accent, display density, and ⌘+/⌘−/⌘0 zoom — see `NativeMessages/DesignSystem/`.
 - **Live Messages provider** (`Providers/LiveIMessage/`): read-only SQL over `chat.db` for iMessage/SMS/RCS conversations, messages, reactions, replies, attachments, and search (including typedstream `attributedBody` decoding); sending via AppleScript to Messages.app; new-message polling for live updates; contact-name resolution via the Contacts framework.
+- Read receipts and delivery status on outgoing messages, inline image thumbnails (click to open), clickable links, edited markers, hidden unsent messages, sender avatars in group timelines, and a Dock badge with the total unread count.
 - Synthetic iMessage, SMS, and group conversations with long history, reactions, replies, image/file metadata, and missing-attachment states.
 - Provider-neutral IDs, models, capabilities, pagination, events, and send outcomes.
 - App-owned SQLite migrations for pins, drafts, and provider cursors.

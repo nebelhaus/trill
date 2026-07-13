@@ -273,7 +273,9 @@ actor LiveIMessageProvider: MessagesProvider {
                 replyTo: row.threadOriginatorGUID.map { MessageID(provider: id, externalGUID: $0) },
                 threadOrigin: row.threadOriginatorGUID.map { MessageID(provider: id, externalGUID: $0) },
                 service: Self.service(from: nil, chatGUID: conversationID.externalGUID),
-                deliveryState: Self.deliveryState(row)
+                deliveryState: Self.deliveryState(row),
+                readAt: row.isFromMe && row.dateRead > 0 ? Self.date(fromAppleNanoseconds: row.dateRead) : nil,
+                isEdited: row.dateEdited > 0
             ))
         }
         return messages

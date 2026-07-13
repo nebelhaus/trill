@@ -75,6 +75,7 @@ private struct MessageTimelineView: View {
                                 loadOlderButton(proxy: proxy)
                             }
 
+                            let latestOutgoingID = model.messages.last(where: \.isOutgoing)?.id
                             ForEach(Array(model.messages.enumerated()), id: \.element.id) { index, message in
                                 if startsDay(at: index) {
                                     DaySeparator(date: message.createdAt)
@@ -82,7 +83,8 @@ private struct MessageTimelineView: View {
                                 MessageRow(
                                     message: message,
                                     startsGroup: startsGroup(at: index),
-                                    endsGroup: endsGroup(at: index)
+                                    endsGroup: endsGroup(at: index),
+                                    isLatestOutgoing: message.id == latestOutgoingID
                                 )
                                 .id(message.id)
                             }
@@ -173,6 +175,7 @@ private struct MessageRow: View {
     let message: Message
     let startsGroup: Bool
     let endsGroup: Bool
+    let isLatestOutgoing: Bool
 
     @Environment(\.riceAccent) private var accent
 
@@ -180,28 +183,34 @@ private struct MessageRow: View {
         HStack(alignment: .bottom, spacing: 8) {
             if message.isOutgoing { Spacer(minLength: 90) }
             VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 3) {
-                if startsGroup, !message.isOutgoing {
-                    Text(message.sender?.displayName ?? "Participant")
-                        .riceFont(10, .semibold)
-                        .foregroundStyle(Rice.accent(seededBy: message.sender?.id ?? "participant"))
-                        .padding(.leading, 10)
-                        .padding(.top, 5)
+                if startsGroup, !message.isOutgoing, let sender = message.sender {
+                    HStack(spacing: 5) {
+                        SenderBadge(participant: sender)
+                        Text(sender.displayName ?? sender.handle)
+                            .riceFont(10, .semibold)
+                            .foregroundStyle(Rice.accent(seededBy: sender.id))
+                    }
+                    .padding(.leading, 6)
+                    .padding(.top, 5)
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
                     if let reply = message.replyTo {
-                        Label("Reply to \(reply.externalGUID.prefix(8))…", systemImage: "arrowshape.turn.up.left")
+                        Label("Reply", systemImage: "arrowshape.turn.up.left")
                             .riceFont(10)
                             .foregroundStyle(Rice.subtext0)
                     }
                     if !message.text.isEmpty {
-                        Text(message.text)
+                        RichMessageText(text: message.text)
                             .riceFont(13)
-                            .foregroundStyle(Rice.text)
-                            .textSelection(.enabled)
+                    }
+                    if message.isEdited {
+                        Text("edited")
+                            .riceFont(9)
+                            .foregroundStyle(Rice.overlay0)
                     }
                     ForEach(message.attachments) { attachment in
-                        AttachmentRow(attachment: attachment)
+                        AttachmentView(attachment: attachment)
                     }
                     if !message.reactions.isEmpty {
                         HStack(spacing: 4) {
@@ -211,6 +220,7 @@ private struct MessageRow: View {
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
                                     .background(Rice.surface1, in: Capsule())
+                                    .help("\(reaction.kind.rawValue) — \(reaction.senderDisplayName)")
                                     .accessibilityLabel("\(reaction.kind.rawValue) from \(reaction.senderDisplayName)")
                             }
                         }
@@ -221,17 +231,40 @@ private struct MessageRow: View {
                 .background(bubbleColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
                 if endsGroup {
-                    Text(message.createdAt, format: .dateTime.hour().minute())
-                        .riceFont(9)
-                        .foregroundStyle(Rice.overlay0)
-                        .padding(.horizontal, 8)
-                        .padding(.bottom, 4)
+                    HStack(spacing: 4) {
+                        Text(message.createdAt, format: .dateTime.hour().minute())
+                            .foregroundStyle(Rice.overlay0)
+                        if let status = deliveryStatus {
+                            Text("· \(status)")
+                                .foregroundStyle(message.deliveryState == .failed ? Rice.red : Rice.overlay1)
+                        }
+                    }
+                    .riceFont(9)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 4)
                 }
             }
             if !message.isOutgoing { Spacer(minLength: 90) }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilitySummary)
+    }
+
+    /// Messages.app-style receipt on the newest outgoing message only;
+    /// failures always surface.
+    private var deliveryStatus: String? {
+        guard message.isOutgoing else { return nil }
+        if message.deliveryState == .failed { return "Not Delivered" }
+        guard isLatestOutgoing else { return nil }
+        if let readAt = message.readAt {
+            return "Read \(readAt.formatted(.dateTime.hour().minute()))"
+        }
+        switch message.deliveryState {
+        case .delivered: return "Delivered"
+        case .sent: return "Sent"
+        case .pending: return "Sending…"
+        case .failed, .unknown: return nil
+        }
     }
 
     private var bubbleColor: Color {
@@ -242,44 +275,5 @@ private struct MessageRow: View {
         let sender = message.isOutgoing ? "You" : (message.sender?.displayName ?? "Participant")
         let body = message.text.isEmpty ? "Attachment" : message.text
         return "\(sender), \(body), \(message.createdAt.formatted(date: .omitted, time: .shortened))"
-    }
-}
-
-private struct AttachmentRow: View {
-    let attachment: MessageAttachment
-    @Environment(\.riceAccent) private var accent
-    @Environment(\.uiScale) private var scale
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: attachment.isImage ? "photo" : "doc")
-                .riceFont(12)
-                .foregroundStyle(accent)
-                .frame(width: 20 * scale)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(attachment.displayName)
-                    .riceFont(12, .medium)
-                    .foregroundStyle(Rice.text)
-                    .lineLimit(1)
-                Text(status)
-                    .riceFont(10)
-                    .foregroundStyle(attachment.availability == .missing ? Rice.red : Rice.subtext0)
-            }
-        }
-        .padding(7)
-        .background(Rice.crust.opacity(0.55), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .accessibilityElement(children: .combine)
-    }
-
-    private var status: String {
-        switch attachment.availability {
-        case .available:
-            if let byteCount = attachment.byteCount {
-                return ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file)
-            }
-            return "Available"
-        case .missing: return "Attachment unavailable"
-        case .downloadRequired: return "Download required"
-        }
     }
 }

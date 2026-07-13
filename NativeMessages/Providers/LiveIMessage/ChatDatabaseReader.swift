@@ -33,6 +33,8 @@ struct ChatDatabaseReader: Sendable {
         let hasAttachments: Bool
         let threadOriginatorGUID: String?
         let chatRowID: Int64
+        let dateRead: Int64
+        let dateEdited: Int64
     }
 
     struct ReactionRow: Sendable {
@@ -176,10 +178,12 @@ struct ChatDatabaseReader: Sendable {
             try query(db, """
                 SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.is_from_me, m.date,
                        m.date_delivered, m.is_delivered, m.is_sent, m.error, m.handle_id,
-                       m.cache_has_attachments, m.thread_originator_guid, j.chat_id
+                       m.cache_has_attachments, m.thread_originator_guid, j.chat_id,
+                       IFNULL(m.date_read, 0), IFNULL(m.date_edited, 0)
                 FROM message m
                 JOIN chat_message_join j ON j.message_id = m.ROWID
                 WHERE j.chat_id = ? AND m.associated_message_type = 0 AND m.item_type = 0
+                  AND IFNULL(m.date_retracted, 0) = 0
                   AND (? IS NULL OR m.ROWID < ?)
                 ORDER BY m.ROWID DESC
                 LIMIT ?
@@ -194,10 +198,12 @@ struct ChatDatabaseReader: Sendable {
             try query(db, """
                 SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.is_from_me, m.date,
                        m.date_delivered, m.is_delivered, m.is_sent, m.error, m.handle_id,
-                       m.cache_has_attachments, m.thread_originator_guid, j.chat_id
+                       m.cache_has_attachments, m.thread_originator_guid, j.chat_id,
+                       IFNULL(m.date_read, 0), IFNULL(m.date_edited, 0)
                 FROM message m
                 JOIN chat_message_join j ON j.message_id = m.ROWID
                 WHERE m.ROWID > ? AND m.associated_message_type = 0 AND m.item_type = 0
+                  AND IFNULL(m.date_retracted, 0) = 0
                 ORDER BY m.ROWID ASC
                 LIMIT ?
                 """, bind: [.int(rowID), .int(Int64(limit))], map: messageRow)
@@ -264,10 +270,12 @@ struct ChatDatabaseReader: Sendable {
             return try query(db, """
                 SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.is_from_me, m.date,
                        m.date_delivered, m.is_delivered, m.is_sent, m.error, m.handle_id,
-                       m.cache_has_attachments, m.thread_originator_guid, j.chat_id
+                       m.cache_has_attachments, m.thread_originator_guid, j.chat_id,
+                       IFNULL(m.date_read, 0), IFNULL(m.date_edited, 0)
                 FROM message m
                 JOIN chat_message_join j ON j.message_id = m.ROWID
                 WHERE m.associated_message_type = 0 AND m.item_type = 0
+                  AND IFNULL(m.date_retracted, 0) = 0
                   AND (m.text LIKE ? ESCAPE '\\' OR instr(m.attributedBody, CAST(? AS BLOB)) > 0)
                 ORDER BY m.date DESC
                 LIMIT ?
@@ -314,7 +322,9 @@ struct ChatDatabaseReader: Sendable {
             handleID: sqlite3_column_int64(stmt, 10),
             hasAttachments: sqlite3_column_int(stmt, 11) == 1,
             threadOriginatorGUID: text(stmt, 12),
-            chatRowID: sqlite3_column_int64(stmt, 13)
+            chatRowID: sqlite3_column_int64(stmt, 13),
+            dateRead: sqlite3_column_int64(stmt, 14),
+            dateEdited: sqlite3_column_int64(stmt, 15)
         )
     }
 

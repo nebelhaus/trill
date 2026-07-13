@@ -96,6 +96,46 @@ struct Message: Hashable, Codable, Sendable, Identifiable {
     let threadOrigin: MessageID?
     let service: MessageServiceKind
     let deliveryState: MessageDeliveryState
+    let readAt: Date?
+    let isEdited: Bool
+
+    init(
+        id: MessageID,
+        conversationID: ConversationID,
+        providerSequence: String?,
+        sender: Participant?,
+        isOutgoing: Bool,
+        text: String,
+        createdAt: Date,
+        sentAt: Date?,
+        deliveredAt: Date?,
+        attachments: [MessageAttachment],
+        reactions: [MessageReaction],
+        replyTo: MessageID?,
+        threadOrigin: MessageID?,
+        service: MessageServiceKind,
+        deliveryState: MessageDeliveryState,
+        readAt: Date? = nil,
+        isEdited: Bool = false
+    ) {
+        self.id = id
+        self.conversationID = conversationID
+        self.providerSequence = providerSequence
+        self.sender = sender
+        self.isOutgoing = isOutgoing
+        self.text = text
+        self.createdAt = createdAt
+        self.sentAt = sentAt
+        self.deliveredAt = deliveredAt
+        self.attachments = attachments
+        self.reactions = reactions
+        self.replyTo = replyTo
+        self.threadOrigin = threadOrigin
+        self.service = service
+        self.deliveryState = deliveryState
+        self.readAt = readAt
+        self.isEdited = isEdited
+    }
 }
 
 struct EventCursor: Hashable, Codable, Sendable, RawRepresentable {

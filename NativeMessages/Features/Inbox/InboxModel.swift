@@ -102,6 +102,7 @@ final class InboxModel: ObservableObject {
                 pinnedIDs = loadedPins
                 conversations = sort(loadedPage.conversations)
                 state = conversations.isEmpty ? .empty : .loaded
+                updateDockBadge()
                 startEventStream()
             } catch is CancellationError {
                 return
@@ -179,6 +180,7 @@ final class InboxModel: ObservableObject {
             }
             conversations = sort(conversations)
             if state == .empty { state = .loaded }
+            updateDockBadge()
         case let .healthChanged(updated):
             health = updated
         }
@@ -209,6 +211,11 @@ final class InboxModel: ObservableObject {
             searchResults = []
             AppLog.ui.error("Search failed error=\(String(describing: type(of: error)), privacy: .public)")
         }
+    }
+
+    private func updateDockBadge() {
+        let unread = conversations.compactMap(\.unreadCount).reduce(0, +)
+        NSApp.dockTile.badgeLabel = unread > 0 ? String(unread) : nil
     }
 
     func openFullDiskAccessSettings() {
