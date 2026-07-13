@@ -9,13 +9,31 @@ struct InboxView: View {
         DisplayDensity(rawValue: densityRaw) ?? .comfortable
     }
 
+    @AppStorage("sidebarWidth") private var sidebarWidth = 288.0
+    @State private var dragStartWidth: Double?
+
+    private static let minSidebarWidth: Double = 220
+    private static let maxSidebarWidth: Double = 460
+
     var body: some View {
         HStack(spacing: 0) {
             if model.isSidebarVisible {
                 SidebarView(model: model, density: density)
-                    .frame(width: 288)
+                    .frame(width: sidebarWidth)
                     .transition(.move(edge: .leading))
-                RiceDivider(axis: .vertical)
+                SidebarResizeHandle()
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                let start = dragStartWidth ?? sidebarWidth
+                                if dragStartWidth == nil { dragStartWidth = start }
+                                sidebarWidth = min(
+                                    max(start + Double(value.translation.width), Self.minSidebarWidth),
+                                    Self.maxSidebarWidth
+                                )
+                            }
+                            .onEnded { _ in dragStartWidth = nil }
+                    )
             }
 
             detail
@@ -129,6 +147,29 @@ struct LoadingStateView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - Sidebar resize handle
+
+/// A thin draggable strip that sits where the sidebar divider would be.
+/// Shows the divider line but claims a wider hit area and a resize cursor.
+private struct SidebarResizeHandle: View {
+    var body: some View {
+        ZStack {
+            Color.clear
+                .frame(width: 8)
+                .contentShape(Rectangle())
+            RiceDivider(axis: .vertical)
+        }
+        .frame(width: 8)
+        .onHover { hovering in
+            if hovering {
+                NSCursor.resizeLeftRight.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
     }
 }
 
