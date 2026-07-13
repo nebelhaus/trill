@@ -291,13 +291,12 @@ private struct ConversationRowButton: View {
     let action: () -> Void
 
     @Environment(\.riceAccent) private var accent
-    @Environment(\.uiScale) private var scale
     @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
             HStack(alignment: .top, spacing: 9) {
-                avatar
+                AvatarView(conversation: conversation)
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 5) {
@@ -358,24 +357,6 @@ private struct ConversationRowButton: View {
         if isHovering { return Rice.surface0.opacity(0.55) }
         return .clear
     }
-
-    private var avatar: some View {
-        let seed = Rice.accent(seededBy: conversation.id.id)
-        return ZStack {
-            Circle()
-                .fill(seed.opacity(0.16))
-            Text(initials)
-                .riceFont(11, .semibold)
-                .foregroundStyle(seed)
-        }
-        .frame(width: 30 * scale, height: 30 * scale)
-        .accessibilityHidden(true)
-    }
-
-    private var initials: String {
-        let words = conversation.displayName.split(separator: " ")
-        return words.prefix(2).compactMap(\.first).map(String.init).joined().uppercased()
-    }
 }
 
 // MARK: - Recovery & health
@@ -434,8 +415,18 @@ private struct ProviderHealthView: View {
             HealthRow(title: "Contacts", state: health.contacts)
             HealthRow(title: "Notifications", state: health.notifications)
             RiceDivider()
-            Button("Recheck", action: recheck)
-                .buttonStyle(RiceSubtleButtonStyle())
+            HStack(spacing: 8) {
+                Button("Recheck", action: recheck)
+                    .buttonStyle(RiceSubtleButtonStyle())
+                if health.contacts.reason == .permissionMissing {
+                    Button("Open Contacts Settings") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Contacts") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .buttonStyle(RiceSubtleButtonStyle())
+                }
+            }
         }
     }
 }

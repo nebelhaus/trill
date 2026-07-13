@@ -16,6 +16,14 @@ struct Participant: Hashable, Codable, Sendable, Identifiable {
     let id: String
     let displayName: String?
     let handle: String
+    let avatarData: Data?
+
+    init(id: String, displayName: String?, handle: String, avatarData: Data? = nil) {
+        self.id = id
+        self.displayName = displayName
+        self.handle = handle
+        self.avatarData = avatarData
+    }
 }
 
 struct Conversation: Hashable, Codable, Sendable, Identifiable {

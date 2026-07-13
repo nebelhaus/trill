@@ -19,6 +19,9 @@ struct ConversationView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
+            if let conversation = model.conversation {
+                AvatarView(conversation: conversation, size: 26)
+            }
             VStack(alignment: .leading, spacing: 1) {
                 Text(model.conversation?.displayName ?? "Conversation")
                     .riceFont(14, .semibold)

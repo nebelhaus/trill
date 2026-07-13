@@ -28,6 +28,7 @@ actor LiveIMessageProvider: MessagesProvider {
     // MARK: - Health & capabilities
 
     func health() async -> ProviderHealth {
+        await contacts.prepare()
         let databaseState = MessagesDatabaseAccessChecker.health(for: accessChecker.probe())
         let sendingState: HealthState = databaseState.availability == .available
             ? automationHealth()
@@ -49,6 +50,7 @@ actor LiveIMessageProvider: MessagesProvider {
     // MARK: - Reads
 
     func conversations(page: ConversationPageRequest) async throws -> ConversationPage {
+        await contacts.prepare()
         let chats = try reader.recentChats(limit: page.limit)
         var conversations: [Conversation] = []
         conversations.reserveCapacity(chats.count)
@@ -247,14 +249,20 @@ actor LiveIMessageProvider: MessagesProvider {
             if !row.isFromMe, let handle = handles[row.handleID] {
                 sender = await participant(from: handle)
             }
-            let attachments = (attachmentsByMessage[row.rowID] ?? []).map(Self.attachment)
+            let attachments = (attachmentsByMessage[row.rowID] ?? [])
+                .filter { !Self.isPluginPayload($0) }
+                .map(Self.attachment)
+            let text = displayText(text: row.text, body: row.attributedBody)
+            // Skip rows that render as nothing: link-preview payload shells,
+            // sticker placements without visible content, etc.
+            if text.isEmpty, attachments.isEmpty { continue }
             messages.append(Message(
                 id: MessageID(provider: id, externalGUID: row.guid),
                 conversationID: conversationID,
                 providerSequence: String(row.rowID),
                 sender: sender,
                 isOutgoing: row.isFromMe,
-                text: displayText(text: row.text, body: row.attributedBody),
+                text: text,
                 createdAt: Self.date(fromAppleNanoseconds: row.date),
                 sentAt: row.isFromMe ? Self.date(fromAppleNanoseconds: row.date) : nil,
                 deliveredAt: row.isDelivered && row.dateDelivered > 0
@@ -275,7 +283,8 @@ actor LiveIMessageProvider: MessagesProvider {
         Participant(
             id: handle.id,
             displayName: await contacts.displayName(for: handle.id),
-            handle: handle.id
+            handle: handle.id,
+            avatarData: await contacts.thumbnail(for: handle.id)
         )
     }
 
@@ -285,6 +294,13 @@ actor LiveIMessageProvider: MessagesProvider {
         }
         guard let body, let extracted = TypedstreamText.extract(from: body) else { return "" }
         return TypedstreamText.displayText(extracted)
+    }
+
+    /// Link previews store their payloads as hidden ".pluginPayloadAttachment"
+    /// files; they are implementation detail, not user-visible attachments.
+    private static func isPluginPayload(_ row: ChatDatabaseReader.AttachmentRow) -> Bool {
+        (row.filename ?? row.transferName ?? "").hasSuffix(".pluginPayloadAttachment")
+            || row.uti == "com.apple.messages.url.balloonprovider"
     }
 
     private static func attachment(_ row: ChatDatabaseReader.AttachmentRow) -> MessageAttachment {

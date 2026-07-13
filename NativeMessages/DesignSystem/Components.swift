@@ -116,6 +116,51 @@ struct ServiceChip: View {
     }
 }
 
+/// Circular avatar: contact photo when available, tinted initials otherwise.
+struct AvatarView: View {
+    let conversation: Conversation
+    var size: CGFloat = 30
+
+    @Environment(\.uiScale) private var scale
+
+    var body: some View {
+        Group {
+            if let photo {
+                Image(nsImage: photo)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ZStack {
+                    seedColor.opacity(0.16)
+                    Text(initials)
+                        .riceFont(size * 0.37, .semibold)
+                        .foregroundStyle(seedColor)
+                }
+            }
+        }
+        .frame(width: size * scale, height: size * scale)
+        .clipShape(Circle())
+        .accessibilityHidden(true)
+    }
+
+    private var photo: NSImage? {
+        guard conversation.kind == .direct,
+              let data = conversation.participants.first?.avatarData else { return nil }
+        return NSImage(data: data)
+    }
+
+    private var seedColor: Color {
+        Rice.accent(seededBy: conversation.id.id)
+    }
+
+    private var initials: String {
+        let words = conversation.displayName.split(separator: " ")
+        let letters = words.prefix(2).compactMap { $0.first(where: \.isLetter) }
+        guard !letters.isEmpty else { return "#" }
+        return letters.map(String.init).joined().uppercased()
+    }
+}
+
 /// 1px flat divider.
 struct RiceDivider: View {
     var axis: Axis = .horizontal

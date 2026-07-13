@@ -18,7 +18,7 @@ The live provider never writes to `chat.db` — every connection is `SQLITE_OPEN
 
 - **Full Disk Access** — required to read `~/Library/Messages/chat.db`. Grant it to the built app bundle (not Terminal) in System Settings → Privacy & Security.
 - **Automation ("control Messages")** — prompted on first send.
-- **Contacts** — optional; resolves handles to names. Denying it shows raw phone numbers/emails.
+- **Contacts** — optional; grants names *and* contact photos via the Contacts framework. Without it, names still resolve by reading the local AddressBook store directly (covered by Full Disk Access); only photos are missing.
 
 Marking conversations as read is not possible (that would require writing to `chat.db`), so unread badges reflect Messages.app's own state.
 
