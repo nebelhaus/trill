@@ -18,12 +18,16 @@ final class ConversationModel: ObservableObject {
 
     private var repository: MessagesRepository
     private var loadTask: Task<Void, Never>?
+    private var refreshTask: Task<Void, Never>?
 
     init(repository: MessagesRepository) {
         self.repository = repository
     }
 
-    deinit { loadTask?.cancel() }
+    deinit {
+        loadTask?.cancel()
+        refreshTask?.cancel()
+    }
 
     func updateRepository(_ repository: MessagesRepository) {
         loadTask?.cancel()
@@ -33,6 +37,7 @@ final class ConversationModel: ObservableObject {
 
     func clear() {
         loadTask?.cancel()
+        refreshTask?.cancel()
         conversation = nil
         messages = []
         nextBefore = nil
@@ -54,6 +59,7 @@ final class ConversationModel: ObservableObject {
                 messages = page.messages.sorted(by: Self.chronological)
                 nextBefore = page.nextBefore
                 state = messages.isEmpty ? .empty : .loaded
+                startPeriodicRefresh()
             } catch is CancellationError {
                 return
             } catch {
@@ -62,6 +68,41 @@ final class ConversationModel: ObservableObject {
                 AppLog.ui.error("Conversation load failed error=\(String(describing: type(of: error)), privacy: .public)")
             }
         }
+    }
+
+    /// Delivery/read flags and attachment transfers mutate existing chat.db
+    /// rows, which the new-row event poller cannot see. Periodically re-fetch
+    /// the newest page and merge changes in place.
+    private func startPeriodicRefresh() {
+        refreshTask?.cancel()
+        refreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(4))
+                guard !Task.isCancelled else { return }
+                await self?.refreshRecent()
+            }
+        }
+    }
+
+    private func refreshRecent() async {
+        guard let conversation, state == .loaded || state == .empty else { return }
+        let repository = repository
+        guard let page = try? await repository.messages(
+            in: conversation.id,
+            page: MessagePageRequest(limit: 36)
+        ) else { return }
+        guard self.conversation?.id == conversation.id else { return }
+
+        var byID = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
+        var changed = false
+        for fresh in page.messages where byID[fresh.id] != fresh {
+            byID[fresh.id] = fresh
+            changed = true
+        }
+        guard changed else { return }
+        messages = byID.values.sorted(by: Self.chronological)
+        if state == .empty, !messages.isEmpty { state = .loaded }
+        if nextBefore == nil { nextBefore = page.nextBefore }
     }
 
     /// Merges a message arriving from the live event stream.

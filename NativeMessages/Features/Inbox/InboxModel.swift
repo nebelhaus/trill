@@ -34,6 +34,10 @@ final class InboxModel: ObservableObject {
     @Published private(set) var health: ProviderHealth = .fixture
     @Published private(set) var capabilities = ProviderCapabilities()
     @Published private(set) var pinnedIDs: Set<ConversationID> = []
+    /// chat.db is read-only, so opening a thread can't mark it read upstream.
+    /// This overlay hides a thread's badge locally once viewed, until a
+    /// message newer than the viewing time arrives (or Messages.app syncs).
+    @Published private(set) var clearedUnreadAt: [ConversationID: Date] = [:]
     @Published private(set) var searchResults: [Message] = []
     @Published var isSearchPresented = false
     @Published var isSidebarVisible = true
@@ -129,8 +133,20 @@ final class InboxModel: ObservableObject {
         load()
     }
 
+    func hasVisibleUnread(_ conversation: Conversation) -> Bool {
+        guard let count = conversation.unreadCount, count > 0 else { return false }
+        if let cleared = clearedUnreadAt[conversation.id], cleared >= conversation.lastActivity {
+            return false
+        }
+        return true
+    }
+
     func select(_ id: ConversationID?) {
         if selectedConversationID != id { selectedConversationID = id }
+        if let id {
+            clearedUnreadAt[id] = .now
+            updateDockBadge()
+        }
         guard conversationModel.conversation?.id != id else { return }
         guard let conversation = conversations.first(where: { $0.id == id }) else {
             conversationModel.clear()
@@ -172,6 +188,9 @@ final class InboxModel: ObservableObject {
         switch event {
         case let .messageAdded(message, _):
             conversationModel.appendLive(message)
+            if message.conversationID == selectedConversationID {
+                clearedUnreadAt[message.conversationID] = .now
+            }
         case let .conversationUpdated(conversation, _):
             if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
                 conversations[index] = conversation
@@ -214,7 +233,7 @@ final class InboxModel: ObservableObject {
     }
 
     private func updateDockBadge() {
-        let unread = conversations.compactMap(\.unreadCount).reduce(0, +)
+        let unread = conversations.filter(hasVisibleUnread).compactMap(\.unreadCount).reduce(0, +)
         NSApp.dockTile.badgeLabel = unread > 0 ? String(unread) : nil
     }
 

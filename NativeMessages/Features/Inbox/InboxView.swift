@@ -10,6 +10,7 @@ struct InboxView: View {
     }
 
     @AppStorage("sidebarWidth") private var sidebarWidth = 288.0
+    @State private var liveSidebarWidth: Double?
     @State private var dragStartWidth: Double?
 
     private static let minSidebarWidth: Double = 220
@@ -19,20 +20,30 @@ struct InboxView: View {
         HStack(spacing: 0) {
             if model.isSidebarVisible {
                 SidebarView(model: model, density: density)
-                    .frame(width: sidebarWidth)
+                    .frame(width: liveSidebarWidth ?? sidebarWidth)
                     .transition(.move(edge: .leading))
                 SidebarResizeHandle()
                     .gesture(
-                        DragGesture(minimumDistance: 0)
+                        // Global coordinate space: with local coordinates the
+                        // handle moves under the cursor mid-drag and feeds its
+                        // own translation back, which jitters. Width persists
+                        // to AppStorage only when the drag ends.
+                        DragGesture(minimumDistance: 0, coordinateSpace: .global)
                             .onChanged { value in
                                 let start = dragStartWidth ?? sidebarWidth
                                 if dragStartWidth == nil { dragStartWidth = start }
-                                sidebarWidth = min(
+                                liveSidebarWidth = min(
                                     max(start + Double(value.translation.width), Self.minSidebarWidth),
                                     Self.maxSidebarWidth
                                 )
                             }
-                            .onEnded { _ in dragStartWidth = nil }
+                            .onEnded { _ in
+                                if let liveSidebarWidth {
+                                    sidebarWidth = liveSidebarWidth
+                                }
+                                liveSidebarWidth = nil
+                                dragStartWidth = nil
+                            }
                     )
             }
 
@@ -242,6 +253,7 @@ private struct SidebarView: View {
                             conversation: conversation,
                             isPinned: model.pinnedIDs.contains(conversation.id),
                             isSelected: model.selectedConversationID == conversation.id,
+                            showsUnread: model.hasVisibleUnread(conversation),
                             density: density
                         ) {
                             model.select(conversation.id)
@@ -328,6 +340,7 @@ private struct ConversationRowButton: View {
     let conversation: Conversation
     let isPinned: Bool
     let isSelected: Bool
+    let showsUnread: Bool
     let density: DisplayDensity
     let action: () -> Void
 
@@ -365,7 +378,7 @@ private struct ConversationRowButton: View {
                         Spacer(minLength: 4)
                         VStack(alignment: .trailing, spacing: 3) {
                             ServiceChip(service: conversation.service)
-                            if let count = conversation.unreadCount, count > 0 {
+                            if showsUnread, let count = conversation.unreadCount, count > 0 {
                                 Text("\(count)")
                                     .riceFont(9, .bold)
                                     .foregroundStyle(Rice.crust)
@@ -390,7 +403,7 @@ private struct ConversationRowButton: View {
     }
 
     private var hasUnread: Bool {
-        (conversation.unreadCount ?? 0) > 0
+        showsUnread && (conversation.unreadCount ?? 0) > 0
     }
 
     private var rowBackground: Color {
