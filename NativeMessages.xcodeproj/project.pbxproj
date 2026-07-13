@@ -1,0 +1,324 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* IMessage in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000021 /* IMessage */; };
+		A10000000000000000000023 /* PlatformSDK in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000025 /* PlatformSDK */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A10000000000000000000003 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000010 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000011;
+			remoteInfo = NativeMessages;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		A10000000000000000000004 /* NativeMessages.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NativeMessages.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000005 /* NativeMessagesTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NativeMessagesTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A10000000000000000000006 /* Exceptions for NativeMessages folder */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Config/NativeMessages.entitlements,
+			);
+			target = A10000000000000000000011 /* NativeMessages */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		A10000000000000000000007 /* NativeMessages */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A10000000000000000000006 /* Exceptions for NativeMessages folder */,
+			);
+			path = NativeMessages;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000008 /* NativeMessagesTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = NativeMessagesTests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A10000000000000000000009 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* IMessage in Frameworks */,
+				A10000000000000000000023 /* PlatformSDK in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1000000000000000000000A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A1000000000000000000000B = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000007 /* NativeMessages */,
+				A10000000000000000000008 /* NativeMessagesTests */,
+				A1000000000000000000000C /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A1000000000000000000000C /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000004 /* NativeMessages.app */,
+				A10000000000000000000005 /* NativeMessagesTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A10000000000000000000011 /* NativeMessages */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000030 /* Build configuration list for PBXNativeTarget "NativeMessages" */;
+			buildPhases = (
+				A10000000000000000000013 /* Sources */,
+				A10000000000000000000009 /* Frameworks */,
+				A10000000000000000000014 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000007 /* NativeMessages */,
+			);
+			name = NativeMessages;
+			packageProductDependencies = (
+				A10000000000000000000021 /* IMessage */,
+				A10000000000000000000025 /* PlatformSDK */,
+			);
+			productName = NativeMessages;
+			productReference = A10000000000000000000004 /* NativeMessages.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A10000000000000000000012 /* NativeMessagesTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000031 /* Build configuration list for PBXNativeTarget "NativeMessagesTests" */;
+			buildPhases = (
+				A10000000000000000000015 /* Sources */,
+				A1000000000000000000000A /* Frameworks */,
+				A10000000000000000000016 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A10000000000000000000017 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000008 /* NativeMessagesTests */,
+			);
+			name = NativeMessagesTests;
+			packageProductDependencies = (
+			);
+			productName = NativeMessagesTests;
+			productReference = A10000000000000000000005 /* NativeMessagesTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A10000000000000000000010 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2620;
+				LastUpgradeCheck = 2620;
+				TargetAttributes = {
+					A10000000000000000000011 = { CreatedOnToolsVersion = 26.2; };
+					A10000000000000000000012 = { CreatedOnToolsVersion = 26.2; TestTargetID = A10000000000000000000011; };
+				};
+			};
+			buildConfigurationList = A10000000000000000000032 /* Build configuration list for PBXProject "NativeMessages" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = A1000000000000000000000B;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A10000000000000000000020 /* XCRemoteSwiftPackageReference "platform-imessage" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = A1000000000000000000000C /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A10000000000000000000011 /* NativeMessages */,
+				A10000000000000000000012 /* NativeMessagesTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A10000000000000000000014 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000016 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A10000000000000000000013 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000015 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A10000000000000000000017 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = A10000000000000000000011 /* NativeMessages */; targetProxy = A10000000000000000000003 /* PBXContainerItemProxy */; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A10000000000000000000040 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+		}; name = Debug;
+		};
+		A10000000000000000000041 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				SWIFT_COMPILATION_MODE = wholemodule;
+		}; name = Release;
+		};
+		A10000000000000000000042 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = NativeMessages/Config/NativeMessages.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Native Messages";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Native Messages uses Messages automation only when you explicitly send a message.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "Native Messages can resolve conversation handles to names when you enable contacts.";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = "-lsqlite3";
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.NativeMessages;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_VERSION = 6.0;
+		}; name = Debug;
+		};
+		A10000000000000000000043 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = NativeMessages/Config/NativeMessages.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Native Messages";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Native Messages uses Messages automation only when you explicitly send a message.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "Native Messages can resolve conversation handles to names when you enable contacts.";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = "-lsqlite3";
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.NativeMessages;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_VERSION = 6.0;
+		}; name = Release;
+		};
+		A10000000000000000000044 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.NativeMessagesTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NativeMessages.app/Contents/MacOS/NativeMessages";
+		}; name = Debug;
+		};
+		A10000000000000000000045 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.NativeMessagesTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NativeMessages.app/Contents/MacOS/NativeMessages";
+		}; name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A10000000000000000000030 /* Build configuration list for PBXNativeTarget "NativeMessages" */ = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000042 /* Debug */, A10000000000000000000043 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A10000000000000000000031 /* Build configuration list for PBXNativeTarget "NativeMessagesTests" */ = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000044 /* Debug */, A10000000000000000000045 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A10000000000000000000032 /* Build configuration list for PBXProject "NativeMessages" */ = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000040 /* Debug */, A10000000000000000000041 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A10000000000000000000020 /* XCRemoteSwiftPackageReference "platform-imessage" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/beeper/platform-imessage.git";
+			requirement = { kind = exactVersion; version = 0.24.4; };
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A10000000000000000000021 /* IMessage */ = {isa = XCSwiftPackageProductDependency; package = A10000000000000000000020 /* XCRemoteSwiftPackageReference "platform-imessage" */; productName = IMessage; };
+		A10000000000000000000025 /* PlatformSDK */ = {isa = XCSwiftPackageProductDependency; package = A10000000000000000000020 /* XCRemoteSwiftPackageReference "platform-imessage" */; productName = PlatformSDK; };
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = A10000000000000000000010 /* Project object */;
+}
