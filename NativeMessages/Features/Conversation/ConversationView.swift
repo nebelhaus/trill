@@ -15,6 +15,10 @@ struct ConversationView: View {
             ComposerView(model: composer)
         }
         .background(Rice.base)
+        .dropDestination(for: URL.self) { urls, _ in
+            composer.stageAttachments(urls)
+            return composer.canSendAttachments
+        }
     }
 
     private var header: some View {

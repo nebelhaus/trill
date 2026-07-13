@@ -44,7 +44,10 @@ actor LiveIMessageProvider: MessagesProvider {
     }
 
     func capabilities() async -> ProviderCapabilities {
-        ProviderCapabilities([.readConversations, .readMessages, .search, .watchLiveEvents, .sendText])
+        ProviderCapabilities([
+            .readConversations, .readMessages, .search, .watchLiveEvents,
+            .sendText, .sendAttachments,
+        ])
     }
 
     // MARK: - Reads
@@ -152,7 +155,8 @@ actor LiveIMessageProvider: MessagesProvider {
             return .rejected(operationID: request.operationID, reason: .invalidRequest)
         }
         let text = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else {
+        let files = request.attachments.filter { FileManager.default.fileExists(atPath: $0.path) }
+        guard !text.isEmpty || !files.isEmpty else {
             return .rejected(operationID: request.operationID, reason: .invalidRequest)
         }
         let guid = request.conversationID.externalGUID
@@ -161,11 +165,25 @@ actor LiveIMessageProvider: MessagesProvider {
         } else {
             nil
         }
+
+        var anySent = false
         do {
-            try sender.send(text: text, chatGUID: guid, directHandle: directHandle)
+            if !text.isEmpty {
+                try sender.send(text: text, chatGUID: guid, directHandle: directHandle)
+                anySent = true
+            }
+            for file in files {
+                try sender.sendFile(at: file, chatGUID: guid)
+                anySent = true
+            }
             return .accepted(operationID: request.operationID)
         } catch let failure as MessagesSender.SendFailure {
             AppLog.repository.error("Send failed detail=\(failure.message, privacy: .public)")
+            if anySent {
+                // Part of the message reached Messages.app; retrying the whole
+                // draft would duplicate it, so surface as unknown.
+                return .unknown(operationID: request.operationID, diagnosticCode: "partialSend")
+            }
             let reason: UserFacingSendError = failure.message.contains("-1743")
                 ? .permissionDenied
                 : .providerUnavailable

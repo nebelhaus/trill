@@ -45,6 +45,20 @@ struct MessagesSender: Sendable {
         }
     }
 
+    /// Sends a file the same way — Messages.app copies it into its own store.
+    func sendFile(at url: URL, chatGUID: String) throws {
+        let script = """
+        on run argv
+            set chatGuid to item 1 of argv
+            set theFile to POSIX file (item 2 of argv)
+            tell application "Messages"
+                send theFile to chat id chatGuid
+            end tell
+        end run
+        """
+        try run(script: script, arguments: [chatGUID, url.path])
+    }
+
     private func run(script: String, arguments: [String]) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")

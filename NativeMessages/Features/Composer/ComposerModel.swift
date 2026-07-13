@@ -4,13 +4,15 @@ import Foundation
 final class ComposerModel: ObservableObject {
     @Published private(set) var conversationID: ConversationID?
     @Published var text = ""
+    @Published private(set) var pendingAttachments: [URL] = []
     @Published private(set) var isSendEnabled = false
+    @Published private(set) var canSendAttachments = false
     @Published private(set) var isSending = false
     @Published private(set) var sendFeedback: String?
     @Published private(set) var disabledExplanation = "Select a conversation to write a draft."
 
     private let database: AppDatabase
-    private var sendAction: ((String) async throws -> SendOutcome)?
+    private var sendAction: ((String, [URL]) async throws -> SendOutcome)?
     private var saveTask: Task<Void, Never>?
     private var restoreTask: Task<Void, Never>?
     private var isRestoring = false
@@ -28,16 +30,18 @@ final class ComposerModel: ObservableObject {
         _ conversationID: ConversationID?,
         capabilities: ProviderCapabilities,
         health: ProviderHealth,
-        sendAction: ((String) async throws -> SendOutcome)?
+        sendAction: ((String, [URL]) async throws -> SendOutcome)?
     ) {
         saveTask?.cancel()
         restoreTask?.cancel()
         self.conversationID = conversationID
         self.sendAction = sendAction
         sendFeedback = nil
+        pendingAttachments = []
         isSendEnabled = conversationID != nil
             && sendAction != nil
             && CapabilityGate.canSend(capabilities: capabilities, health: health)
+        canSendAttachments = isSendEnabled && capabilities.supports(.sendAttachments)
         if conversationID == nil {
             disabledExplanation = "Select a conversation to write a draft."
         } else if isSendEnabled {
@@ -59,22 +63,47 @@ final class ComposerModel: ObservableObject {
         }
     }
 
+    func stageAttachments(_ urls: [URL]) {
+        guard canSendAttachments else { return }
+        let incoming = urls.filter { url in
+            url.isFileURL
+                && FileManager.default.fileExists(atPath: url.path)
+                && !pendingAttachments.contains(url)
+        }
+        guard !incoming.isEmpty else { return }
+        pendingAttachments += incoming
+        sendFeedback = nil
+    }
+
+    func removeAttachment(_ url: URL) {
+        pendingAttachments.removeAll { $0 == url }
+    }
+
     func send() async {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isSendEnabled, !isSending, !body.isEmpty, let sendAction, let conversationID else { return }
+        let files = pendingAttachments
+        guard isSendEnabled, !isSending, !body.isEmpty || !files.isEmpty,
+              let sendAction, let conversationID else { return }
         isSending = true
         defer { isSending = false }
         do {
-            switch try await sendAction(body) {
+            switch try await sendAction(body, files) {
             case .accepted, .confirmed:
                 text = ""
+                pendingAttachments = []
                 sendFeedback = nil
                 saveTask?.cancel()
                 try? await database.saveDraft("", conversationID: conversationID)
             case let .rejected(_, reason):
                 sendFeedback = Self.feedback(for: reason)
             case .unknown:
-                sendFeedback = "Send result unknown — check Messages.app before retrying."
+                // Part of the draft may have reached Messages.app; clear it so
+                // a retry can't duplicate what already went out.
+                text = ""
+                pendingAttachments = []
+                saveTask?.cancel()
+                try? await database.saveDraft("", conversationID: conversationID)
+                sendFeedback = "Some of the message may not have sent — check Messages.app."
             }
         } catch {
             sendFeedback = error.localizedDescription

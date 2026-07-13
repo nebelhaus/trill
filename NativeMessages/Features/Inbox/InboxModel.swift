@@ -139,12 +139,12 @@ final class InboxModel: ObservableObject {
         }
         conversationModel.select(conversation)
         let repository = repository
-        composerModel.select(conversation.id, capabilities: capabilities, health: health) { text in
+        composerModel.select(conversation.id, capabilities: capabilities, health: health) { text, attachments in
             try await repository.send(SendRequest(
                 operationID: UUID(),
                 conversationID: conversation.id,
                 text: text,
-                attachments: []
+                attachments: attachments
             ))
         }
     }
