@@ -80,6 +80,7 @@ private struct MessageTimelineView: View {
                             }
 
                             let latestOutgoingID = model.messages.last(where: \.isOutgoing)?.id
+                            let replies = repliesByOrigin
                             ForEach(Array(model.messages.enumerated()), id: \.element.id) { index, message in
                                 if startsDay(at: index) {
                                     DaySeparator(date: message.createdAt)
@@ -88,7 +89,13 @@ private struct MessageTimelineView: View {
                                     message: message,
                                     startsGroup: startsGroup(at: index),
                                     endsGroup: endsGroup(at: index),
-                                    isLatestOutgoing: message.id == latestOutgoingID
+                                    isLatestOutgoing: message.id == latestOutgoingID,
+                                    replyIDs: replies[message.id] ?? [],
+                                    onJump: { target in
+                                        withAnimation(.easeInOut(duration: 0.25)) {
+                                            proxy.scrollTo(target, anchor: .center)
+                                        }
+                                    }
                                 )
                                 .id(message.id)
                             }
@@ -124,6 +131,16 @@ private struct MessageTimelineView: View {
         .buttonStyle(RiceSubtleButtonStyle())
         .disabled(model.isLoadingOlder)
         .padding(.vertical, 8)
+    }
+
+    private var repliesByOrigin: [MessageID: [MessageID]] {
+        var result: [MessageID: [MessageID]] = [:]
+        for message in model.messages {
+            if let origin = message.replyTo {
+                result[origin, default: []].append(message.id)
+            }
+        }
+        return result
     }
 
     private func startsDay(at index: Int) -> Bool {
@@ -180,6 +197,8 @@ private struct MessageRow: View {
     let startsGroup: Bool
     let endsGroup: Bool
     let isLatestOutgoing: Bool
+    var replyIDs: [MessageID] = []
+    var onJump: (MessageID) -> Void = { _ in }
 
     @Environment(\.riceAccent) private var accent
 
@@ -199,7 +218,9 @@ private struct MessageRow: View {
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    if let reply = message.replyTo {
+                    if let quoted = message.quoted {
+                        QuotedReplyView(quoted: quoted, onJump: onJump)
+                    } else if message.replyTo != nil {
                         Label("Reply", systemImage: "arrowshape.turn.up.left")
                             .riceFont(10)
                             .foregroundStyle(Rice.subtext0)
@@ -216,23 +237,32 @@ private struct MessageRow: View {
                     ForEach(message.attachments) { attachment in
                         AttachmentView(attachment: attachment)
                     }
-                    if !message.reactions.isEmpty {
-                        HStack(spacing: 4) {
-                            ForEach(message.reactions) { reaction in
-                                Text(reaction.glyph)
-                                    .riceFont(11)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Rice.surface1, in: Capsule())
-                                    .help("\(reaction.kind.rawValue) — \(reaction.senderDisplayName)")
-                                    .accessibilityLabel("\(reaction.kind.rawValue) from \(reaction.senderDisplayName)")
-                            }
-                        }
-                    }
                 }
                 .padding(.horizontal, 11)
                 .padding(.vertical, 7)
                 .background(bubbleColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(alignment: message.isOutgoing ? .topLeading : .topTrailing) {
+                    if !message.reactions.isEmpty {
+                        ReactionBadges(reactions: message.reactions)
+                            .offset(x: message.isOutgoing ? -10 : 10, y: -11)
+                    }
+                }
+                .padding(.top, message.reactions.isEmpty ? 0 : 11)
+
+                if !replyIDs.isEmpty {
+                    Button {
+                        if let latest = replyIDs.last { onJump(latest) }
+                    } label: {
+                        Label(
+                            replyIDs.count == 1 ? "1 reply" : "\(replyIDs.count) replies",
+                            systemImage: "arrowshape.turn.up.left.fill"
+                        )
+                        .riceFont(9, .medium)
+                        .foregroundStyle(accent)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 8)
+                }
 
                 if endsGroup {
                     HStack(spacing: 4) {
@@ -279,5 +309,96 @@ private struct MessageRow: View {
         let sender = message.isOutgoing ? "You" : (message.sender?.displayName ?? "Participant")
         let body = message.text.isEmpty ? "Attachment" : message.text
         return "\(sender), \(body), \(message.createdAt.formatted(date: .omitted, time: .shortened))"
+    }
+}
+
+/// The quoted original above a threaded reply; clicking jumps to it.
+private struct QuotedReplyView: View {
+    let quoted: QuotedMessage
+    let onJump: (MessageID) -> Void
+
+    @Environment(\.riceAccent) private var accent
+
+    var body: some View {
+        Button {
+            onJump(quoted.id)
+        } label: {
+            HStack(alignment: .top, spacing: 7) {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(accent.opacity(0.8))
+                    .frame(width: 3)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(quoted.senderName)
+                        .riceFont(10, .semibold)
+                        .foregroundStyle(Rice.subtext1)
+                    Text(snippet)
+                        .riceFont(11)
+                        .foregroundStyle(Rice.subtext0)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+                .padding(.vertical, 1)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .buttonStyle(.plain)
+        .help("Jump to the original message")
+        .accessibilityLabel("In reply to \(quoted.senderName): \(snippet)")
+    }
+
+    private var snippet: String {
+        quoted.text.nonEmpty ?? (quoted.hasAttachments ? "Attachment" : "Earlier message")
+    }
+}
+
+/// Tapbacks grouped by glyph, overlapping the bubble corner iMessage-style.
+private struct ReactionBadges: View {
+    let reactions: [MessageReaction]
+
+    @Environment(\.riceAccent) private var accent
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(groups, id: \.glyph) { group in
+                HStack(spacing: 3) {
+                    Text(group.glyph)
+                        .riceFont(10)
+                    if group.count > 1 {
+                        Text(String(group.count))
+                            .riceFont(9, .semibold)
+                            .foregroundStyle(Rice.subtext1)
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(group.includesMe ? accent.opacity(0.35) : Rice.surface1, in: Capsule())
+                .overlay(Capsule().strokeBorder(Rice.base, lineWidth: 1.5))
+                .help("\(group.glyph) \(group.senders.joined(separator: ", "))")
+                .accessibilityLabel("\(group.glyph) reaction from \(group.senders.joined(separator: ", "))")
+            }
+        }
+    }
+
+    private struct ReactionGroup {
+        let glyph: String
+        let count: Int
+        let includesMe: Bool
+        let senders: [String]
+    }
+
+    private var groups: [ReactionGroup] {
+        Dictionary(grouping: reactions, by: \.glyph)
+            .map { glyph, items in
+                ReactionGroup(
+                    glyph: glyph,
+                    count: items.count,
+                    includesMe: items.contains(where: \.isFromMe),
+                    senders: items.map(\.senderDisplayName)
+                )
+            }
+            .sorted { left, right in
+                if left.count != right.count { return left.count > right.count }
+                return left.glyph < right.glyph
+            }
     }
 }

@@ -240,7 +240,31 @@ actor LiveIMessageProvider: MessagesProvider {
         conversationID: ConversationID,
         chatRowID: Int64?
     ) async throws -> [Message] {
-        let handles = try reader.handles(rowIDs: Array(Set(rows.map(\.handleID))))
+        // Reply originators may live outside this page; fetch them so the
+        // quote block always has content to show.
+        let pageGUIDs = Set(rows.map(\.guid))
+        let missingOriginators = Set(rows.compactMap(\.threadOriginatorGUID)).subtracting(pageGUIDs)
+        let originatorRows = try reader.messages(guids: Array(missingOriginators))
+        let handles = try reader.handles(rowIDs: Array(Set((rows + originatorRows).map(\.handleID))))
+
+        var quotedByGUID: [String: QuotedMessage] = [:]
+        for row in rows + originatorRows {
+            let senderName: String
+            if row.isFromMe {
+                senderName = "You"
+            } else if let handle = handles[row.handleID] {
+                senderName = await contacts.displayName(for: handle.id) ?? handle.id
+            } else {
+                senderName = "Participant"
+            }
+            quotedByGUID[row.guid] = QuotedMessage(
+                id: MessageID(provider: id, externalGUID: row.guid),
+                senderName: senderName,
+                text: displayText(text: row.text, body: row.attributedBody),
+                hasAttachments: row.hasAttachments
+            )
+        }
+
         let attachmentRows = try reader.attachments(messageRowIDs: rows.map(\.rowID))
         let attachmentsByMessage = Dictionary(grouping: attachmentRows, by: \.messageRowID)
 
@@ -293,7 +317,8 @@ actor LiveIMessageProvider: MessagesProvider {
                 service: Self.service(from: nil, chatGUID: conversationID.externalGUID),
                 deliveryState: Self.deliveryState(row),
                 readAt: row.isFromMe && row.dateRead > 0 ? Self.date(fromAppleNanoseconds: row.dateRead) : nil,
-                isEdited: row.dateEdited > 0
+                isEdited: row.dateEdited > 0,
+                quoted: row.threadOriginatorGUID.flatMap { quotedByGUID[$0] }
             ))
         }
         return messages
@@ -354,7 +379,13 @@ actor LiveIMessageProvider: MessagesProvider {
         default: nil
         }
         guard let mapping else { return nil }
-        return MessageReaction(id: row.guid, kind: mapping.0, senderDisplayName: senderName, glyph: mapping.1)
+        return MessageReaction(
+            id: row.guid,
+            kind: mapping.0,
+            senderDisplayName: senderName,
+            glyph: mapping.1,
+            isFromMe: row.isFromMe
+        )
     }
 
     private static func deliveryState(_ row: ChatDatabaseReader.MessageRow) -> MessageDeliveryState {

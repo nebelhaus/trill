@@ -152,11 +152,19 @@ struct FixtureData: Sendable {
                     ] : [],
                     reactions: index == 91 ? [
                         MessageReaction(id: "fixture-reaction-like", kind: .like, senderDisplayName: "Avery", glyph: "👍"),
+                        MessageReaction(id: "fixture-reaction-like-me", kind: .like, senderDisplayName: "You", glyph: "👍", isFromMe: true),
+                        MessageReaction(id: "fixture-reaction-laugh", kind: .laugh, senderDisplayName: "Avery", glyph: "😂"),
                     ] : [],
                     replyTo: index == 92 ? MessageID(provider: provider, externalGUID: "fixture-direct-89") : nil,
                     threadOrigin: nil,
                     service: .iMessage,
-                    deliveryState: outgoing ? .delivered : .unknown
+                    deliveryState: outgoing ? .delivered : .unknown,
+                    quoted: index == 92 ? QuotedMessage(
+                        id: MessageID(provider: provider, externalGUID: "fixture-direct-89"),
+                        senderName: "Avery",
+                        text: "Synthetic reply 89 for pagination testing.",
+                        hasAttachments: false
+                    ) : nil
                 )
             )
         }
@@ -243,7 +251,13 @@ struct FixtureData: Sendable {
                 replyTo: replyTo,
                 threadOrigin: nil,
                 service: .iMessage,
-                deliveryState: sender == nil ? .sent : .unknown
+                deliveryState: sender == nil ? .sent : .unknown,
+                quoted: index == 19 ? QuotedMessage(
+                    id: MessageID(provider: provider, externalGUID: "fixture-group-17"),
+                    senderName: "Avery Chen",
+                    text: "Group fixture message 17.",
+                    hasAttachments: false
+                ) : nil
             )
             groupMessages.append(message)
         }

@@ -210,6 +210,23 @@ struct ChatDatabaseReader: Sendable {
         }
     }
 
+    /// Messages by GUID (reply originators may fall outside the loaded page).
+    func messages(guids: [String]) throws -> [MessageRow] {
+        guard !guids.isEmpty else { return [] }
+        return try withConnection { db in
+            let placeholders = Array(repeating: "?", count: guids.count).joined(separator: ",")
+            return try query(db, """
+                SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.is_from_me, m.date,
+                       m.date_delivered, m.is_delivered, m.is_sent, m.error, m.handle_id,
+                       m.cache_has_attachments, m.thread_originator_guid,
+                       IFNULL((SELECT j.chat_id FROM chat_message_join j WHERE j.message_id = m.ROWID), 0),
+                       IFNULL(m.date_read, 0), IFNULL(m.date_edited, 0)
+                FROM message m
+                WHERE m.guid IN (\(placeholders))
+                """, bind: guids.map { .text($0) }, map: messageRow)
+        }
+    }
+
     func maxMessageRowID() throws -> Int64 {
         try withConnection { db in
             try query(db, "SELECT IFNULL(MAX(ROWID), 0) FROM message", bind: []) { stmt in

@@ -70,6 +70,24 @@ struct MessageReaction: Hashable, Codable, Sendable, Identifiable {
     let kind: ReactionKind
     let senderDisplayName: String
     let glyph: String
+    let isFromMe: Bool
+
+    init(id: String, kind: ReactionKind, senderDisplayName: String, glyph: String, isFromMe: Bool = false) {
+        self.id = id
+        self.kind = kind
+        self.senderDisplayName = senderDisplayName
+        self.glyph = glyph
+        self.isFromMe = isFromMe
+    }
+}
+
+/// Snapshot of the message a reply targets, resolved at mapping time so the
+/// quote renders even when the original falls outside the loaded page.
+struct QuotedMessage: Hashable, Codable, Sendable {
+    let id: MessageID
+    let senderName: String
+    let text: String
+    let hasAttachments: Bool
 }
 
 enum MessageDeliveryState: String, Codable, Sendable {
@@ -98,6 +116,7 @@ struct Message: Hashable, Codable, Sendable, Identifiable {
     let deliveryState: MessageDeliveryState
     let readAt: Date?
     let isEdited: Bool
+    let quoted: QuotedMessage?
 
     init(
         id: MessageID,
@@ -116,7 +135,8 @@ struct Message: Hashable, Codable, Sendable, Identifiable {
         service: MessageServiceKind,
         deliveryState: MessageDeliveryState,
         readAt: Date? = nil,
-        isEdited: Bool = false
+        isEdited: Bool = false,
+        quoted: QuotedMessage? = nil
     ) {
         self.id = id
         self.conversationID = conversationID
@@ -135,6 +155,7 @@ struct Message: Hashable, Codable, Sendable, Identifiable {
         self.deliveryState = deliveryState
         self.readAt = readAt
         self.isEdited = isEdited
+        self.quoted = quoted
     }
 }
 
