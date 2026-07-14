@@ -241,6 +241,16 @@ struct ContactSuggestion: Hashable, Sendable, Identifiable {
     var id: String { handle }
 }
 
+/// One entry in a conversation's media gallery: an attachment plus enough
+/// context to jump back to the message it arrived with.
+struct MediaItem: Hashable, Sendable, Identifiable {
+    let attachment: MessageAttachment
+    let messageID: MessageID
+    let createdAt: Date
+
+    var id: String { attachment.id }
+}
+
 enum UserFacingSendError: String, Error, Codable, Sendable {
     case unsupported
     case permissionDenied

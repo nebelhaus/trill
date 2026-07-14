@@ -37,16 +37,22 @@ struct RiceSubtleButtonStyle: ButtonStyle {
 
 /// Borderless icon button with a soft hover tint.
 struct RiceIconButtonStyle: ButtonStyle {
+    /// Keeps the button visibly lit, for toggles like the unread filter.
+    var isActive = false
+
     @Environment(\.uiScale) private var scale
+    @Environment(\.riceAccent) private var accent
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 12 * scale, weight: .medium))
-            .foregroundStyle(isHovering ? Rice.text : Rice.subtext0)
+            .foregroundStyle(isActive ? accent : (isHovering ? Rice.text : Rice.subtext0))
             .frame(width: 24 * scale, height: 22 * scale)
             .background(
-                Rice.surface0.opacity(configuration.isPressed ? 1 : (isHovering ? 0.7 : 0)),
+                isActive
+                    ? accent.opacity(0.18)
+                    : Rice.surface0.opacity(configuration.isPressed ? 1 : (isHovering ? 0.7 : 0)),
                 in: RoundedRectangle(cornerRadius: 6, style: .continuous)
             )
             .onHover { isHovering = $0 }

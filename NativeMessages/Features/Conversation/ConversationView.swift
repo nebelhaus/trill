@@ -6,6 +6,10 @@ struct ConversationView: View {
     @ObservedObject var composer: ComposerModel
     var density: DisplayDensity = .comfortable
     var headerLeadingInset: CGFloat = 0
+    var isPinned = false
+    var onTogglePin: () -> Void = {}
+
+    @State private var isGalleryPresented = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,6 +23,16 @@ struct ConversationView: View {
         .dropDestination(for: URL.self) { urls, _ in
             composer.stageAttachments(urls)
             return composer.canSendAttachments
+        }
+        .sheet(isPresented: $isGalleryPresented) {
+            MediaGalleryView(
+                model: model,
+                onReveal: { target in
+                    isGalleryPresented = false
+                    model.reveal(target)
+                },
+                onClose: { isGalleryPresented = false }
+            )
         }
     }
 
@@ -40,6 +54,18 @@ struct ConversationView: View {
                 }
             }
             Spacer()
+            Button(action: onTogglePin) {
+                Image(systemName: isPinned ? "pin.fill" : "pin")
+            }
+            .buttonStyle(RiceIconButtonStyle())
+            .help(isPinned ? "Unpin conversation (⇧⌘P)" : "Pin conversation (⇧⌘P)")
+            Button {
+                isGalleryPresented = true
+            } label: {
+                Image(systemName: "photo.on.rectangle.angled")
+            }
+            .buttonStyle(RiceIconButtonStyle())
+            .help("Media gallery")
             if let service = model.conversation?.service {
                 ServiceChip(service: service)
             }

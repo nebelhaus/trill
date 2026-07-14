@@ -67,6 +67,10 @@ actor MessagesRepository {
         await provider.contactSuggestions(matching: term)
     }
 
+    func media(in conversation: ConversationID, limit: Int) async throws -> [MediaItem] {
+        try await provider.media(in: conversation, limit: limit)
+    }
+
     func search(_ query: MessageSearchQuery) async throws -> MessageSearchPage {
         let result = try await provider.search(query)
         AppLog.repository.info("Search completed count=\(result.messages.count, privacy: .public)")

@@ -219,6 +219,28 @@ actor LiveIMessageProvider: MessagesProvider {
         return await contacts.suggestions(matching: term)
     }
 
+    func media(in conversation: ConversationID, limit: Int) async throws -> [MediaItem] {
+        guard conversation.provider == id else { throw MessagesProviderError.wrongProvider }
+        guard let chat = try reader.chat(guid: conversation.externalGUID) else { return [] }
+        return try reader.media(chatRowID: chat.rowID, limit: limit)
+            .filter { !Self.isPluginPayload($0.row) }
+            .compactMap { entry in
+                let attachment = Self.attachment(entry.row)
+                guard Self.isMedia(attachment) else { return nil }
+                return MediaItem(
+                    attachment: attachment,
+                    messageID: MessageID(provider: id, externalGUID: entry.messageGUID),
+                    createdAt: Self.date(fromAppleNanoseconds: entry.date)
+                )
+            }
+    }
+
+    private static func isMedia(_ attachment: MessageAttachment) -> Bool {
+        attachment.isImage
+            || (attachment.mimeType?.hasPrefix("video/") ?? false)
+            || (attachment.uniformTypeIdentifier?.contains("movie") ?? false)
+    }
+
     // MARK: - Mapping
 
     private func conversation(from chat: ChatDatabaseReader.ChatRow) async throws -> Conversation {

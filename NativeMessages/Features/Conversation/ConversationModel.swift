@@ -153,6 +153,12 @@ final class ConversationModel: ObservableObject {
         }
     }
 
+    func loadMedia(limit: Int = 200) async -> [MediaItem] {
+        guard let conversation else { return [] }
+        let repository = repository
+        return (try? await repository.media(in: conversation.id, limit: limit)) ?? []
+    }
+
     func loadOlder() async {
         guard let conversation, let nextBefore, !isLoadingOlder else { return }
         isLoadingOlder = true

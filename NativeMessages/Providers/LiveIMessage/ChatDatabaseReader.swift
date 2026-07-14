@@ -279,6 +279,38 @@ struct ChatDatabaseReader: Sendable {
         }
     }
 
+    /// Every attachment in a chat, newest-first, with the owning message's
+    /// GUID and date so gallery items can link back to the timeline.
+    func media(chatRowID: Int64, limit: Int) throws -> [(row: AttachmentRow, messageGUID: String, date: Int64)] {
+        try withConnection { db in
+            try query(db, """
+                SELECT maj.message_id, a.guid, a.filename, a.mime_type, a.uti, a.transfer_name,
+                       IFNULL(a.total_bytes, 0), m.guid, m.date
+                FROM attachment a
+                JOIN message_attachment_join maj ON maj.attachment_id = a.ROWID
+                JOIN message m ON m.ROWID = maj.message_id
+                JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+                WHERE cmj.chat_id = ? AND IFNULL(m.date_retracted, 0) = 0
+                ORDER BY m.date DESC
+                LIMIT ?
+                """, bind: [.int(chatRowID), .int(Int64(limit))]) { stmt in
+                (
+                    row: AttachmentRow(
+                        messageRowID: sqlite3_column_int64(stmt, 0),
+                        guid: text(stmt, 1) ?? "",
+                        filename: text(stmt, 2),
+                        mimeType: text(stmt, 3),
+                        uti: text(stmt, 4),
+                        transferName: text(stmt, 5),
+                        totalBytes: sqlite3_column_int64(stmt, 6)
+                    ),
+                    messageGUID: text(stmt, 7) ?? "",
+                    date: sqlite3_column_int64(stmt, 8)
+                )
+            }
+        }
+    }
+
     /// Case-insensitive-ish text search. `instr` covers attributedBody blobs
     /// byte-wise (case-sensitive); results are re-filtered after decoding.
     func searchMessages(term: String, limit: Int) throws -> [MessageRow] {

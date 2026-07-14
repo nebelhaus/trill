@@ -5,6 +5,9 @@ struct AppCommands: Commands {
     let showSearch: () -> Void
     let reload: () -> Void
     let toggleSidebar: () -> Void
+    let togglePin: () -> Void
+    let toggleUnreadFilter: () -> Void
+    let selectPinned: (Int) -> Void
     let useFixture: () -> Void
     let useMessages: () -> Void
     let zoomIn: () -> Void
@@ -22,6 +25,16 @@ struct AppCommands: Commands {
                 .keyboardShortcut("k", modifiers: .command)
             Button("Reload", action: reload)
                 .keyboardShortcut("r", modifiers: .command)
+            Divider()
+            Button("Pin/Unpin Conversation", action: togglePin)
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+            Button("Unread Only", action: toggleUnreadFilter)
+                .keyboardShortcut("u", modifiers: [.command, .shift])
+            Divider()
+            ForEach(1..<10) { slot in
+                Button("Pinned Conversation \(slot)") { selectPinned(slot - 1) }
+                    .keyboardShortcut(KeyEquivalent(Character("\(slot)")), modifiers: .command)
+            }
             Divider()
             Menu("Provider") {
                 Button("Synthetic Fixtures", action: useFixture)

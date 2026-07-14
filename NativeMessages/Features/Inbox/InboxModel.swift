@@ -42,6 +42,9 @@ final class InboxModel: ObservableObject {
     @Published var isSearchPresented = false
     @Published var isComposePresented = false
     @Published var isSidebarVisible = true
+    @Published var showsUnreadOnly = UserDefaults.standard.bool(forKey: "showsUnreadOnly") {
+        didSet { UserDefaults.standard.set(showsUnreadOnly, forKey: "showsUnreadOnly") }
+    }
     @Published private(set) var providerMode: ProviderMode = .fixture
     @Published private(set) var errorSummary: String?
 
@@ -141,6 +144,31 @@ final class InboxModel: ObservableObject {
         repository = MessagesRepository(provider: Self.makeProvider(mode), database: database)
         conversationModel.updateRepository(repository)
         load()
+    }
+
+    /// Sidebar list after the unread-only filter. The selected conversation
+    /// stays visible so toggling the filter never yanks the open thread.
+    var visibleConversations: [Conversation] {
+        guard showsUnreadOnly else { return conversations }
+        return conversations.filter {
+            hasVisibleUnread($0) || $0.id == selectedConversationID
+        }
+    }
+
+    /// Pinned conversations in sidebar order (they sort first).
+    var pinnedConversations: [Conversation] {
+        conversations.filter { pinnedIDs.contains($0.id) }
+    }
+
+    func selectPinned(at index: Int) {
+        let pinned = pinnedConversations
+        guard pinned.indices.contains(index) else { return }
+        select(pinned[index].id)
+    }
+
+    func toggleSelectedPin() {
+        guard let id = selectedConversationID else { return }
+        togglePin(id)
     }
 
     func hasVisibleUnread(_ conversation: Conversation) -> Bool {

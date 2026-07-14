@@ -83,6 +83,19 @@ actor FixtureProvider: MessagesProvider {
         .rejected(operationID: request.operationID, reason: .unsupported)
     }
 
+    func media(in conversation: ConversationID, limit: Int) async throws -> [MediaItem] {
+        guard conversation.provider == id else { throw MessagesProviderError.wrongProvider }
+        guard let history = fixture.messages[conversation] else { return [] }
+        return history.reversed()
+            .flatMap { message in
+                message.attachments
+                    .filter(\.isImage)
+                    .map { MediaItem(attachment: $0, messageID: message.id, createdAt: message.createdAt) }
+            }
+            .prefix(limit)
+            .map { $0 }
+    }
+
     func emit(_ event: ProviderEvent) {
         for continuation in continuations.values {
             continuation.yield(event)

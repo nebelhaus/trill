@@ -141,7 +141,9 @@ struct InboxView: View {
                     model: model.conversationModel,
                     composer: model.composerModel,
                     density: density,
-                    headerLeadingInset: model.isSidebarVisible ? 0 : 104
+                    headerLeadingInset: model.isSidebarVisible ? 0 : 104,
+                    isPinned: model.selectedConversationID.map { model.pinnedIDs.contains($0) } ?? false,
+                    onTogglePin: model.toggleSelectedPin
                 )
             }
         }
@@ -219,6 +221,15 @@ private struct SidebarView: View {
                 }
                 .buttonStyle(RiceIconButtonStyle())
                 .help("New message (⌘N)")
+                Button {
+                    model.showsUnreadOnly.toggle()
+                } label: {
+                    Image(systemName: model.showsUnreadOnly
+                          ? "line.3.horizontal.decrease.circle.fill"
+                          : "line.3.horizontal.decrease.circle")
+                }
+                .buttonStyle(RiceIconButtonStyle(isActive: model.showsUnreadOnly))
+                .help(model.showsUnreadOnly ? "Show all conversations (⇧⌘U)" : "Show unread only (⇧⌘U)")
                 Button(action: model.load) {
                     Image(systemName: "arrow.clockwise")
                 }
@@ -256,29 +267,21 @@ private struct SidebarView: View {
                 message: "This provider returned no conversations."
             )
         case .loaded:
-            ScrollView {
-                LazyVStack(spacing: 1) {
-                    ForEach(model.conversations) { conversation in
-                        ConversationRowButton(
-                            conversation: conversation,
-                            isPinned: model.pinnedIDs.contains(conversation.id),
-                            isSelected: model.selectedConversationID == conversation.id,
-                            showsUnread: model.hasVisibleUnread(conversation),
-                            density: density
-                        ) {
-                            model.select(conversation.id)
-                        }
-                        .contextMenu {
-                            Button(model.pinnedIDs.contains(conversation.id) ? "Unpin" : "Pin") {
-                                model.togglePin(conversation.id)
-                            }
-                        }
-                    }
+            if model.visibleConversations.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle")
+                        .riceFont(22)
+                        .foregroundStyle(Rice.green)
+                    Text("No unread conversations")
+                        .riceFont(12, .medium)
+                        .foregroundStyle(Rice.subtext1)
+                    Button("Show All") { model.showsUnreadOnly = false }
+                        .buttonStyle(RiceSubtleButtonStyle())
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                conversationList
             }
-            .accessibilityLabel("Conversations")
         case .permissionMissing, .unsupportedSchema, .providerUnavailable, .failed:
             VStack(spacing: 12) {
                 Image(systemName: "exclamationmark.triangle")
@@ -292,6 +295,32 @@ private struct SidebarView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private var conversationList: some View {
+        ScrollView {
+            LazyVStack(spacing: 1) {
+                ForEach(model.visibleConversations) { conversation in
+                    ConversationRowButton(
+                        conversation: conversation,
+                        isPinned: model.pinnedIDs.contains(conversation.id),
+                        isSelected: model.selectedConversationID == conversation.id,
+                        showsUnread: model.hasVisibleUnread(conversation),
+                        density: density
+                    ) {
+                        model.select(conversation.id)
+                    }
+                    .contextMenu {
+                        Button(model.pinnedIDs.contains(conversation.id) ? "Unpin" : "Pin") {
+                            model.togglePin(conversation.id)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+        }
+        .accessibilityLabel("Conversations")
     }
 
     private var footer: some View {

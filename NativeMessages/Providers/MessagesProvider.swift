@@ -13,6 +13,7 @@ protocol MessagesProvider: Sendable {
     func sendDirect(_ request: DirectSendRequest) async throws -> SendOutcome
     func react(_ request: ReactionRequest) async throws -> ReactionOutcome
     func contactSuggestions(matching term: String) async -> [ContactSuggestion]
+    func media(in conversation: ConversationID, limit: Int) async throws -> [MediaItem]
 }
 
 extension MessagesProvider {
@@ -21,6 +22,8 @@ extension MessagesProvider {
     }
 
     func contactSuggestions(matching term: String) async -> [ContactSuggestion] { [] }
+
+    func media(in conversation: ConversationID, limit: Int) async throws -> [MediaItem] { [] }
 }
 
 enum MessagesProviderError: LocalizedError, Sendable {
