@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ConversationView: View {
@@ -90,6 +91,7 @@ private struct MessageTimelineView: View {
                                     startsGroup: startsGroup(at: index),
                                     endsGroup: endsGroup(at: index),
                                     isLatestOutgoing: message.id == latestOutgoingID,
+                                    isHighlighted: message.id == model.highlightedMessageID,
                                     replyIDs: replies[message.id] ?? [],
                                     onJump: { target in
                                         withAnimation(.easeInOut(duration: 0.25)) {
@@ -105,6 +107,13 @@ private struct MessageTimelineView: View {
                     }
                     .defaultScrollAnchor(.bottom)
                     .id(model.conversation?.id)
+                    .onChange(of: model.revealTarget) { _, target in
+                        guard let target else { return }
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            proxy.scrollTo(target, anchor: .center)
+                        }
+                        model.consumeRevealTarget()
+                    }
                 }
             }
         }
@@ -197,6 +206,7 @@ private struct MessageRow: View {
     let startsGroup: Bool
     let endsGroup: Bool
     let isLatestOutgoing: Bool
+    var isHighlighted = false
     var replyIDs: [MessageID] = []
     var onJump: (MessageID) -> Void = { _ in }
 
@@ -241,6 +251,22 @@ private struct MessageRow: View {
                 .padding(.horizontal, 11)
                 .padding(.vertical, 7)
                 .background(bubbleColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(accent, lineWidth: isHighlighted ? 1.5 : 0)
+                )
+                .animation(.easeOut(duration: 0.4), value: isHighlighted)
+                .contextMenu {
+                    if !message.text.isEmpty {
+                        Button("Copy Text") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(message.text, forType: .string)
+                        }
+                    }
+                    if let quoted = message.quoted {
+                        Button("Jump to Original") { onJump(quoted.id) }
+                    }
+                }
                 .overlay(alignment: message.isOutgoing ? .topLeading : .topTrailing) {
                     if !message.reactions.isEmpty {
                         ReactionBadges(reactions: message.reactions)

@@ -191,9 +191,32 @@ actor LiveIMessageProvider: MessagesProvider {
         }
     }
 
+    func sendDirect(_ request: DirectSendRequest) async throws -> SendOutcome {
+        let handle = request.handle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !handle.isEmpty, !text.isEmpty else {
+            return .rejected(operationID: request.operationID, reason: .invalidRequest)
+        }
+        do {
+            try sender.send(text: text, toHandle: handle)
+            return .accepted(operationID: request.operationID)
+        } catch let failure as MessagesSender.SendFailure {
+            AppLog.repository.error("Direct send failed detail=\(failure.message, privacy: .public)")
+            let reason: UserFacingSendError = failure.message.contains("-1743")
+                ? .permissionDenied
+                : .providerUnavailable
+            return .rejected(operationID: request.operationID, reason: reason)
+        }
+    }
+
     func react(_ request: ReactionRequest) async throws -> ReactionOutcome {
         // Messages.app exposes no supported automation surface for tapbacks.
         .rejected(operationID: request.operationID, reason: .unsupported)
+    }
+
+    func contactSuggestions(matching term: String) async -> [ContactSuggestion] {
+        await contacts.prepare()
+        return await contacts.suggestions(matching: term)
     }
 
     // MARK: - Mapping

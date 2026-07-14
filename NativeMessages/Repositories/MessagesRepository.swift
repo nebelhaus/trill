@@ -57,6 +57,16 @@ actor MessagesRepository {
         return outcome
     }
 
+    func sendDirect(_ request: DirectSendRequest) async throws -> SendOutcome {
+        let outcome = try await provider.sendDirect(request)
+        AppLog.repository.info("Direct send completed operation=\(request.operationID, privacy: .public)")
+        return outcome
+    }
+
+    func contactSuggestions(matching term: String) async -> [ContactSuggestion] {
+        await provider.contactSuggestions(matching: term)
+    }
+
     func search(_ query: MessageSearchQuery) async throws -> MessageSearchPage {
         let result = try await provider.search(query)
         AppLog.repository.info("Search completed count=\(result.messages.count, privacy: .public)")

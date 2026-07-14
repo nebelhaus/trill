@@ -1,4 +1,5 @@
 import AppKit
+import QuickLook
 import SwiftUI
 
 /// Downscaled attachment thumbnails via ImageIO, cached in-memory.
@@ -36,17 +37,18 @@ enum ThumbnailLoader {
 }
 
 /// Image attachments render as clickable thumbnails; other files as a
-/// clickable row. Clicking opens the file with its default app.
+/// clickable row. Clicking opens an in-place Quick Look preview.
 struct AttachmentView: View {
     let attachment: MessageAttachment
     @State private var thumbnail: NSImage?
+    @State private var quickLookURL: URL?
     @Environment(\.riceAccent) private var accent
     @Environment(\.uiScale) private var scale
 
     var body: some View {
         if attachment.isImage, let url = attachment.localURL {
             Button {
-                NSWorkspace.shared.open(url)
+                quickLookURL = url
             } label: {
                 Group {
                     if let thumbnail {
@@ -69,10 +71,20 @@ struct AttachmentView: View {
             .task(id: url) {
                 thumbnail = await ThumbnailLoader.load(url)
             }
+            .quickLookPreview($quickLookURL)
+            .contextMenu { fileActions(url) }
             .help(attachment.displayName)
             .accessibilityLabel("Image attachment \(attachment.displayName)")
         } else {
             fileRow
+        }
+    }
+
+    @ViewBuilder
+    private func fileActions(_ url: URL) -> some View {
+        Button("Open") { NSWorkspace.shared.open(url) }
+        Button("Reveal in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
         }
     }
 
@@ -97,7 +109,13 @@ struct AttachmentView: View {
         .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .onTapGesture {
             if let url = attachment.localURL {
-                NSWorkspace.shared.open(url)
+                quickLookURL = url
+            }
+        }
+        .quickLookPreview($quickLookURL)
+        .contextMenu {
+            if let url = attachment.localURL {
+                fileActions(url)
             }
         }
         .accessibilityElement(children: .combine)

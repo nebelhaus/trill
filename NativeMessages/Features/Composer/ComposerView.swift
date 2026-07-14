@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ComposerView: View {
     @ObservedObject var model: ComposerModel
@@ -13,6 +15,15 @@ struct ComposerView: View {
             }
 
             HStack(alignment: .bottom, spacing: 9) {
+                Button(action: presentAttachmentPanel) {
+                    Image(systemName: "paperclip")
+                        .riceFont(13)
+                }
+                .buttonStyle(RiceIconButtonStyle())
+                .disabled(!model.canSendAttachments)
+                .help("Attach files")
+                .padding(.bottom, 3)
+
                 TextEditor(text: $model.text)
                     .riceFont(13)
                     .foregroundStyle(Rice.text)
@@ -29,6 +40,9 @@ struct ComposerView: View {
                     )
                     .disabled(model.conversationID == nil)
                     .onChange(of: model.text) { _, _ in model.textDidChange() }
+                    .onPasteCommand(of: [.fileURL, .png, .tiff]) { _ in
+                        stagePasteboardContents()
+                    }
                     .accessibilityLabel("Message draft")
 
                 Button {
@@ -127,5 +141,47 @@ struct ComposerView: View {
             !model.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 || !model.pendingAttachments.isEmpty
         )
+    }
+
+    private func presentAttachmentPanel() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.prompt = "Attach"
+        if panel.runModal() == .OK {
+            model.stageAttachments(panel.urls)
+        }
+    }
+
+    /// ⌘V with files or an image on the clipboard stages an attachment;
+    /// plain-text pastes never reach this (the types don't match).
+    private func stagePasteboardContents() {
+        let pasteboard = NSPasteboard.general
+        if let urls = pasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL], !urls.isEmpty {
+            model.stageAttachments(urls)
+            return
+        }
+        let png: Data?
+        if let direct = pasteboard.data(forType: .png) {
+            png = direct
+        } else if let tiff = pasteboard.data(forType: .tiff),
+                  let converted = NSBitmapImageRep(data: tiff)?
+                      .representation(using: .png, properties: [:]) {
+            png = converted
+        } else {
+            png = nil
+        }
+        guard let png else { return }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pasted-\(UUID().uuidString.prefix(8)).png")
+        do {
+            try png.write(to: url)
+            model.stageAttachments([url])
+        } catch {
+            AppLog.ui.error("Pasted image staging failed error=\(String(describing: type(of: error)), privacy: .public)")
+        }
     }
 }

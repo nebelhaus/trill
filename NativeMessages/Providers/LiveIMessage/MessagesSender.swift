@@ -45,6 +45,34 @@ struct MessagesSender: Sendable {
         }
     }
 
+    /// Sends directly to a handle, letting Messages.app create the thread if
+    /// none exists. Tries iMessage first, then SMS for phone numbers.
+    func send(text: String, toHandle handle: String) throws {
+        do {
+            try run(script: Self.participantScript(service: "iMessage"), arguments: [handle, text])
+        } catch let firstError as SendFailure {
+            guard !handle.contains("@") else { throw firstError }
+            do {
+                try run(script: Self.participantScript(service: "SMS"), arguments: [handle, text])
+            } catch {
+                throw firstError
+            }
+        }
+    }
+
+    private static func participantScript(service: String) -> String {
+        """
+        on run argv
+            set handleId to item 1 of argv
+            set messageText to item 2 of argv
+            tell application "Messages"
+                set targetService to 1st account whose service type = \(service)
+                send messageText to participant handleId of targetService
+            end tell
+        end run
+        """
+    }
+
     /// Sends a file the same way — Messages.app copies it into its own store.
     func sendFile(at url: URL, chatGUID: String) throws {
         let script = """

@@ -21,6 +21,7 @@ struct NativeMessagesApp: App {
         .windowStyle(.hiddenTitleBar)
         .commands {
             AppCommands(
+                newMessage: { inboxModel.isComposePresented = true },
                 showSearch: { inboxModel.isSearchPresented = true },
                 reload: { inboxModel.load() },
                 toggleSidebar: { inboxModel.toggleSidebar() },

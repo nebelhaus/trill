@@ -7,10 +7,12 @@ Native Messages is a provider-neutral macOS Messages client in SwiftUI. The live
 - Native macOS 14+ split-view app with conversation sidebar, paged timeline, ⌘K search palette, pins, draft persistence, health UI, keyboard commands, and accessibility labels.
 - Flat dark UI on the Nebelung palette (desaturated Catppuccin) with a selectable accent, display density, and ⌘+/⌘−/⌘0 zoom — see `NativeMessages/DesignSystem/`.
 - **Live Messages provider** (`Providers/LiveIMessage/`): read-only SQL over `chat.db` for iMessage/SMS/RCS conversations, messages, reactions, replies, attachments, and search (including typedstream `attributedBody` decoding); sending via AppleScript to Messages.app; new-message polling for live updates; contact-name resolution via the Contacts framework.
-- Read receipts and delivery status on outgoing messages, inline image thumbnails (click to open), clickable links, edited markers, hidden unsent messages, sender avatars in group timelines, and a Dock badge with the total unread count.
+- Read receipts and delivery status on outgoing messages, inline image thumbnails, Quick Look previews on attachments, clickable links, edited markers, hidden unsent messages, sender avatars in group timelines, and a Dock badge with the total unread count.
+- Quoted reply bubbles with jump-to-original, reply-count links, and tapbacks grouped by emoji with counts and own-reaction tinting (display only — Messages.app has no automation surface for sending tapbacks or threaded replies).
+- macOS notifications for incoming messages (click opens the thread), ⌘N compose to any contact with autocomplete (existing 1:1 threads open in place), attach via paperclip / drag-drop / paste, and search results that jump to the matched message with a highlight.
 - Synthetic iMessage, SMS, and group conversations with long history, reactions, replies, image/file metadata, and missing-attachment states.
 - Provider-neutral IDs, models, capabilities, pagination, events, and send outcomes.
-- App-owned SQLite migrations for pins, drafts, and provider cursors.
+- App-owned SQLite migrations for pins, drafts, provider cursors, and local read marks.
 - Read-only Messages database permission/schema probe.
 
 The live provider never writes to `chat.db` — every connection is `SQLITE_OPEN_READONLY` and sends go through Messages.app, which owns its own persistence. The older [`beeper/platform-imessage`](https://github.com/beeper/platform-imessage) adapter remains in the tree but unused by the UI: its public `PlatformAPI` can create indexes in `chat.db`, which is why it was gated (see [ADR 0001](docs/architecture-decisions/0001-messages-provider.md)) and ultimately bypassed in favor of the direct reader.
@@ -21,7 +23,9 @@ The live provider never writes to `chat.db` — every connection is `SQLITE_OPEN
 - **Automation ("control Messages")** — prompted on first send.
 - **Contacts** — optional; grants names *and* contact photos via the Contacts framework. Without it, names still resolve by reading the local AddressBook store directly (covered by Full Disk Access); only photos are missing.
 
-Marking conversations as read is not possible (that would require writing to `chat.db`), so unread badges reflect Messages.app's own state.
+- **Notifications** — optional; prompted on first launch with the live provider.
+
+Marking conversations as read upstream is not possible (that would require writing to `chat.db`); opening a thread clears its badge locally and the mark persists in the app's own database.
 
 ## Requirements
 

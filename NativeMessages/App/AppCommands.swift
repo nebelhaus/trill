@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AppCommands: Commands {
+    let newMessage: () -> Void
     let showSearch: () -> Void
     let reload: () -> Void
     let toggleSidebar: () -> Void
@@ -11,6 +12,11 @@ struct AppCommands: Commands {
     let zoomReset: () -> Void
 
     var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New Message", action: newMessage)
+                .keyboardShortcut("n", modifiers: .command)
+        }
+
         CommandMenu("Messages") {
             Button("Search…", action: showSearch)
                 .keyboardShortcut("k", modifiers: .command)

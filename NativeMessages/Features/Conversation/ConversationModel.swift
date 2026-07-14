@@ -15,6 +15,10 @@ final class ConversationModel: ObservableObject {
     @Published private(set) var nextBefore: String?
     @Published private(set) var state: ConversationLoadState = .idle
     @Published private(set) var isLoadingOlder = false
+    /// Set when a loaded message should be scrolled into view (search result,
+    /// reply-quote jump across pages). The view consumes it.
+    @Published private(set) var revealTarget: MessageID?
+    @Published private(set) var highlightedMessageID: MessageID?
 
     private var repository: MessagesRepository
     private var loadTask: Task<Void, Never>?
@@ -42,14 +46,18 @@ final class ConversationModel: ObservableObject {
         messages = []
         nextBefore = nil
         state = .idle
+        revealTarget = nil
+        highlightedMessageID = nil
     }
 
-    func select(_ conversation: Conversation) {
+    func select(_ conversation: Conversation, reveal: MessageID? = nil) {
         loadTask?.cancel()
         self.conversation = conversation
         messages = []
         nextBefore = nil
         state = .loading
+        revealTarget = nil
+        highlightedMessageID = nil
         let repository = repository
         loadTask = Task { [weak self] in
             guard let self else { return }
@@ -60,6 +68,9 @@ final class ConversationModel: ObservableObject {
                 nextBefore = page.nextBefore
                 state = messages.isEmpty ? .empty : .loaded
                 startPeriodicRefresh()
+                if let reveal {
+                    await revealMessage(reveal)
+                }
             } catch is CancellationError {
                 return
             } catch {
@@ -112,6 +123,34 @@ final class ConversationModel: ObservableObject {
         guard !messages.contains(where: { $0.id == message.id }) else { return }
         messages = (messages + [message]).sorted(by: Self.chronological)
         state = .loaded
+    }
+
+    func reveal(_ id: MessageID) {
+        Task { [weak self] in
+            await self?.revealMessage(id)
+        }
+    }
+
+    func consumeRevealTarget() {
+        revealTarget = nil
+    }
+
+    /// Pages backwards (bounded) until the target message is loaded, then
+    /// asks the view to scroll to it and flashes a highlight.
+    private func revealMessage(_ id: MessageID) async {
+        var remainingPages = 10
+        while !messages.contains(where: { $0.id == id }), nextBefore != nil, remainingPages > 0 {
+            await loadOlder()
+            remainingPages -= 1
+        }
+        guard messages.contains(where: { $0.id == id }) else { return }
+        revealTarget = id
+        highlightedMessageID = id
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(1_600))
+            guard let self, self.highlightedMessageID == id else { return }
+            self.highlightedMessageID = nil
+        }
     }
 
     func loadOlder() async {

@@ -10,7 +10,17 @@ protocol MessagesProvider: Sendable {
     func search(_ query: MessageSearchQuery) async throws -> MessageSearchPage
     func events(after cursor: EventCursor?) async -> AsyncThrowingStream<ProviderEvent, Error>
     func send(_ request: SendRequest) async throws -> SendOutcome
+    func sendDirect(_ request: DirectSendRequest) async throws -> SendOutcome
     func react(_ request: ReactionRequest) async throws -> ReactionOutcome
+    func contactSuggestions(matching term: String) async -> [ContactSuggestion]
+}
+
+extension MessagesProvider {
+    func sendDirect(_ request: DirectSendRequest) async throws -> SendOutcome {
+        .rejected(operationID: request.operationID, reason: .unsupported)
+    }
+
+    func contactSuggestions(matching term: String) async -> [ContactSuggestion] { [] }
 }
 
 enum MessagesProviderError: LocalizedError, Sendable {

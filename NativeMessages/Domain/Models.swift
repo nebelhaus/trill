@@ -226,6 +226,21 @@ struct SendRequest: Sendable {
     let attachments: [URL]
 }
 
+/// Send addressed to a raw handle instead of an existing conversation —
+/// Messages.app creates the thread if none exists yet.
+struct DirectSendRequest: Sendable {
+    let operationID: UUID
+    let handle: String
+    let text: String
+}
+
+struct ContactSuggestion: Hashable, Sendable, Identifiable {
+    let name: String
+    let handle: String
+
+    var id: String { handle }
+}
+
 enum UserFacingSendError: String, Error, Codable, Sendable {
     case unsupported
     case permissionDenied

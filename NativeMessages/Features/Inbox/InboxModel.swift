@@ -40,6 +40,7 @@ final class InboxModel: ObservableObject {
     @Published private(set) var clearedUnreadAt: [ConversationID: Date] = [:]
     @Published private(set) var searchResults: [Message] = []
     @Published var isSearchPresented = false
+    @Published var isComposePresented = false
     @Published var isSidebarVisible = true
     @Published private(set) var providerMode: ProviderMode = .fixture
     @Published private(set) var errorSummary: String?
@@ -48,6 +49,7 @@ final class InboxModel: ObservableObject {
     let composerModel: ComposerModel
 
     private let database: AppDatabase
+    private let notifications = NotificationCoordinator()
     private var repository: MessagesRepository
     private var loadTask: Task<Void, Never>?
     private var eventTask: Task<Void, Never>?
@@ -62,6 +64,9 @@ final class InboxModel: ObservableObject {
         self.repository = repository
         conversationModel = ConversationModel(repository: repository)
         composerModel = ComposerModel(database: database)
+        notifications.openConversation = { [weak self] id in
+            self?.select(id)
+        }
     }
 
     deinit {
@@ -110,6 +115,9 @@ final class InboxModel: ObservableObject {
                 state = conversations.isEmpty ? .empty : .loaded
                 updateDockBadge()
                 startEventStream()
+                if providerMode == .messages {
+                    notifications.prepare()
+                }
             } catch is CancellationError {
                 return
             } catch {
@@ -143,19 +151,22 @@ final class InboxModel: ObservableObject {
         return true
     }
 
-    func select(_ id: ConversationID?) {
+    func select(_ id: ConversationID?, focus: MessageID? = nil) {
         if selectedConversationID != id { selectedConversationID = id }
         if let id {
             markCleared(id)
             updateDockBadge()
         }
-        guard conversationModel.conversation?.id != id else { return }
+        guard conversationModel.conversation?.id != id else {
+            if let focus { conversationModel.reveal(focus) }
+            return
+        }
         guard let conversation = conversations.first(where: { $0.id == id }) else {
             conversationModel.clear()
             composerModel.select(nil, capabilities: capabilities, health: health, sendAction: nil)
             return
         }
-        conversationModel.select(conversation)
+        conversationModel.select(conversation, reveal: focus)
         let repository = repository
         composerModel.select(conversation.id, capabilities: capabilities, health: health) { text, attachments in
             try await repository.send(SendRequest(
@@ -193,6 +204,7 @@ final class InboxModel: ObservableObject {
             if message.conversationID == selectedConversationID {
                 markCleared(message.conversationID)
             }
+            maybeNotify(message)
         case let .conversationUpdated(conversation, _):
             if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
                 conversations[index] = conversation
@@ -204,6 +216,70 @@ final class InboxModel: ObservableObject {
             updateDockBadge()
         case let .healthChanged(updated):
             health = updated
+        }
+    }
+
+    private func maybeNotify(_ message: Message) {
+        guard providerMode == .messages, !message.isOutgoing else { return }
+        let isViewing = message.conversationID == selectedConversationID && NSApp.isActive
+        guard !isViewing else { return }
+        let name = conversations.first(where: { $0.id == message.conversationID })?.displayName
+            ?? message.sender?.displayName
+            ?? message.sender?.handle
+            ?? "New message"
+        notifications.post(message: message, conversationName: name)
+    }
+
+    // MARK: - Compose
+
+    var canCompose: Bool {
+        CapabilityGate.canSend(capabilities: capabilities, health: health)
+    }
+
+    func contactSuggestions(matching term: String) async -> [ContactSuggestion] {
+        await repository.contactSuggestions(matching: term)
+    }
+
+    /// Composing to a handle we already have a 1:1 thread with should open
+    /// that thread instead of blind-sending.
+    func existingDirectConversation(handle: String) -> Conversation? {
+        let normalized = ContactsNameResolver.normalize(handle)
+        guard !normalized.isEmpty else { return nil }
+        return conversations.first { conversation in
+            conversation.kind == .direct && conversation.participants.contains {
+                ContactsNameResolver.normalize($0.handle) == normalized
+            }
+        }
+    }
+
+    func sendDirect(handle: String, text: String) async -> SendOutcome {
+        let request = DirectSendRequest(operationID: UUID(), handle: handle, text: text)
+        let repository = repository
+        let outcome: SendOutcome
+        do {
+            outcome = try await repository.sendDirect(request)
+        } catch {
+            AppLog.repository.error("Direct send threw error=\(String(describing: type(of: error)), privacy: .public)")
+            return .rejected(operationID: request.operationID, reason: .providerUnavailable)
+        }
+        if case .accepted = outcome {
+            selectConversationWhenVisible(handle: handle)
+        }
+        return outcome
+    }
+
+    /// The poller surfaces the new thread within a couple of ticks; select it
+    /// once it lands so the composer continues where the sheet left off.
+    private func selectConversationWhenVisible(handle: String) {
+        Task { [weak self] in
+            for _ in 0..<5 {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self else { return }
+                if let conversation = self.existingDirectConversation(handle: handle) {
+                    self.select(conversation.id)
+                    return
+                }
+            }
         }
     }
 

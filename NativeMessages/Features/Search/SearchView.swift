@@ -102,7 +102,7 @@ struct SearchView: View {
     }
 
     private func open(_ message: Message) {
-        model.select(message.conversationID)
+        model.select(message.conversationID, focus: message.id)
         dismiss()
     }
 

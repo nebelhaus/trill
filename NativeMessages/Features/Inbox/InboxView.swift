@@ -71,6 +71,9 @@ struct InboxView: View {
             }
         }
         .animation(.easeOut(duration: 0.12), value: model.isSearchPresented)
+        .sheet(isPresented: $model.isComposePresented) {
+            ComposeSheet(model: model)
+        }
         .task { model.load() }
         .onChange(of: model.selectedConversationID) { _, selection in
             model.select(selection)
@@ -209,6 +212,13 @@ private struct SidebarView: View {
                 Text("Messages")
                     .riceSectionHeader()
                 Spacer()
+                Button {
+                    model.isComposePresented = true
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                }
+                .buttonStyle(RiceIconButtonStyle())
+                .help("New message (⌘N)")
                 Button(action: model.load) {
                     Image(systemName: "arrow.clockwise")
                 }
