@@ -16,7 +16,7 @@ enum AppDatabaseError: LocalizedError, Sendable {
 }
 
 actor AppDatabase {
-    static let currentSchemaVersion = 3
+    static let currentSchemaVersion = 4
 
     private final class Connection: @unchecked Sendable {
         let raw: OpaquePointer
@@ -114,6 +114,30 @@ actor AppDatabase {
         ) ?? ""
     }
 
+    func setReadMark(_ date: Date, conversationID: ConversationID) throws {
+        try execute(
+            "INSERT OR REPLACE INTO read_marks (conversation_key, marked_at) VALUES (?, ?)",
+            bindings: [.text(conversationID.persistenceKey), .double(date.timeIntervalSince1970)]
+        )
+    }
+
+    func readMarks() throws -> [ConversationID: Date] {
+        let handle = connection.raw
+        var statement: OpaquePointer?
+        let sql = "SELECT conversation_key, marked_at FROM read_marks"
+        guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK else { throw Self.error(handle) }
+        defer { sqlite3_finalize(statement) }
+        var result: [ConversationID: Date] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let key = sqlite3_column_text(statement, 0) else { continue }
+            guard let id = ConversationID(persistenceKey: String(cString: key)) else {
+                throw AppDatabaseError.invalidStoredIdentifier
+            }
+            result[id] = Date(timeIntervalSince1970: sqlite3_column_double(statement, 1))
+        }
+        return result
+    }
+
     func saveCursor(_ cursor: EventCursor, providerID: ProviderID) throws {
         try execute(
             "INSERT OR REPLACE INTO provider_cursors (provider_id, cursor, updated_at) VALUES (?, ?, ?)",
@@ -184,6 +208,7 @@ actor AppDatabase {
             (1, "CREATE TABLE pinned_conversations (conversation_key TEXT PRIMARY KEY NOT NULL, pinned_at REAL NOT NULL)"),
             (2, "CREATE TABLE drafts (conversation_key TEXT PRIMARY KEY NOT NULL, body TEXT NOT NULL, updated_at REAL NOT NULL)"),
             (3, "CREATE TABLE provider_cursors (provider_id TEXT PRIMARY KEY NOT NULL, cursor TEXT NOT NULL, updated_at REAL NOT NULL)"),
+            (4, "CREATE TABLE read_marks (conversation_key TEXT PRIMARY KEY NOT NULL, marked_at REAL NOT NULL)"),
         ]
         for (nextVersion, sql) in migrations where nextVersion > version {
             try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION")

@@ -34,5 +34,15 @@ final class AppDatabaseTests: XCTestCase {
         try await database.saveCursor(EventCursor(rawValue: "cursor-42"), providerID: provider)
         let cursor = try await database.cursor(providerID: provider)
         XCTAssertEqual(cursor?.rawValue, "cursor-42")
+
+        let markedAt = Date(timeIntervalSince1970: 1_750_000_000)
+        try await database.setReadMark(markedAt, conversationID: conversation)
+        let marks = try await database.readMarks()
+        XCTAssertEqual(marks[conversation]?.timeIntervalSince1970 ?? 0, markedAt.timeIntervalSince1970, accuracy: 0.001)
+        let laterMark = markedAt.addingTimeInterval(60)
+        try await database.setReadMark(laterMark, conversationID: conversation)
+        let updatedMarks = try await database.readMarks()
+        XCTAssertEqual(updatedMarks.count, 1)
+        XCTAssertEqual(updatedMarks[conversation]?.timeIntervalSince1970 ?? 0, laterMark.timeIntervalSince1970, accuracy: 0.001)
     }
 }

@@ -102,8 +102,10 @@ final class InboxModel: ObservableObject {
             do {
                 async let page = repository.conversations(page: ConversationPageRequest(limit: 100))
                 async let pins = database.pinnedConversationIDs()
-                let (loadedPage, loadedPins) = try await (page, pins)
+                async let marks = database.readMarks()
+                let (loadedPage, loadedPins, loadedMarks) = try await (page, pins, marks)
                 pinnedIDs = loadedPins
+                clearedUnreadAt = loadedMarks
                 conversations = sort(loadedPage.conversations)
                 state = conversations.isEmpty ? .empty : .loaded
                 updateDockBadge()
@@ -144,7 +146,7 @@ final class InboxModel: ObservableObject {
     func select(_ id: ConversationID?) {
         if selectedConversationID != id { selectedConversationID = id }
         if let id {
-            clearedUnreadAt[id] = .now
+            markCleared(id)
             updateDockBadge()
         }
         guard conversationModel.conversation?.id != id else { return }
@@ -189,7 +191,7 @@ final class InboxModel: ObservableObject {
         case let .messageAdded(message, _):
             conversationModel.appendLive(message)
             if message.conversationID == selectedConversationID {
-                clearedUnreadAt[message.conversationID] = .now
+                markCleared(message.conversationID)
             }
         case let .conversationUpdated(conversation, _):
             if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
@@ -202,6 +204,18 @@ final class InboxModel: ObservableObject {
             updateDockBadge()
         case let .healthChanged(updated):
             health = updated
+        }
+    }
+
+    private func markCleared(_ id: ConversationID) {
+        let now = Date.now
+        clearedUnreadAt[id] = now
+        Task {
+            do {
+                try await database.setReadMark(now, conversationID: id)
+            } catch {
+                AppLog.database.error("Read-mark persistence failed error=\(String(describing: type(of: error)), privacy: .public)")
+            }
         }
     }
 
