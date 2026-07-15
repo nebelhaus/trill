@@ -57,8 +57,11 @@ struct InboxView: View {
                         }
                         .buttonStyle(RiceIconButtonStyle())
                         .help("Show sidebar (⌘⌃S)")
-                        .padding(.leading, 84)
-                        .padding(.top, 10)
+                        // Tucked directly under the traffic lights, aligned to
+                        // the leftmost dot, so it never crowds the conversation
+                        // header that starts further right.
+                        .padding(.leading, 20)
+                        .padding(.top, 40)
                     }
                 }
         }
