@@ -74,6 +74,12 @@ struct InboxView: View {
             }
         }
         .animation(.easeOut(duration: 0.12), value: model.isSearchPresented)
+        .overlay {
+            if model.isPalettePresented {
+                CommandPaletteView(model: model)
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: model.isPalettePresented)
         .sheet(isPresented: $model.isComposePresented) {
             ComposeSheet(model: model)
         }
@@ -137,7 +143,7 @@ struct InboxView: View {
                 EmptyStateView(
                     icon: "bubble.left",
                     title: "No Conversation Selected",
-                    message: "Choose a conversation from the sidebar, or press ⌘K to search."
+                    message: "Choose a conversation from the sidebar, or press ⌘K for the command palette."
                 )
             } else {
                 ConversationView(
@@ -244,7 +250,7 @@ private struct SidebarView: View {
                     Image(systemName: "magnifyingglass")
                 }
                 .buttonStyle(RiceIconButtonStyle())
-                .help("Search messages (⌘K)")
+                .help("Search messages (⇧⌘F)")
                 Button(action: model.toggleSidebar) {
                     Image(systemName: "sidebar.left")
                 }

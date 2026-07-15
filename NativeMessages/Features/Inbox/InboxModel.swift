@@ -40,6 +40,23 @@ final class InboxModel: ObservableObject {
     @Published private(set) var clearedUnreadAt: [ConversationID: Date] = [:]
     @Published private(set) var searchResults: [Message] = []
     @Published var isSearchPresented = false
+    @Published var isPalettePresented = false {
+        didSet {
+            // Reset the palette to a clean slate each time it opens.
+            if isPalettePresented, !oldValue {
+                paletteQuery = ""
+                paletteSelection = 0
+            }
+        }
+    }
+    /// Command-palette query/selection live on the model so they reset cleanly
+    /// each time it opens (see `isPalettePresented`) and give the view's
+    /// keyboard handlers a single source of truth to read and mutate.
+    @Published var paletteQuery = ""
+    @Published var paletteSelection = 0
+    /// Prefill handed from the command palette's "Search messages…" row so the
+    /// full-text overlay opens already carrying what the user typed.
+    @Published var searchSeed: String?
     @Published var isComposePresented = false
     @Published var isSidebarVisible = true
     @Published var showsUnreadOnly = UserDefaults.standard.bool(forKey: "showsUnreadOnly") {

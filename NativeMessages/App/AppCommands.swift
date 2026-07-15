@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AppCommands: Commands {
     let newMessage: () -> Void
+    let showPalette: () -> Void
     let showSearch: () -> Void
     let reload: () -> Void
     let toggleSidebar: () -> Void
@@ -21,8 +22,10 @@ struct AppCommands: Commands {
         }
 
         CommandMenu("Messages") {
-            Button("Search…", action: showSearch)
+            Button("Command Palette…", action: showPalette)
                 .keyboardShortcut("k", modifiers: .command)
+            Button("Search…", action: showSearch)
+                .keyboardShortcut("f", modifiers: [.command, .shift])
             Button("Reload", action: reload)
                 .keyboardShortcut("r", modifiers: .command)
             Divider()

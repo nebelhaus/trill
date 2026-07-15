@@ -55,7 +55,13 @@ struct SearchView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Rice.surface1, lineWidth: 1)
         )
-        .onAppear { isFieldFocused = true }
+        .onAppear {
+            isFieldFocused = true
+            if let seed = model.searchSeed {
+                query = seed
+                model.searchSeed = nil
+            }
+        }
         .onChange(of: query) { _, _ in
             searchTask?.cancel()
             searchTask = Task {

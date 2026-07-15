@@ -22,6 +22,7 @@ struct NativeMessagesApp: App {
         .commands {
             AppCommands(
                 newMessage: { inboxModel.isComposePresented = true },
+                showPalette: { inboxModel.isPalettePresented = true },
                 showSearch: { inboxModel.isSearchPresented = true },
                 reload: { inboxModel.load() },
                 toggleSidebar: { inboxModel.toggleSidebar() },
