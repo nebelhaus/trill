@@ -22,7 +22,7 @@ final class ConversationModel: ObservableObject {
 
     private var repository: MessagesRepository
     private var loadTask: Task<Void, Never>?
-    private var refreshTask: Task<Void, Never>?
+    private var isRefreshing = false
 
     init(repository: MessagesRepository) {
         self.repository = repository
@@ -30,7 +30,6 @@ final class ConversationModel: ObservableObject {
 
     deinit {
         loadTask?.cancel()
-        refreshTask?.cancel()
     }
 
     func updateRepository(_ repository: MessagesRepository) {
@@ -41,7 +40,6 @@ final class ConversationModel: ObservableObject {
 
     func clear() {
         loadTask?.cancel()
-        refreshTask?.cancel()
         conversation = nil
         messages = []
         nextBefore = nil
@@ -67,7 +65,6 @@ final class ConversationModel: ObservableObject {
                 messages = page.messages.sorted(by: Self.chronological)
                 nextBefore = page.nextBefore
                 state = messages.isEmpty ? .empty : .loaded
-                startPeriodicRefresh()
                 if let reveal {
                     await revealMessage(reveal)
                 }
@@ -81,17 +78,18 @@ final class ConversationModel: ObservableObject {
         }
     }
 
-    /// Delivery/read flags and attachment transfers mutate existing chat.db
-    /// rows, which the new-row event poller cannot see. Periodically re-fetch
-    /// the newest page and merge changes in place.
-    private func startPeriodicRefresh() {
-        refreshTask?.cancel()
-        refreshTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(4))
-                guard !Task.isCancelled else { return }
-                await self?.refreshRecent()
-            }
+    /// Edits, tapbacks, and delivery/read flags mutate existing chat.db rows,
+    /// which the new-row event stream can't see. The WAL watcher signals every
+    /// write via `.databaseChanged`; on each we re-fetch the newest page and
+    /// merge changes in place. Coalesced with an in-flight guard so a burst of
+    /// writes doesn't stack refreshes.
+    func refreshOpenThread() {
+        guard !isRefreshing, conversation != nil,
+              state == .loaded || state == .empty else { return }
+        isRefreshing = true
+        Task { [weak self] in
+            await self?.refreshRecent()
+            self?.isRefreshing = false
         }
     }
 

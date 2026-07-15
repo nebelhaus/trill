@@ -168,6 +168,10 @@ enum ProviderEvent: Sendable {
     case messageAdded(Message, cursor: EventCursor)
     case conversationUpdated(Conversation, cursor: EventCursor)
     case healthChanged(ProviderHealth)
+    /// The backing store was written but produced no new rows — an edit,
+    /// tapback, or delivery/read change to an existing message. Consumers
+    /// refresh the open thread in place; carries no payload or cursor.
+    case databaseChanged
 }
 
 struct ConversationPageRequest: Hashable, Sendable {

@@ -247,6 +247,10 @@ final class InboxModel: ObservableObject {
             updateDockBadge()
         case let .healthChanged(updated):
             health = updated
+        case .databaseChanged:
+            // A write with no new row — in-place edit, tapback, or receipt.
+            // Refresh the open thread so those changes show without a poll.
+            conversationModel.refreshOpenThread()
         }
     }
 

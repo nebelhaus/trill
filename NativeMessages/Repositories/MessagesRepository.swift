@@ -7,7 +7,7 @@ actor ProviderEventDeduplicator {
         switch event {
         case let .messageAdded(message, _):
             return messageIDs.insert(message.id).inserted
-        case .conversationUpdated, .healthChanged:
+        case .conversationUpdated, .healthChanged, .databaseChanged:
             return true
         }
     }
@@ -106,7 +106,7 @@ actor MessagesRepository {
     private static func cursor(from event: ProviderEvent) -> EventCursor? {
         switch event {
         case let .messageAdded(_, cursor), let .conversationUpdated(_, cursor): cursor
-        case .healthChanged: nil
+        case .healthChanged, .databaseChanged: nil
         }
     }
 }

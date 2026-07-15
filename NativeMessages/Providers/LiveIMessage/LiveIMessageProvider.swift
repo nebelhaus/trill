@@ -122,6 +122,9 @@ actor LiveIMessageProvider: MessagesProvider {
                     guard !Task.isCancelled else { break }
                     // Let a commit's WAL writes settle before reading.
                     try? await Task.sleep(for: .milliseconds(120))
+                    // Any write may be an in-place edit/tapback/receipt that adds
+                    // no new row; signal so the open thread refreshes regardless.
+                    continuation.yield(.databaseChanged)
                     do {
                         let (events, newMax) = try await provider.pollEvents(after: lastRowID)
                         lastRowID = newMax
