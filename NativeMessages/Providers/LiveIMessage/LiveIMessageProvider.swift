@@ -261,6 +261,14 @@ actor LiveIMessageProvider: MessagesProvider {
             }
     }
 
+    func statSamples(in conversation: ConversationID) async throws -> [MessageStatSample] {
+        guard conversation.provider == id else { throw MessagesProviderError.wrongProvider }
+        guard let chat = try reader.chat(guid: conversation.externalGUID) else { return [] }
+        return try reader.statSamples(chatRowID: chat.rowID).map {
+            MessageStatSample(date: Self.date(fromAppleNanoseconds: $0.date), isFromMe: $0.isFromMe)
+        }
+    }
+
     private static func isMedia(_ attachment: MessageAttachment) -> Bool {
         attachment.isImage
             || (attachment.mimeType?.hasPrefix("video/") ?? false)

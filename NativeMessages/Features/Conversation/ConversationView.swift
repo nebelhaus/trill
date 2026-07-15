@@ -17,6 +17,7 @@ struct ConversationView: View {
     var onBack: () -> Void = {}
 
     @State private var isGalleryPresented = false
+    @State private var isStatsPresented = false
     /// Live height of the whole thread pane; the composer caps its growth at half.
     @State private var paneHeight: CGFloat = 0
 
@@ -58,6 +59,29 @@ struct ConversationView: View {
                 onClose: { isGalleryPresented = false }
             )
         }
+        .sheet(isPresented: $isStatsPresented) {
+            ConversationStatsView(model: model, onClose: { isStatsPresented = false })
+        }
+    }
+
+    /// Media + stats, shared by the regular and compact headers so both stay in
+    /// sync as thread-level actions are added.
+    @ViewBuilder
+    private var threadActionButtons: some View {
+        Button {
+            isStatsPresented = true
+        } label: {
+            Image(systemName: "chart.bar")
+        }
+        .buttonStyle(RiceIconButtonStyle())
+        .help("Conversation stats")
+        Button {
+            isGalleryPresented = true
+        } label: {
+            Image(systemName: "photo.on.rectangle.angled")
+        }
+        .buttonStyle(RiceIconButtonStyle())
+        .help("Media gallery")
     }
 
     private var header: some View {
@@ -126,13 +150,7 @@ struct ConversationView: View {
             }
             .buttonStyle(RiceIconButtonStyle())
             .help(isPinned ? "Unpin conversation (⇧⌘P)" : "Pin conversation (⇧⌘P)")
-            Button {
-                isGalleryPresented = true
-            } label: {
-                Image(systemName: "photo.on.rectangle.angled")
-            }
-            .buttonStyle(RiceIconButtonStyle())
-            .help("Media gallery")
+            threadActionButtons
             if showsChip, let service = model.conversation?.service {
                 ServiceChip(service: service)
             }
@@ -177,13 +195,7 @@ struct ConversationView: View {
                 }
                 .buttonStyle(RiceIconButtonStyle())
                 .help(isPinned ? "Unpin conversation (⇧⌘P)" : "Pin conversation (⇧⌘P)")
-                Button {
-                    isGalleryPresented = true
-                } label: {
-                    Image(systemName: "photo.on.rectangle.angled")
-                }
-                .buttonStyle(RiceIconButtonStyle())
-                .help("Media gallery")
+                threadActionButtons
             }
         }
         .padding(.leading, 12)
