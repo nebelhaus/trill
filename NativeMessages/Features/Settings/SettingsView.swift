@@ -5,6 +5,7 @@ struct SettingsView: View {
     @AppStorage("accentName") private var accentName = "mauve"
     @AppStorage("uiScale") private var uiScale = 1.0
     @AppStorage("sendOnReturn") private var sendOnReturn = true
+    @AppStorage("showMenuBarItem") private var showMenuBarItem = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -81,6 +82,20 @@ struct SettingsView: View {
                 Text(sendOnReturn
                     ? "Return sends · Shift+Return adds a line"
                     : "⌘Return sends · Return adds a line")
+                    .riceFont(10)
+                    .foregroundStyle(Rice.overlay0)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Menu bar")
+                    .riceSectionHeader()
+                HStack(spacing: 6) {
+                    Button("Show") { showMenuBarItem = true }
+                        .buttonStyle(DensityChoiceStyle(isSelected: showMenuBarItem))
+                    Button("Hide") { showMenuBarItem = false }
+                        .buttonStyle(DensityChoiceStyle(isSelected: !showMenuBarItem))
+                }
+                Text("A menu-bar icon with the unread count and a dropdown of recent threads.")
                     .riceFont(10)
                     .foregroundStyle(Rice.overlay0)
             }

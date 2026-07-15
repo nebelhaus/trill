@@ -225,6 +225,18 @@ final class InboxModel: ObservableObject {
         conversations.filter { pinnedIDs.contains($0.id) }
     }
 
+    /// Total unread across every thread, honoring the local read-mark overlay.
+    /// Drives both the Dock badge and the menu-bar status item's count.
+    var unreadTotal: Int {
+        conversations.filter(hasVisibleUnread).compactMap(\.unreadCount).reduce(0, +)
+    }
+
+    /// Most-recently-active threads for the menu-bar mini-inbox, newest first.
+    /// Unlike the sidebar this ignores pin priority — here "recent" means recent.
+    func recentConversations(limit: Int) -> [Conversation] {
+        Array(conversations.sorted { $0.lastActivity > $1.lastActivity }.prefix(limit))
+    }
+
     func selectPinned(at index: Int) {
         let pinned = pinnedConversations
         guard pinned.indices.contains(index) else { return }
@@ -440,7 +452,7 @@ final class InboxModel: ObservableObject {
     }
 
     private func updateDockBadge() {
-        let unread = conversations.filter(hasVisibleUnread).compactMap(\.unreadCount).reduce(0, +)
+        let unread = unreadTotal
         NSApp.dockTile.badgeLabel = unread > 0 ? String(unread) : nil
     }
 

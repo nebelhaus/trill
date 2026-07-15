@@ -5,13 +5,14 @@ struct NativeMessagesApp: App {
     @StateObject private var inboxModel: InboxModel
     @AppStorage("uiScale") private var uiScale = 1.0
     @AppStorage("accentName") private var accentName = "mauve"
+    @AppStorage("showMenuBarItem") private var showMenuBarItem = true
 
     init() {
         _inboxModel = StateObject(wrappedValue: AppEnvironment.makeInboxModel())
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: Self.mainWindowID) {
             RicedRoot {
                 InboxView(model: inboxModel)
                     // Floor low enough to dock the window to ~1/3 of a screen.
@@ -46,7 +47,19 @@ struct NativeMessagesApp: App {
                 SettingsView()
             }
         }
+
+        MenuBarExtra(isInserted: $showMenuBarItem) {
+            RicedRoot {
+                MenuBarInboxView(model: inboxModel)
+            }
+        } label: {
+            MenuBarLabel(model: inboxModel)
+        }
+        .menuBarExtraStyle(.window)
     }
+
+    /// Shared between the `WindowGroup` and the menu-bar view's reopen path.
+    static let mainWindowID = "main"
 }
 
 /// Root theming wrapper. Lives at the view level (not the App struct) so
