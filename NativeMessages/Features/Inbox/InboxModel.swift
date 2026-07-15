@@ -70,6 +70,9 @@ final class InboxModel: ObservableObject {
         notifications.openConversation = { [weak self] id in
             self?.select(id)
         }
+        notifications.sendReply = { [weak self] id, text in
+            self?.quickReply(to: id, text: text)
+        }
     }
 
     deinit {
@@ -276,6 +279,26 @@ final class InboxModel: ObservableObject {
         return conversations.first { conversation in
             conversation.kind == .direct && conversation.participants.contains {
                 ContactsNameResolver.normalize($0.handle) == normalized
+            }
+        }
+    }
+
+    /// Sends an inline notification reply to an existing thread. Fire-and-forget
+    /// from the notification delegate; the poller reflects the sent message.
+    func quickReply(to id: ConversationID, text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, canCompose else { return }
+        let repository = repository
+        Task {
+            do {
+                _ = try await repository.send(SendRequest(
+                    operationID: UUID(),
+                    conversationID: id,
+                    text: trimmed,
+                    attachments: []
+                ))
+            } catch {
+                AppLog.repository.error("Quick reply failed error=\(String(describing: type(of: error)), privacy: .public)")
             }
         }
     }
