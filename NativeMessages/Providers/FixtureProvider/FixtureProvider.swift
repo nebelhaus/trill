@@ -126,6 +126,15 @@ struct FixtureData: Sendable {
 
     static let standard = makeStandard()
 
+    /// Whether I've reacted to the trailing run of received messages — the most
+    /// recent messages from them, before my last sent one. Mirrors what the live
+    /// provider derives from chat.db so the fixtures stay honest.
+    private static func iReactedToLatestInbound(_ messages: [Message]) -> Bool {
+        messages.reversed()
+            .prefix { !$0.isOutgoing }
+            .contains { $0.reactions.contains(where: \.isFromMe) }
+    }
+
     private static func makeStandard() -> FixtureData {
         let provider = ProviderID(rawValue: "fixture")
         let base = Date(timeIntervalSince1970: 1_735_689_600)
@@ -242,9 +251,17 @@ struct FixtureData: Sendable {
             } else {
                 attachments = []
             }
-            let reactions = index == 18
-                ? [MessageReaction(id: "fixture-reaction-love", kind: .love, senderDisplayName: "Morgan", glyph: "❤️")]
-                : []
+            let reactions: [MessageReaction]
+            switch index {
+            case 18:
+                reactions = [MessageReaction(id: "fixture-reaction-love", kind: .love, senderDisplayName: "Morgan", glyph: "❤️")]
+            case 21:
+                // I tapped back on the last received message, so this thread
+                // reads as answered and drops out of needs-reply triage.
+                reactions = [MessageReaction(id: "fixture-reaction-mine", kind: .like, senderDisplayName: "You", glyph: "👍", isFromMe: true)]
+            default:
+                reactions = []
+            }
             let replyTo = index == 19
                 ? MessageID(provider: provider, externalGUID: "fixture-group-17")
                 : nil
@@ -286,7 +303,8 @@ struct FixtureData: Sendable {
                 lastActivity: groupMessages.last!.createdAt,
                 lastMessagePreview: groupMessages.last!.text,
                 unreadCount: 4,
-                lastMessageFromMe: groupMessages.last!.isOutgoing
+                lastMessageFromMe: groupMessages.last!.isOutgoing,
+                reactedToLatestInbound: iReactedToLatestInbound(groupMessages)
             ),
             Conversation(
                 id: smsID,
@@ -298,7 +316,8 @@ struct FixtureData: Sendable {
                 lastActivity: smsMessages.last!.createdAt,
                 lastMessagePreview: smsMessages.last!.text,
                 unreadCount: 0,
-                lastMessageFromMe: smsMessages.last!.isOutgoing
+                lastMessageFromMe: smsMessages.last!.isOutgoing,
+                reactedToLatestInbound: iReactedToLatestInbound(smsMessages)
             ),
             Conversation(
                 id: directID,
@@ -310,7 +329,8 @@ struct FixtureData: Sendable {
                 lastActivity: directMessages.last!.createdAt,
                 lastMessagePreview: directMessages.last!.text,
                 unreadCount: 2,
-                lastMessageFromMe: directMessages.last!.isOutgoing
+                lastMessageFromMe: directMessages.last!.isOutgoing,
+                reactedToLatestInbound: iReactedToLatestInbound(directMessages)
             ),
         ]
 

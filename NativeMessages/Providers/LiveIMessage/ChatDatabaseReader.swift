@@ -134,6 +134,27 @@ struct ChatDatabaseReader: Sendable {
         }
     }
 
+    /// GUIDs of the trailing run of inbound messages — the most recent real
+    /// messages from them, i.e. those newer than my last sent message. Empty
+    /// when the last message is mine. Bounded so a long unanswered burst is
+    /// still cheap to scan.
+    func trailingInboundGUIDs(chatRowID: Int64, limit: Int = 40) throws -> [String] {
+        try withConnection { db in
+            try query(db, """
+                SELECT m.guid, m.is_from_me
+                FROM message m
+                JOIN chat_message_join j ON j.message_id = m.ROWID
+                WHERE j.chat_id = ? AND m.associated_message_type = 0 AND m.item_type = 0
+                ORDER BY m.date DESC
+                LIMIT ?
+                """, bind: [.int(chatRowID), .int(Int64(limit))]) { stmt in
+                (guid: text(stmt, 0) ?? "", isFromMe: sqlite3_column_int(stmt, 1) == 1)
+            }
+            .prefix { !$0.isFromMe }
+            .map(\.guid)
+        }
+    }
+
     func unreadCount(chatRowID: Int64) throws -> Int {
         try withConnection { db in
             try query(db, """

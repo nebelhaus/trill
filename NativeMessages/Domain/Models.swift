@@ -40,6 +40,10 @@ struct Conversation: Hashable, Codable, Sendable, Identifiable {
     /// needs-reply triage filter: a thread whose last message is *from them*
     /// (this is `false`) and has sat unanswered is what surfaces there.
     let lastMessageFromMe: Bool
+    /// Whether I've tapped back on the trailing run of received messages. A
+    /// reaction is a lightweight reply, so it also clears a thread out of the
+    /// needs-reply triage view even though no message of mine followed.
+    let reactedToLatestInbound: Bool
 }
 
 enum AttachmentAvailability: String, Codable, Sendable {

@@ -4,8 +4,10 @@ import Foundation
 /// so it can be unit-tested directly over fixtures.
 ///
 /// A conversation needs a reply when its last message came from the other party
-/// (`lastMessageFromMe == false`) and enough time has elapsed since then that it
-/// counts as unanswered. This is the app's triage view: who is waiting on you.
+/// (`lastMessageFromMe == false`), I haven't tapped back on it
+/// (`reactedToLatestInbound == false` — a reaction counts as a reply), and
+/// enough time has elapsed since then that it counts as unanswered. This is the
+/// app's triage view: who is waiting on you.
 enum NeedsReply {
     /// A thread only counts as needing a reply once its last inbound message has
     /// gone unanswered for at least this long — recent back-and-forth isn't a
@@ -17,7 +19,7 @@ enum NeedsReply {
         now: Date,
         threshold: TimeInterval = defaultThreshold
     ) -> Bool {
-        guard !conversation.lastMessageFromMe else { return false }
+        guard !conversation.lastMessageFromMe, !conversation.reactedToLatestInbound else { return false }
         return now.timeIntervalSince(conversation.lastActivity) >= threshold
     }
 

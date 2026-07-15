@@ -10,18 +10,30 @@ final class NeedsReplyTests: XCTestCase {
         try XCTUnwrap(list.first { $0.displayName == name })
     }
 
-    /// Both inbound threads (last message from them) that have waited past the
-    /// threshold surface, most-overdue first; the thread I answered last does not.
-    func testInboundThreadsPastThresholdSurface() async throws {
+    /// Only a thread whose last message is from them, that I haven't answered
+    /// (by message or tapback), and that has waited past the threshold surfaces.
+    func testOnlyUnansweredInboundThreadsSurface() async throws {
         let conversations = try await fixtureConversations()
         let group = try conversation("Weekend Plans", in: conversations)
+        // Four hours after the newest thread's last activity, so all are "old".
         let now = group.lastActivity.addingTimeInterval(4 * 60 * 60)
 
-        let names = NeedsReply.filter(conversations, now: now).map(\.displayName)
+        // Weekend Plans: last message from them, but I tapped back → answered.
+        // Riley Park: last message from me → answered.
+        // Avery Chen: from them, no reaction → the only thread awaiting a reply.
+        XCTAssertEqual(NeedsReply.filter(conversations, now: now).map(\.displayName), ["Avery Chen"])
+    }
 
-        // Avery Chen (older inbound) sorts ahead of Weekend Plans; Riley Park
-        // (last message from me) is absent.
-        XCTAssertEqual(names, ["Avery Chen", "Weekend Plans"], "unexpected: \(names)")
+    /// A tapback on the latest received message counts as a reply, so the thread
+    /// leaves the triage view even though no message of mine followed.
+    func testReactingToLatestInboundCountsAsReply() async throws {
+        let conversations = try await fixtureConversations()
+        let group = try conversation("Weekend Plans", in: conversations)
+        XCTAssertFalse(group.lastMessageFromMe)      // last message is from them
+        XCTAssertTrue(group.reactedToLatestInbound)  // …but I tapped back on it
+
+        let now = group.lastActivity.addingTimeInterval(4 * 60 * 60)
+        XCTAssertFalse(NeedsReply.needsReply(group, now: now))
     }
 
     /// A thread whose last message is mine never needs a reply, no matter how old.
@@ -38,20 +50,21 @@ final class NeedsReplyTests: XCTestCase {
     /// actually gone unanswered for the threshold.
     func testRecentInboundIsBelowThreshold() async throws {
         let conversations = try await fixtureConversations()
-        let group = try conversation("Weekend Plans", in: conversations)
-        let now = group.lastActivity.addingTimeInterval(60 * 60)
+        let avery = try conversation("Avery Chen", in: conversations)
+        XCTAssertFalse(avery.lastMessageFromMe)
+        XCTAssertFalse(avery.reactedToLatestInbound)
+        let now = avery.lastActivity.addingTimeInterval(60 * 60)
 
-        XCTAssertFalse(NeedsReply.needsReply(group, now: now))
-        // The much older Avery Chen thread is still overdue and remains.
-        XCTAssertEqual(NeedsReply.filter(conversations, now: now).map(\.displayName), ["Avery Chen"])
+        XCTAssertFalse(NeedsReply.needsReply(avery, now: now))
+        XCTAssertTrue(NeedsReply.filter(conversations, now: now).isEmpty)
     }
 
     /// The threshold is inclusive: exactly N hours of silence qualifies.
     func testThresholdBoundaryIsInclusive() async throws {
         let conversations = try await fixtureConversations()
-        let group = try conversation("Weekend Plans", in: conversations)
-        let now = group.lastActivity.addingTimeInterval(NeedsReply.defaultThreshold)
+        let avery = try conversation("Avery Chen", in: conversations)
+        let now = avery.lastActivity.addingTimeInterval(NeedsReply.defaultThreshold)
 
-        XCTAssertTrue(NeedsReply.needsReply(group, now: now))
+        XCTAssertTrue(NeedsReply.needsReply(avery, now: now))
     }
 }

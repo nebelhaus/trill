@@ -281,6 +281,18 @@ actor LiveIMessageProvider: MessagesProvider {
         let previewText = displayText(text: preview?.text, body: preview?.body)
         let unread = try reader.unreadCount(chatRowID: chat.rowID)
 
+        // Only threads whose last message is from them can be awaiting a reply;
+        // for those, a tapback I left on the trailing inbound run counts as one.
+        var reactedToLatestInbound = false
+        if preview?.isFromMe == false {
+            let tail = Set(try reader.trailingInboundGUIDs(chatRowID: chat.rowID))
+            if !tail.isEmpty {
+                let mine = Self.latestReactions(try reader.reactions(chatRowID: chat.rowID))
+                    .filter(\.isFromMe)
+                reactedToLatestInbound = mine.contains { tail.contains($0.targetGUID) }
+            }
+        }
+
         let displayName: String
         if let explicit = chat.displayName {
             displayName = explicit
@@ -305,7 +317,8 @@ actor LiveIMessageProvider: MessagesProvider {
             unreadCount: unread > 0 ? unread : nil,
             // No last message (empty thread) counts as "from me" so it never
             // lands in the needs-reply triage view.
-            lastMessageFromMe: preview?.isFromMe ?? true
+            lastMessageFromMe: preview?.isFromMe ?? true,
+            reactedToLatestInbound: reactedToLatestInbound
         )
     }
 

@@ -55,7 +55,7 @@ Everything below respects these.
 |------|------|--------|-------|-------|
 | **Conversation stats panel** | Per-thread: total messages, you-vs-them ratio, median response time, most-active hours, current streak | M | ✅ | All derivable from `date` + `is_from_me`. High delight, low risk. |
 | **Relationship timeline** | Per contact: first message ever, total volume, media count, longest silence, cadence over time | M–L | ✅ | Great "wow" surface for the primary persona. |
-| **Needs-reply detector** | Smart filter/section: threads whose last message is *from them* and unanswered for N hours | S–M | ✅ 🚢 | Shipped (`ef53416`). ⇧⌘R toggles the triage filter; `lastMessageFromMe` (from chat.db `is_from_me`) + a pure `NeedsReply` helper (3h default). |
+| **Needs-reply detector** | Smart filter/section: threads whose last message is *from them* and unanswered for N hours | S–M | ✅ 🚢 | Shipped (`999debf`). ⇧⌘R toggles the triage filter; `lastMessageFromMe` + `reactedToLatestInbound` (both from chat.db — a tapback I left counts as a reply) feed a pure `NeedsReply` helper (3h default). |
 | **Year in review** | An annual "wrapped" recap: top contacts, message counts, busiest day, top emoji/tapback | L | ✅ | Seasonal delight; reuses the stats primitives. |
 | **Response-time insights** | How fast you reply to whom, and who leaves you on read | M | ✅ | Sensitive framing; keep it private/local and non-judgy. |
 
@@ -151,7 +151,7 @@ compounds well:
 
 1. ~~**Command palette (⌘K)**~~ — ✅ shipped (`0474b5c`). The keyboard spine;
    every other feature becomes reachable through it. PRD-central.
-2. ~~**Needs-reply detector**~~ — ✅ shipped (`ef53416`). Turned the app into a
+2. ~~**Needs-reply detector**~~ — ✅ shipped (`999debf`). Turned the app into a
    triage tool, not just a viewer. ⇧⌘R filters to threads awaiting your reply.
 3. **Advanced search operators** — `M`. Unlocks the retrieval superpower with
    modest work atop existing search. **← next up.**

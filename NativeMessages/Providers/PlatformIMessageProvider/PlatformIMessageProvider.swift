@@ -101,7 +101,8 @@ enum PlatformIMessageMapper {
             unreadCount: source.unreadCount ?? (source.isUnread ? 1 : 0),
             // This spike provider can't cheaply resolve last-message direction;
             // treat as "from me" so it never falsely flags needs-reply.
-            lastMessageFromMe: true
+            lastMessageFromMe: true,
+            reactedToLatestInbound: false
         )
     }
 
