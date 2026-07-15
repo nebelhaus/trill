@@ -74,6 +74,7 @@ Never disable SIP for this project. Full Disk Access, when eventually used, belo
 - [Provider decision](docs/architecture-decisions/0001-messages-provider.md)
 - [Testing guide](docs/testing.md)
 - [Security boundaries](docs/security.md)
+- [Ideas & feature backlog](docs/ideas.md)
 
 ## Future BlueBubbles relay
 
