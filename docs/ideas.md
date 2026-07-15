@@ -40,7 +40,7 @@ Everything below respects these.
 | Idea | What | Effort | Feas. | Notes |
 |------|------|--------|-------|-------|
 | **Universal Library (⌘⇧L)** | One browser for every image, link, and doc across *all* conversations, with type tabs and jump-to-source | M | ✅ | Generalizes the existing per-conversation gallery + `media()` query to an all-chats query. |
-| **Advanced search operators** | `from:`, `in:group`, `has:link`, `has:image`, `before:`/`after:`, `is:unread` in the global search box | M | ✅ | Search + FTS-ish query already exist; this is a parser + SQL predicates over columns we already read. |
+| **Advanced search operators** | `from:`, `in:group`, `has:link`, `has:image`, `before:`/`after:`, `is:unread` in the global search box | M | ✅ 🚢 | Shipped. Pure `SearchQueryParser` (raw string → `SearchFilters` + residual text) feeds one `MessageSearchQuery.matches` predicate both the fixture and live search paths apply. |
 | **Scoped in-thread find (⌘F)** | Find-in-conversation with match highlight and next/prev, without leaving the thread | S–M | ✅ | Reuse the reveal/highlight machinery already built for search-jump. |
 | **Link inbox** | Every URL ever received, deduped, newest-first, with sender + timestamp + optional OG preview | M | ✅ | Extract from message text; OG fetch is optional/networked and can be a later toggle. |
 | **Saved / starred messages** | Local bookmarks on any message, browsable in one place | M | ✅ | Store `MessageID`s in `AppDatabase`; no chat.db write. |
@@ -153,12 +153,14 @@ compounds well:
    every other feature becomes reachable through it. PRD-central.
 2. ~~**Needs-reply detector**~~ — ✅ shipped (`999debf`). Turned the app into a
    triage tool, not just a viewer. ⇧⌘R filters to threads awaiting your reply.
-3. **Advanced search operators** — `M`. Unlocks the retrieval superpower with
-   modest work atop existing search. **← next up.**
+3. ~~**Advanced search operators**~~ — ✅ shipped. `from:`, `in:group`,
+   `has:link`/`has:image`, `before:`/`after:` and `is:unread` narrow the global
+   search box via a pure, tested `SearchQueryParser`.
 4. ~~**Scheduled send**~~ — ⛔ deferred until we have a server. Would only fire
    while this Mac is awake; off/closed = silent miss, and the only true fix
    (a cloud relay) breaks local-first. See the row above.
 5. **Menu-bar mini-inbox** — `M`. Ambient presence; "leave it open all day."
+   **← next up.**
 6. **Privacy blur** — `S–M`. Small, trust-building, and demoable.
 
 Delight pairing when a lighter turn is wanted: **send/receive sounds** +

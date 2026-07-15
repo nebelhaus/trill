@@ -426,13 +426,13 @@ final class InboxModel: ObservableObject {
     }
 
     func search(text: String) async {
-        let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else {
+        let query = MessageSearchQuery(raw: text, limit: 100)
+        guard query.hasCriteria else {
             searchResults = []
             return
         }
         do {
-            searchResults = try await repository.search(MessageSearchQuery(text: query, limit: 100)).messages
+            searchResults = try await repository.search(query).messages
         } catch {
             searchResults = []
             AppLog.ui.error("Search failed error=\(String(describing: type(of: error)), privacy: .public)")

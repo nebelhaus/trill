@@ -46,13 +46,15 @@ actor FixtureProvider: MessagesProvider {
 
     func search(_ query: MessageSearchQuery) async throws -> MessageSearchPage {
         let offset = try Self.offset(from: query.cursor)
-        let normalized = query.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else { return MessageSearchPage(messages: [], nextCursor: nil) }
+        guard query.hasCriteria else { return MessageSearchPage(messages: [], nextCursor: nil) }
 
+        let conversationsByID = Dictionary(
+            uniqueKeysWithValues: fixture.conversations.map { ($0.id, $0) }
+        )
         let matches = fixture.messages
             .filter { query.conversationID == nil || $0.key == query.conversationID }
             .flatMap(\.value)
-            .filter { $0.text.localizedCaseInsensitiveContains(normalized) }
+            .filter { query.matches($0, in: conversationsByID[$0.conversationID]) }
             .sorted {
                 if $0.createdAt == $1.createdAt { return $0.id.id < $1.id.id }
                 return $0.createdAt > $1.createdAt
@@ -272,7 +274,15 @@ struct FixtureData: Sendable {
                 providerSequence: String(index),
                 sender: sender,
                 isOutgoing: sender == nil,
-                text: index == 21 ? "All synthetic plans are confirmed." : "Group fixture message \(index).",
+                text: {
+                    switch index {
+                    case 21: return "All synthetic plans are confirmed."
+                    // A message with a real URL so `has:link` has something to
+                    // narrow to in fixture mode and in tests.
+                    case 6: return "Group fixture message 6 — details at https://example.invalid/plans"
+                    default: return "Group fixture message \(index)."
+                    }
+                }(),
                 createdAt: base.addingTimeInterval(90_000 + Double(index) * 240),
                 sentAt: nil,
                 deliveredAt: nil,

@@ -29,7 +29,7 @@ struct SearchView: View {
                 Image(systemName: "magnifyingglass")
                     .riceFont(14)
                     .foregroundStyle(Rice.subtext0)
-                TextField("Search messages", text: $query)
+                TextField("Search  ·  from:  in:group  has:image  before:", text: $query)
                     .textFieldStyle(.plain)
                     .riceFont(16)
                     .foregroundStyle(Rice.text)

@@ -79,16 +79,31 @@ actor LiveIMessageProvider: MessagesProvider {
     }
 
     func search(_ query: MessageSearchQuery) async throws -> MessageSearchPage {
-        let rows = try reader.searchMessages(term: query.text, limit: query.limit * 3)
+        guard query.hasCriteria else { return MessageSearchPage(messages: [], nextCursor: nil) }
+        // Free text narrows the scan via SQL LIKE. An operator-only query (e.g.
+        // `has:image`) has empty text, which matches broadly, so widen the pool
+        // to cover a reasonable recent window before the predicate filters it.
+        let poolLimit = query.text.isEmpty ? query.limit * 10 : query.limit * 3
+        let rows = try reader.searchMessages(term: query.text, limit: poolLimit)
         let chats = try reader.chats(rowIDs: Array(Set(rows.map(\.chatRowID))))
-        let needle = query.text.lowercased()
+        // Building the full Conversation is what supplies `in:` kind and
+        // `is:unread` count; cache it per chat since results cluster into a few.
+        var conversationsByChat: [Int64: Conversation] = [:]
         var results: [Message] = []
         for row in rows {
             guard results.count < query.limit else { break }
             guard let chat = chats[row.chatRowID] else { continue }
             let conversationID = ConversationID(provider: id, externalGUID: chat.guid)
-            let message = try await map(rows: [row], conversationID: conversationID, chatRowID: nil).first
-            guard let message, message.text.lowercased().contains(needle) else { continue }
+            guard let message = try await map(rows: [row], conversationID: conversationID, chatRowID: nil).first
+            else { continue }
+            let conversation: Conversation
+            if let cached = conversationsByChat[row.chatRowID] {
+                conversation = cached
+            } else {
+                conversation = try await self.conversation(from: chat)
+                conversationsByChat[row.chatRowID] = conversation
+            }
+            guard query.matches(message, in: conversation) else { continue }
             results.append(message)
         }
         return MessageSearchPage(messages: results, nextCursor: nil)

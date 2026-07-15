@@ -212,18 +212,66 @@ struct MessagePage: Sendable {
     let nextBefore: String?
 }
 
+/// Structured filters parsed out of a raw search string by `SearchQueryParser`
+/// — the `from:`, `in:`, `has:`, `is:`, `before:` and `after:` operators. Each
+/// field is one operator; a nil/false/empty field means that operator wasn't
+/// used. The residual free text lives on `MessageSearchQuery.text`; these narrow
+/// it further. `SearchQueryParser.matches` is the single predicate both the
+/// fixture and live providers apply, so the two search paths stay identical.
+struct SearchFilters: Hashable, Sendable {
+    /// `from:` — the sender's contact name or handle (case-insensitive
+    /// substring), or one of me/you/myself for my own messages.
+    var sender: String?
+    /// `in:group` / `in:direct` — restrict to group or one-to-one threads.
+    var conversationKind: ConversationKind?
+    /// `has:link` — the message text contains a detectable URL.
+    var requiresLink: Bool = false
+    /// `has:image` — the message carries at least one image attachment.
+    var requiresImage: Bool = false
+    /// `has:attachment` / `has:file` — the message carries any attachment.
+    var requiresAttachment: Bool = false
+    /// `is:unread` — an incoming message in a thread that currently has unread
+    /// messages. Per-message read state isn't in the domain model, so this is a
+    /// documented over-approximation at the thread level.
+    var unreadOnly: Bool = false
+    /// `after:YYYY-MM-DD` — created on or after this UTC day boundary.
+    var after: Date?
+    /// `before:YYYY-MM-DD` — created strictly before this UTC day boundary.
+    var before: Date?
+
+    var isEmpty: Bool {
+        sender == nil && conversationKind == nil
+            && !requiresLink && !requiresImage && !requiresAttachment
+            && !unreadOnly && after == nil && before == nil
+    }
+}
+
 struct MessageSearchQuery: Hashable, Sendable {
+    /// Residual free text after operators are stripped — matched as a
+    /// case-insensitive substring of the message body.
     let text: String
     let conversationID: ConversationID?
     let limit: Int
     let cursor: String?
+    let filters: SearchFilters
 
-    init(text: String, conversationID: ConversationID? = nil, limit: Int = 50, cursor: String? = nil) {
+    init(
+        text: String,
+        conversationID: ConversationID? = nil,
+        limit: Int = 50,
+        cursor: String? = nil,
+        filters: SearchFilters = SearchFilters()
+    ) {
         self.text = text
         self.conversationID = conversationID
         self.limit = max(1, min(limit, 200))
         self.cursor = cursor
+        self.filters = filters
     }
+
+    /// Whether this query has anything to search for — free text or at least one
+    /// operator. An all-blank query returns no results rather than everything.
+    var hasCriteria: Bool { !text.isEmpty || !filters.isEmpty }
 }
 
 struct MessageSearchPage: Sendable {
