@@ -315,7 +315,8 @@ actor LiveIMessageProvider: MessagesProvider {
 
         var reactionsByTarget: [String: [MessageReaction]] = [:]
         if let chatRowID {
-            for reaction in try reader.reactions(chatRowID: chatRowID) {
+            let winners = Self.latestReactions(try reader.reactions(chatRowID: chatRowID))
+            for reaction in winners {
                 let senderName: String
                 if reaction.isFromMe {
                     senderName = "You"
@@ -410,6 +411,37 @@ actor LiveIMessageProvider: MessagesProvider {
             availability: exists ? .available : .missing,
             isImage: mime.hasPrefix("image/") || (row.uti?.contains("image") ?? false)
         )
+    }
+
+    /// Collapses the raw tapback stream to the currently-active reactions.
+    ///
+    /// Each person holds one tapback "slot" per message for the classic set
+    /// (love/like/…), plus one slot per distinct emoji for custom reactions.
+    /// A change or removal is recorded as a *new* row — a removal reuses the
+    /// add code +1000 (2000→3000). So we key by slot, keep the newest event,
+    /// and drop the slot entirely when that newest event is a removal.
+    static func latestReactions(
+        _ rows: [ChatDatabaseReader.ReactionRow]
+    ) -> [ChatDatabaseReader.ReactionRow] {
+        func isRemoval(_ kind: Int) -> Bool { kind >= 3000 }
+        func slot(_ row: ChatDatabaseReader.ReactionRow) -> String {
+            let sender = row.isFromMe ? "me" : String(row.handleID)
+            let base = isRemoval(row.kind) ? row.kind - 1000 : row.kind
+            let group = base == 2006 ? (row.emoji ?? "custom") : "classic"
+            return "\(row.targetGUID)|\(sender)|\(group)"
+        }
+        var latest: [String: ChatDatabaseReader.ReactionRow] = [:]
+        for row in rows {
+            let key = slot(row)
+            guard let current = latest[key] else { latest[key] = row; continue }
+            // Newer wins; on a date tie prefer the add so a simultaneous
+            // replace shows the new reaction rather than a stale removal.
+            if row.date > current.date
+                || (row.date == current.date && !isRemoval(row.kind)) {
+                latest[key] = row
+            }
+        }
+        return latest.values.filter { !isRemoval($0.kind) }
     }
 
     private static func reaction(_ row: ChatDatabaseReader.ReactionRow, senderName: String) -> MessageReaction? {

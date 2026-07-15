@@ -44,6 +44,7 @@ struct ChatDatabaseReader: Sendable {
         let targetGUID: String
         let isFromMe: Bool
         let handleID: Int64
+        let date: Int64
     }
 
     struct AttachmentRow: Sendable {
@@ -239,10 +240,12 @@ struct ChatDatabaseReader: Sendable {
         try withConnection { db in
             try query(db, """
                 SELECT m.guid, m.associated_message_type, m.associated_message_emoji,
-                       m.associated_message_guid, m.is_from_me, m.handle_id
+                       m.associated_message_guid, m.is_from_me, m.handle_id, m.date
                 FROM message m
                 JOIN chat_message_join j ON j.message_id = m.ROWID
-                WHERE j.chat_id = ? AND m.associated_message_type BETWEEN 2000 AND 2006
+                WHERE j.chat_id = ?
+                  AND (m.associated_message_type BETWEEN 2000 AND 2006
+                       OR m.associated_message_type BETWEEN 3000 AND 3006)
                 """, bind: [.int(chatRowID)]) { stmt in
                 ReactionRow(
                     guid: text(stmt, 0) ?? "",
@@ -250,7 +253,8 @@ struct ChatDatabaseReader: Sendable {
                     emoji: text(stmt, 2),
                     targetGUID: Self.reactionTarget(text(stmt, 3) ?? ""),
                     isFromMe: sqlite3_column_int(stmt, 4) == 1,
-                    handleID: sqlite3_column_int64(stmt, 5)
+                    handleID: sqlite3_column_int64(stmt, 5),
+                    date: sqlite3_column_int64(stmt, 6)
                 )
             }
         }
