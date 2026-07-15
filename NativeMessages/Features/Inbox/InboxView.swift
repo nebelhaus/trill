@@ -57,11 +57,11 @@ struct InboxView: View {
                         }
                         .buttonStyle(RiceIconButtonStyle())
                         .help("Show sidebar (⌘⌃S)")
-                        // Tucked directly under the traffic lights, aligned to
-                        // the leftmost dot, so it never crowds the conversation
-                        // header that starts further right.
-                        .padding(.leading, 20)
-                        .padding(.top, 40)
+                        // Sits in the top bar under the traffic lights, its
+                        // glyph lined up with the leftmost dot's left edge so
+                        // the two share a left margin.
+                        .padding(.leading, 6)
+                        .padding(.top, 30)
                     }
                 }
         }
@@ -144,7 +144,7 @@ struct InboxView: View {
                     model: model.conversationModel,
                     composer: model.composerModel,
                     density: density,
-                    headerLeadingInset: model.isSidebarVisible ? 0 : 104,
+                    isSidebarCollapsed: !model.isSidebarVisible,
                     isPinned: model.selectedConversationID.map { model.pinnedIDs.contains($0) } ?? false,
                     onTogglePin: model.toggleSelectedPin
                 )

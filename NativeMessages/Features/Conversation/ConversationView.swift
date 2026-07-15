@@ -5,11 +5,18 @@ struct ConversationView: View {
     @ObservedObject var model: ConversationModel
     @ObservedObject var composer: ComposerModel
     var density: DisplayDensity = .comfortable
-    var headerLeadingInset: CGFloat = 0
+    /// When the sidebar is hidden the toggle + traffic lights own the header's
+    /// top-left corner, so the title is centered in the bar (Messages-style)
+    /// instead of being shoved right into an awkward gap.
+    var isSidebarCollapsed = false
     var isPinned = false
     var onTogglePin: () -> Void = {}
 
     @State private var isGalleryPresented = false
+
+    /// Width kept clear on the trailing edge (pin + gallery + service chip) so
+    /// the title never collides with the header actions.
+    private static let actionsReserve: CGFloat = 150
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,40 +44,57 @@ struct ConversationView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            if let conversation = model.conversation {
-                AvatarView(conversation: conversation, size: 26)
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(model.conversation?.displayName ?? "Conversation")
-                    .riceFont(14, .semibold)
-                    .foregroundStyle(Rice.text)
+        ZStack {
+            // Avatar + title. Centered in the bar when the sidebar is collapsed,
+            // left-aligned when it's open. Laid out horizontally either way so
+            // the bar keeps its height.
+            HStack(spacing: 10) {
                 if let conversation = model.conversation {
-                    Text(conversation.kind == .group
-                         ? "\(conversation.participants.count) participants"
-                         : (conversation.participants.first?.displayName ?? conversation.participants.first?.handle ?? "Direct conversation"))
-                        .riceFont(10)
-                        .foregroundStyle(Rice.subtext0)
+                    AvatarView(conversation: conversation, size: 26)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(model.conversation?.displayName ?? "Conversation")
+                        .riceFont(14, .semibold)
+                        .foregroundStyle(Rice.text)
+                        .lineLimit(1)
+                    if let conversation = model.conversation {
+                        Text(conversation.kind == .group
+                             ? "\(conversation.participants.count) participants"
+                             : (conversation.participants.first?.displayName ?? conversation.participants.first?.handle ?? "Direct conversation"))
+                            .riceFont(10)
+                            .foregroundStyle(Rice.subtext0)
+                            .lineLimit(1)
+                    }
                 }
             }
-            Spacer()
-            Button(action: onTogglePin) {
-                Image(systemName: isPinned ? "pin.fill" : "pin")
-            }
-            .buttonStyle(RiceIconButtonStyle())
-            .help(isPinned ? "Unpin conversation (⇧⌘P)" : "Pin conversation (⇧⌘P)")
-            Button {
-                isGalleryPresented = true
-            } label: {
-                Image(systemName: "photo.on.rectangle.angled")
-            }
-            .buttonStyle(RiceIconButtonStyle())
-            .help("Media gallery")
-            if let service = model.conversation?.service {
-                ServiceChip(service: service)
+            .frame(maxWidth: .infinity, alignment: isSidebarCollapsed ? .center : .leading)
+            // Reserve room for the trailing actions so a long title truncates
+            // instead of sliding under them. Symmetric when centered so the
+            // title stays optically on the window's midline.
+            .padding(.leading, isSidebarCollapsed ? Self.actionsReserve : 0)
+            .padding(.trailing, Self.actionsReserve)
+
+            // Actions stay pinned to the trailing edge in both states.
+            HStack(spacing: 10) {
+                Spacer()
+                Button(action: onTogglePin) {
+                    Image(systemName: isPinned ? "pin.fill" : "pin")
+                }
+                .buttonStyle(RiceIconButtonStyle())
+                .help(isPinned ? "Unpin conversation (⇧⌘P)" : "Pin conversation (⇧⌘P)")
+                Button {
+                    isGalleryPresented = true
+                } label: {
+                    Image(systemName: "photo.on.rectangle.angled")
+                }
+                .buttonStyle(RiceIconButtonStyle())
+                .help("Media gallery")
+                if let service = model.conversation?.service {
+                    ServiceChip(service: service)
+                }
             }
         }
-        .padding(.leading, 16 + headerLeadingInset)
+        .padding(.leading, 16)
         .padding(.trailing, 16)
         .padding(.top, 12)
         .padding(.bottom, 9)
