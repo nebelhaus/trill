@@ -4,85 +4,48 @@ import UniformTypeIdentifiers
 
 struct ComposerView: View {
     @ObservedObject var model: ComposerModel
+    /// Half the conversation pane, handed down so the box can't grow past 50% vh.
+    var maxHeight: CGFloat = 320
+
     @Environment(\.riceAccent) private var accent
     @Environment(\.uiScale) private var scale
+    @AppStorage("sendOnReturn") private var sendOnReturn = true
     @State private var isDropTargeted = false
+    @State private var measuredHeight: CGFloat = 0
+
+    /// Floor used only until the first real measurement lands, kept below a
+    /// true single line so it never forces the box taller than one row.
+    private var minEditorHeight: CGFloat { 22 * scale }
+
+    /// Never let the ceiling collapse below a few lines on a short window.
+    private var ceiling: CGFloat { max(maxHeight, minEditorHeight * 3) }
+
+    private var editorHeight: CGFloat {
+        min(max(measuredHeight, minEditorHeight), ceiling)
+    }
+
+    /// Height of one text line, from the same font AppKit lays out with.
+    private var lineHeight: CGFloat {
+        let font = NSFont.systemFont(ofSize: 13 * scale)
+        return ceil(font.ascender - font.descender + font.leading)
+    }
+
+    private var insetsHeight: CGFloat { GrowingTextView.insets.height * 2 }
+
+    /// Diameter of the round send button, tied to a single text line so it never
+    /// outgrows the editor and forces the one-line box taller than the text.
+    private var controlDiameter: CGFloat { lineHeight + insetsHeight - 2 }
+
+    /// Three or more lines: stack the controls on the right so the tall box
+    /// keeps its full width. One or two lines: keep them inline.
+    private var stacksControls: Bool {
+        editorHeight > lineHeight * 2 + insetsHeight + 2
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            if !model.pendingAttachments.isEmpty {
-                attachmentChips
-            }
-
-            HStack(alignment: .bottom, spacing: 9) {
-                Button(action: presentAttachmentPanel) {
-                    Image(systemName: "paperclip")
-                        .riceFont(13)
-                }
-                .buttonStyle(RiceIconButtonStyle())
-                .disabled(!model.canSendAttachments)
-                .help("Attach files")
-                .padding(.bottom, 3)
-
-                TextEditor(text: $model.text)
-                    .riceFont(13)
-                    .foregroundStyle(Rice.text)
-                    .scrollContentBackground(.hidden)
-                    .padding(6)
-                    .frame(minHeight: 40 * scale, maxHeight: 110 * scale)
-                    .background(Rice.mantle, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(
-                                isDropTargeted ? accent : Rice.surface1,
-                                lineWidth: isDropTargeted ? 1.5 : 1
-                            )
-                    )
-                    .disabled(model.conversationID == nil)
-                    .onChange(of: model.text) { _, _ in model.textDidChange() }
-                    .onPasteCommand(of: [.fileURL, .png, .tiff]) { _ in
-                        stagePasteboardContents()
-                    }
-                    .accessibilityLabel("Message draft")
-
-                Button {
-                    Task { await model.send() }
-                } label: {
-                    Group {
-                        if model.isSending {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: "arrow.up")
-                                .riceFont(13, .bold)
-                                .foregroundStyle(canSend ? Rice.crust : Rice.overlay0)
-                        }
-                    }
-                    .frame(width: 28 * scale, height: 28 * scale)
-                    .background(canSend ? accent : Rice.surface0, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut(.return, modifiers: .command)
-                .disabled(!canSend || model.isSending)
-                .help(model.isSendEnabled ? "Send (⌘↩)" : model.disabledExplanation)
-                .accessibilityLabel("Send message")
-            }
-
-            if let feedback = model.sendFeedback {
-                Text(feedback)
-                    .riceFont(10)
-                    .foregroundStyle(Rice.red)
-                    .lineLimit(2)
-            } else if !model.disabledExplanation.isEmpty {
-                Text(model.disabledExplanation)
-                    .riceFont(10)
-                    .foregroundStyle(Rice.overlay0)
-                    .lineLimit(2)
-            } else if model.canSendAttachments, model.pendingAttachments.isEmpty {
-                Text("Drop files here to attach")
-                    .riceFont(10)
-                    .foregroundStyle(Rice.overlay0.opacity(isDropTargeted ? 1 : 0.6))
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            box
+            footnote
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -93,6 +56,141 @@ struct ComposerView: View {
         } isTargeted: { targeted in
             isDropTargeted = targeted && model.canSendAttachments
         }
+    }
+
+    // MARK: Box
+
+    private var box: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            if !model.pendingAttachments.isEmpty {
+                attachmentChips
+            }
+
+            HStack(alignment: .bottom, spacing: 8) {
+                editor
+                // Sized to the line height, the controls bottom-align to sit
+                // centered on the last text line without any extra nudging.
+                controls
+            }
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7)
+        .background(Rice.mantle, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(
+                    isDropTargeted ? accent : Rice.surface1,
+                    lineWidth: isDropTargeted ? 1.5 : 1
+                )
+        )
+    }
+
+    private var editor: some View {
+        GrowingTextView(
+            text: $model.text,
+            measuredHeight: $measuredHeight,
+            fontSize: 13 * scale,
+            isEnabled: model.conversationID != nil,
+            sendOnReturn: sendOnReturn,
+            isScrollable: measuredHeight >= ceiling - 0.5,
+            onSend: { Task { await model.send() } }
+        )
+        .frame(height: editorHeight)
+        .overlay(alignment: .topLeading) {
+            if model.text.isEmpty {
+                Text(placeholder)
+                    .riceFont(13)
+                    .foregroundStyle(Rice.overlay0)
+                    // Match the NSTextView's container insets so the placeholder
+                    // sits exactly where the typed text begins.
+                    .padding(.leading, GrowingTextView.insets.width)
+                    .padding(.top, GrowingTextView.insets.height)
+                    .allowsHitTesting(false)
+            }
+        }
+        .onChange(of: model.text) { _, _ in model.textDidChange() }
+        .onPasteCommand(of: [.fileURL, .png, .tiff]) { _ in
+            stagePasteboardContents()
+        }
+        .accessibilityLabel("Message draft")
+    }
+
+    private var attachButton: some View {
+        Button(action: presentAttachmentPanel) {
+            Image(systemName: "paperclip")
+                .riceFont(14)
+        }
+        .buttonStyle(RiceIconButtonStyle())
+        .disabled(!model.canSendAttachments)
+        .help("Attach files")
+    }
+
+    private var sendButton: some View {
+        Button {
+            Task { await model.send() }
+        } label: {
+            Group {
+                if model.isSending {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.up")
+                        .riceFont(13, .bold)
+                        .foregroundStyle(canSend ? Rice.crust : Rice.overlay0)
+                }
+            }
+            .frame(width: controlDiameter, height: controlDiameter)
+            .background(canSend ? accent : Rice.surface0, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.return, modifiers: sendOnReturn ? [] : .command)
+        .disabled(!canSend || model.isSending)
+        .help(model.isSendEnabled ? sendHint : model.disabledExplanation)
+        .accessibilityLabel("Send message")
+    }
+
+    /// Attach + send. Inline while the box is short; once it passes two lines
+    /// they stack (paperclip over send) so the text keeps the full width.
+    @ViewBuilder private var controls: some View {
+        if stacksControls {
+            VStack(spacing: 7) {
+                attachButton
+                sendButton
+            }
+        } else {
+            HStack(spacing: 8) {
+                attachButton
+                sendButton
+            }
+        }
+    }
+
+    private var footnote: some View {
+        Group {
+            if let feedback = model.sendFeedback {
+                Text(feedback)
+                    .foregroundStyle(Rice.red)
+            } else if !model.disabledExplanation.isEmpty {
+                Text(model.disabledExplanation)
+                    .foregroundStyle(Rice.overlay0)
+            } else if isDropTargeted {
+                Text("Release to attach")
+                    .foregroundStyle(accent)
+            }
+        }
+        .riceFont(10)
+        .lineLimit(2)
+        .padding(.horizontal, 4)
+    }
+
+    // MARK: Bits
+
+    private var placeholder: String {
+        model.conversationID == nil ? "Select a conversation" : "Message"
+    }
+
+    private var sendHint: String {
+        sendOnReturn ? "Send (↩)" : "Send (⌘↩)"
     }
 
     private var attachmentChips: some View {

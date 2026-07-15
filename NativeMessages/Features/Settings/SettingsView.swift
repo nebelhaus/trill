@@ -4,6 +4,7 @@ struct SettingsView: View {
     @AppStorage("displayDensity") private var densityRaw = DisplayDensity.comfortable.rawValue
     @AppStorage("accentName") private var accentName = "mauve"
     @AppStorage("uiScale") private var uiScale = 1.0
+    @AppStorage("sendOnReturn") private var sendOnReturn = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -66,6 +67,22 @@ struct SettingsView: View {
                         .riceFont(10)
                         .foregroundStyle(Rice.overlay0)
                 }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Send message with")
+                    .riceSectionHeader()
+                HStack(spacing: 6) {
+                    Button("Return") { sendOnReturn = true }
+                        .buttonStyle(DensityChoiceStyle(isSelected: sendOnReturn))
+                    Button("⌘ Return") { sendOnReturn = false }
+                        .buttonStyle(DensityChoiceStyle(isSelected: !sendOnReturn))
+                }
+                Text(sendOnReturn
+                    ? "Return sends · Shift+Return adds a line"
+                    : "⌘Return sends · Return adds a line")
+                    .riceFont(10)
+                    .foregroundStyle(Rice.overlay0)
             }
 
             Text("Native Messages wears the Nebelung rice: flat, dark, desaturated Catppuccin.")

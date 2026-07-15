@@ -17,6 +17,8 @@ struct ConversationView: View {
     var onBack: () -> Void = {}
 
     @State private var isGalleryPresented = false
+    /// Live height of the whole thread pane; the composer caps its growth at half.
+    @State private var paneHeight: CGFloat = 0
 
     /// Symmetric reserve for the centered (sidebar-hidden) header so the
     /// centered title can't slide under the trailing actions.
@@ -32,9 +34,16 @@ struct ConversationView: View {
             RiceDivider()
             MessageTimelineView(model: model, density: density)
             RiceDivider()
-            ComposerView(model: composer)
+            ComposerView(model: composer, maxHeight: paneHeight * 0.5)
         }
         .background(Rice.base)
+        .background(
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { paneHeight = proxy.size.height }
+                    .onChange(of: proxy.size.height) { _, height in paneHeight = height }
+            }
+        )
         .dropDestination(for: URL.self) { urls, _ in
             composer.stageAttachments(urls)
             return composer.canSendAttachments
