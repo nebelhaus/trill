@@ -98,12 +98,30 @@ actor LiveIMessageProvider: MessagesProvider {
 
     func events(after cursor: EventCursor?) async -> AsyncThrowingStream<ProviderEvent, Error> {
         let provider = self
+        let databaseURL = reader.databaseURL
         return AsyncThrowingStream { continuation in
+            // Coalesce a burst of WAL writes into a single pending wake.
+            let (wakes, wake) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+            let watcher = ChatDatabaseWatcher(databaseURL: databaseURL) { wake.yield(()) }
+
             let task = Task {
                 var lastRowID = (try? await provider.currentMaxRowID()) ?? 0
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(2))
+                watcher.start()
+                // Safety net: WAL events are near-instant, but a checkpoint race
+                // could drop one. A slow tick bounds worst-case staleness without
+                // the constant wakeups of the old 2s poll.
+                let ticker = Task {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(15))
+                        wake.yield(())
+                    }
+                }
+                defer { ticker.cancel() }
+
+                for await _ in wakes {
                     guard !Task.isCancelled else { break }
+                    // Let a commit's WAL writes settle before reading.
+                    try? await Task.sleep(for: .milliseconds(120))
                     do {
                         let (events, newMax) = try await provider.pollEvents(after: lastRowID)
                         lastRowID = newMax
@@ -111,13 +129,18 @@ actor LiveIMessageProvider: MessagesProvider {
                             continuation.yield(event)
                         }
                     } catch {
-                        // Transient read failures (e.g. WAL checkpoint) — retry next tick.
+                        // Transient read failure (e.g. mid-checkpoint) — wait for
+                        // the next wake.
                         continue
                     }
                 }
                 continuation.finish()
             }
-            continuation.onTermination = { _ in task.cancel() }
+            continuation.onTermination = { _ in
+                task.cancel()
+                watcher.stop()
+                wake.finish()
+            }
         }
     }
 

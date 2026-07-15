@@ -101,4 +101,33 @@ final class LiveIMessageTests: XCTestCase {
         let winners = LiveIMessageProvider.latestReactions(rows)
         XCTAssertEqual(winners.map(\.emoji), ["🔥"])
     }
+
+    func testDatabaseWatcherFiresOnWalWrite() throws {
+        // Stand in for chat.db-wal with a temp file and confirm the watcher's
+        // DispatchSource fires when it's written — no real database involved.
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("watch-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let dbURL = dir.appendingPathComponent("chat.db")
+        let walURL = dir.appendingPathComponent("chat.db-wal")
+        FileManager.default.createFile(atPath: walURL.path, contents: Data([0]))
+
+        let fired = expectation(description: "watcher fires on WAL write")
+        fired.assertForOverFulfill = false
+        let watcher = ChatDatabaseWatcher(databaseURL: dbURL) { fired.fulfill() }
+        watcher.start()
+        defer { watcher.stop() }
+
+        // Append repeatedly so a write lands after arm() finishes on its queue.
+        let handle = try FileHandle(forWritingTo: walURL)
+        defer { try? handle.close() }
+        let ticker = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            handle.seekToEndOfFile()
+            handle.write(Data([0x42]))
+        }
+        defer { ticker.invalidate() }
+
+        wait(for: [fired], timeout: 3)
+    }
 }
