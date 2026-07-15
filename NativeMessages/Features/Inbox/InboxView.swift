@@ -16,7 +16,59 @@ struct InboxView: View {
     private static let minSidebarWidth: Double = 220
     private static let maxSidebarWidth: Double = 460
 
+    /// Below this window width the two-pane layout can't give both panes a
+    /// usable share, so we fold to a single column (list *or* thread, like a
+    /// responsive site's off-canvas nav). Sized so a half-screen split on a
+    /// laptop stays two-pane while a docked ~1/3 slice goes compact.
+    private static let compactBreakpoint: CGFloat = 620
+
     var body: some View {
+        GeometryReader { proxy in
+            let isCompact = proxy.size.width < Self.compactBreakpoint
+            Group {
+                if isCompact {
+                    compactBody
+                } else {
+                    regularBody
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Rice.mantle)
+            .ignoresSafeArea()
+            .animation(.easeOut(duration: 0.16), value: model.isSidebarVisible)
+            .animation(.easeOut(duration: 0.18), value: isCompact)
+            .animation(.easeOut(duration: 0.18), value: model.selectedConversationID)
+            .overlay {
+                if model.isSearchPresented {
+                    SearchView(model: model)
+                }
+            }
+            .animation(.easeOut(duration: 0.12), value: model.isSearchPresented)
+            .overlay {
+                if model.isPalettePresented {
+                    CommandPaletteView(model: model)
+                }
+            }
+            .animation(.easeOut(duration: 0.12), value: model.isPalettePresented)
+            .sheet(isPresented: $model.isComposePresented) {
+                ComposeSheet(model: model)
+            }
+            .task { model.load() }
+            .onChange(of: model.selectedConversationID) { _, selection in
+                model.select(selection)
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active, model.providerMode == .messages {
+                    model.load()
+                }
+            }
+        }
+    }
+
+    // MARK: - Layouts
+
+    /// Two-pane: resizable sidebar beside the detail, today's desktop layout.
+    private var regularBody: some View {
         HStack(spacing: 0) {
             if model.isSidebarVisible {
                 SidebarView(model: model, density: density)
@@ -47,55 +99,63 @@ struct InboxView: View {
                     )
             }
 
-            detail
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Rice.base)
-                .overlay(alignment: .topLeading) {
-                    if !model.isSidebarVisible {
-                        Button(action: model.toggleSidebar) {
-                            Image(systemName: "sidebar.left")
-                        }
-                        .buttonStyle(RiceIconButtonStyle())
-                        .help("Show sidebar (⌘⌃S)")
-                        // Sits in the top bar under the traffic lights, its
-                        // glyph lined up with the leftmost dot's left edge so
-                        // the two share a left margin.
-                        .padding(.leading, 6)
-                        .padding(.top, 30)
-                    }
-                }
+            detail(isCompact: false)
         }
-        .background(Rice.mantle)
-        .ignoresSafeArea()
-        .animation(.easeOut(duration: 0.16), value: model.isSidebarVisible)
-        .overlay {
-            if model.isSearchPresented {
-                SearchView(model: model)
-            }
-        }
-        .animation(.easeOut(duration: 0.12), value: model.isSearchPresented)
-        .overlay {
-            if model.isPalettePresented {
-                CommandPaletteView(model: model)
-            }
-        }
-        .animation(.easeOut(duration: 0.12), value: model.isPalettePresented)
-        .sheet(isPresented: $model.isComposePresented) {
-            ComposeSheet(model: model)
-        }
-        .task { model.load() }
-        .onChange(of: model.selectedConversationID) { _, selection in
-            model.select(selection)
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active, model.providerMode == .messages {
-                model.load()
+    }
+
+    /// Single column: the list, or the open thread with a back button. The
+    /// sidebar toggle / resize handle are meaningless here, so they're gone.
+    private var compactBody: some View {
+        Group {
+            if compactShowsDetail {
+                detail(isCompact: true)
+                    .transition(.move(edge: .trailing))
+            } else {
+                SidebarView(model: model, density: density, isCompact: true)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Rice.mantle)
+                    .transition(.move(edge: .leading))
             }
         }
     }
 
+    /// In compact mode, show the thread when one is picked — and also when the
+    /// provider is in a recovery/loading state, so its full-screen recovery
+    /// view surfaces instead of the sidebar's cramped mini-notice.
+    private var compactShowsDetail: Bool {
+        if model.selectedConversationID != nil { return true }
+        switch model.state {
+        case .loaded, .empty, .loading, .idle:
+            return false
+        case .permissionMissing, .unsupportedSchema, .providerUnavailable, .failed:
+            return true
+        }
+    }
+
+    private func detail(isCompact: Bool) -> some View {
+        detailContent(isCompact: isCompact)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Rice.base)
+            .overlay(alignment: .topLeading) {
+                // Compact detail carries its own in-header back button, so the
+                // floating toggle is only for the regular collapsed pane.
+                if !isCompact, !model.isSidebarVisible {
+                    Button(action: model.toggleSidebar) {
+                        Image(systemName: "sidebar.left")
+                    }
+                    .buttonStyle(RiceIconButtonStyle())
+                    .help("Show sidebar (⌘⌃S)")
+                    // Sits in the top bar under the traffic lights, its
+                    // glyph lined up with the leftmost dot's left edge so
+                    // the two share a left margin.
+                    .padding(.leading, 6)
+                    .padding(.top, 30)
+                }
+            }
+    }
+
     @ViewBuilder
-    private var detail: some View {
+    private func detailContent(isCompact: Bool) -> some View {
         switch model.state {
         case .permissionMissing:
             ProviderRecoveryView(
@@ -150,9 +210,11 @@ struct InboxView: View {
                     model: model.conversationModel,
                     composer: model.composerModel,
                     density: density,
-                    isSidebarCollapsed: !model.isSidebarVisible,
+                    isSidebarCollapsed: isCompact || !model.isSidebarVisible,
                     isPinned: model.selectedConversationID.map { model.pinnedIDs.contains($0) } ?? false,
-                    onTogglePin: model.toggleSelectedPin
+                    onTogglePin: model.toggleSelectedPin,
+                    isCompact: isCompact,
+                    onBack: { model.select(nil) }
                 )
             }
         }
@@ -203,6 +265,9 @@ private struct SidebarResizeHandle: View {
 private struct SidebarView: View {
     @ObservedObject var model: InboxModel
     let density: DisplayDensity
+    /// In the single-column layout the sidebar *is* the whole window, so the
+    /// "hide sidebar" toggle has nothing to reveal and is dropped.
+    var isCompact = false
     @State private var isHealthPresented = false
 
     var body: some View {
@@ -215,53 +280,141 @@ private struct SidebarView: View {
         .background(Rice.mantle)
     }
 
+    /// The title never truncates; icons fold into a "⋯" menu as space runs out.
+    /// ViewThatFits measures the *rendered* sizes and takes the richest row that
+    /// fits, so this self-corrects at every window width and zoom level — no
+    /// magic pixel thresholds. The collapse is graduated (filter+reload → search
+    /// → hide), with New message the last icon standing.
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
             Color.clear
                 .frame(height: 36)   // traffic-light clearance
-            HStack(spacing: 4) {
-                Text("Messages")
-                    .riceSectionHeader()
-                Spacer()
-                Button {
-                    model.isComposePresented = true
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                }
-                .buttonStyle(RiceIconButtonStyle())
-                .help("New message (⌘N)")
-                Button {
-                    model.showsUnreadOnly.toggle()
-                } label: {
-                    Image(systemName: model.showsUnreadOnly
-                          ? "line.3.horizontal.decrease.circle.fill"
-                          : "line.3.horizontal.decrease.circle")
-                }
-                .buttonStyle(RiceIconButtonStyle(isActive: model.showsUnreadOnly))
-                .help(model.showsUnreadOnly ? "Show all conversations (⇧⌘U)" : "Show unread only (⇧⌘U)")
-                Button(action: model.load) {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(RiceIconButtonStyle())
-                .help("Reload (⌘R)")
-                Button {
-                    model.isSearchPresented = true
-                } label: {
-                    Image(systemName: "magnifyingglass")
-                }
-                .buttonStyle(RiceIconButtonStyle())
-                .help("Search messages (⇧⌘F)")
-                Button(action: model.toggleSidebar) {
-                    Image(systemName: "sidebar.left")
-                }
-                .buttonStyle(RiceIconButtonStyle())
-                .help("Hide sidebar (⌘⌃S)")
+            ViewThatFits(in: .horizontal) {
+                headerRow(level: 0)
+                headerRow(level: 1)
+                headerRow(level: 2)
+                headerRow(level: 3)
             }
             .padding(.leading, 14)
             .padding(.trailing, 10)
             .padding(.bottom, 6)
         }
         .accessibilityLabel("Conversations header")
+    }
+
+    /// Progressive collapse. Higher level = fewer inline icons, more in the menu:
+    /// - 0: compose · filter · reload · search · hide
+    /// - 1: compose · search · hide            · ⋯(filter, reload)
+    /// - 2: compose · hide                     · ⋯(search, filter, reload)
+    /// - 3: compose                            · ⋯(search, filter, reload, hide)
+    private func headerRow(level: Int) -> some View {
+        HStack(spacing: 4) {
+            Text("Messages")
+                .riceSectionHeader()
+                .fixedSize()   // hold full width: the title is never sacrificed
+            Spacer(minLength: 8)
+            composeButton
+            if level == 0 {
+                unreadFilterButton
+                reloadButton
+            }
+            if level <= 1 { searchButton }
+            if !isCompact, level <= 2 { hideSidebarButton }
+            if level >= 1 {
+                overflowMenu(includesSearch: level >= 2,
+                             includesHide: !isCompact && level >= 3)
+            }
+        }
+    }
+
+    private var composeButton: some View {
+        Button {
+            model.isComposePresented = true
+        } label: {
+            Image(systemName: "square.and.pencil")
+        }
+        .buttonStyle(RiceIconButtonStyle())
+        .help("New message (⌘N)")
+    }
+
+    private var unreadFilterButton: some View {
+        Button {
+            model.showsUnreadOnly.toggle()
+        } label: {
+            Image(systemName: model.showsUnreadOnly
+                  ? "line.3.horizontal.decrease.circle.fill"
+                  : "line.3.horizontal.decrease.circle")
+        }
+        .buttonStyle(RiceIconButtonStyle(isActive: model.showsUnreadOnly))
+        .help(model.showsUnreadOnly ? "Show all conversations (⇧⌘U)" : "Show unread only (⇧⌘U)")
+    }
+
+    private var reloadButton: some View {
+        Button(action: model.load) {
+            Image(systemName: "arrow.clockwise")
+        }
+        .buttonStyle(RiceIconButtonStyle())
+        .help("Reload (⌘R)")
+    }
+
+    private var searchButton: some View {
+        Button {
+            model.isSearchPresented = true
+        } label: {
+            Image(systemName: "magnifyingglass")
+        }
+        .buttonStyle(RiceIconButtonStyle())
+        .help("Search messages (⇧⌘F)")
+    }
+
+    private var hideSidebarButton: some View {
+        Button(action: model.toggleSidebar) {
+            Image(systemName: "sidebar.left")
+        }
+        .buttonStyle(RiceIconButtonStyle())
+        .help("Hide sidebar (⌘⌃S)")
+    }
+
+    /// The actions that don't fit inline, tucked under a "⋯" button. Which ones
+    /// spill in depends on how far the row had to collapse.
+    private func overflowMenu(includesSearch: Bool, includesHide: Bool) -> some View {
+        Menu {
+            if includesSearch {
+                Button {
+                    model.isSearchPresented = true
+                } label: {
+                    Label("Search Messages", systemImage: "magnifyingglass")
+                }
+            }
+            Button {
+                model.showsUnreadOnly.toggle()
+            } label: {
+                Label(model.showsUnreadOnly ? "Show All Conversations" : "Show Unread Only",
+                      systemImage: model.showsUnreadOnly
+                      ? "line.3.horizontal.decrease.circle.fill"
+                      : "line.3.horizontal.decrease.circle")
+            }
+            Button {
+                model.load()
+            } label: {
+                Label("Reload", systemImage: "arrow.clockwise")
+            }
+            if includesHide {
+                Button {
+                    model.toggleSidebar()
+                } label: {
+                    Label("Hide Sidebar", systemImage: "sidebar.left")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .riceFont(13)
+                .foregroundStyle(Rice.subtext1)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("More actions")
     }
 
     @ViewBuilder

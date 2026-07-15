@@ -14,7 +14,10 @@ struct NativeMessagesApp: App {
         WindowGroup {
             RicedRoot {
                 InboxView(model: inboxModel)
-                    .frame(minWidth: 820, minHeight: 560)
+                    // Floor low enough to dock the window to ~1/3 of a screen.
+                    // Below InboxView's compact breakpoint the layout folds to a
+                    // single column, so it stays usable all the way down.
+                    .frame(minWidth: 360, minHeight: 480)
             }
         }
         .defaultSize(width: 1_080, height: 720)

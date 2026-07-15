@@ -11,16 +11,24 @@ struct ConversationView: View {
     var isSidebarCollapsed = false
     var isPinned = false
     var onTogglePin: () -> Void = {}
+    /// Single-column layout: the header grows a leading back button that pops
+    /// to the conversation list, mobile-nav-bar style.
+    var isCompact = false
+    var onBack: () -> Void = {}
 
     @State private var isGalleryPresented = false
 
-    /// Width kept clear on the trailing edge (pin + gallery + service chip) so
-    /// the title never collides with the header actions.
-    private static let actionsReserve: CGFloat = 150
+    /// Symmetric reserve for the centered (sidebar-hidden) header so the
+    /// centered title can't slide under the trailing actions.
+    private static let centeredReserve: CGFloat = 150
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            if isCompact {
+                compactHeader
+            } else {
+                header
+            }
             RiceDivider()
             MessageTimelineView(model: model, density: density)
             RiceDivider()
@@ -44,39 +52,117 @@ struct ConversationView: View {
     }
 
     private var header: some View {
-        ZStack {
-            // Avatar + title. Centered in the bar when the sidebar is collapsed,
-            // left-aligned when it's open. Laid out horizontally either way so
-            // the bar keeps its height.
-            HStack(spacing: 10) {
+        Group {
+            if isSidebarCollapsed {
+                // Sidebar hidden: center the title in the bar (Messages-style).
+                // Only reachable at the regular breakpoint (≥ 620pt) where the
+                // full-width thread pane always has room for the chip.
+                ZStack {
+                    titleBlock
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.horizontal, Self.centeredReserve)
+                    HStack(spacing: 10) {
+                        Spacer()
+                        headerActions(showsChip: true)
+                    }
+                }
+            } else {
+                // Sidebar open: drop the service chip before the name truncates.
+                // ViewThatFits measures the rendered row, so it stays correct at
+                // every pane width and zoom level — no pixel thresholds.
+                ViewThatFits(in: .horizontal) {
+                    inlineHeaderRow(showsChip: true)
+                    inlineHeaderRow(showsChip: false)
+                }
+            }
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 9)
+    }
+
+    private func inlineHeaderRow(showsChip: Bool) -> some View {
+        HStack(spacing: 10) {
+            titleBlock
+            Spacer(minLength: 8)
+            headerActions(showsChip: showsChip)
+        }
+    }
+
+    private var titleBlock: some View {
+        HStack(spacing: 10) {
+            if let conversation = model.conversation {
+                AvatarView(conversation: conversation, size: 26)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(model.conversation?.displayName ?? "Conversation")
+                    .riceFont(14, .semibold)
+                    .foregroundStyle(Rice.text)
+                    .lineLimit(1)
+                if let subtitle = headerSubtitle {
+                    Text(subtitle)
+                        .riceFont(10)
+                        .foregroundStyle(Rice.subtext0)
+                        .lineLimit(1)
+                }
+            }
+        }
+    }
+
+    private func headerActions(showsChip: Bool) -> some View {
+        HStack(spacing: 10) {
+            Button(action: onTogglePin) {
+                Image(systemName: isPinned ? "pin.fill" : "pin")
+            }
+            .buttonStyle(RiceIconButtonStyle())
+            .help(isPinned ? "Unpin conversation (⇧⌘P)" : "Pin conversation (⇧⌘P)")
+            Button {
+                isGalleryPresented = true
+            } label: {
+                Image(systemName: "photo.on.rectangle.angled")
+            }
+            .buttonStyle(RiceIconButtonStyle())
+            .help("Media gallery")
+            if showsChip, let service = model.conversation?.service {
+                ServiceChip(service: service)
+            }
+        }
+    }
+
+    /// Single-column nav bar: [‹ Back] avatar title …… actions, all on one
+    /// row sitting below the traffic lights. No centered title / fixed reserve
+    /// — the title just takes the slack and truncates, so it reads well even
+    /// when the window is a thin sliver.
+    private var compactHeader: some View {
+        VStack(spacing: 0) {
+            // Clear the window's traffic lights, which float over this corner.
+            Color.clear.frame(height: 22)
+            HStack(spacing: 8) {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(RiceIconButtonStyle())
+                .help("Back to conversations")
+
                 if let conversation = model.conversation {
-                    AvatarView(conversation: conversation, size: 26)
+                    AvatarView(conversation: conversation, size: 24)
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(model.conversation?.displayName ?? "Conversation")
                         .riceFont(14, .semibold)
                         .foregroundStyle(Rice.text)
                         .lineLimit(1)
-                    if let conversation = model.conversation {
-                        Text(conversation.kind == .group
-                             ? "\(conversation.participants.count) participants"
-                             : (conversation.participants.first?.displayName ?? conversation.participants.first?.handle ?? "Direct conversation"))
+                    if let subtitle = headerSubtitle {
+                        Text(subtitle)
                             .riceFont(10)
                             .foregroundStyle(Rice.subtext0)
                             .lineLimit(1)
                     }
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: isSidebarCollapsed ? .center : .leading)
-            // Reserve room for the trailing actions so a long title truncates
-            // instead of sliding under them. Symmetric when centered so the
-            // title stays optically on the window's midline.
-            .padding(.leading, isSidebarCollapsed ? Self.actionsReserve : 0)
-            .padding(.trailing, Self.actionsReserve)
 
-            // Actions stay pinned to the trailing edge in both states.
-            HStack(spacing: 10) {
-                Spacer()
+                Spacer(minLength: 6)
+
                 Button(action: onTogglePin) {
                     Image(systemName: isPinned ? "pin.fill" : "pin")
                 }
@@ -89,15 +175,22 @@ struct ConversationView: View {
                 }
                 .buttonStyle(RiceIconButtonStyle())
                 .help("Media gallery")
-                if let service = model.conversation?.service {
-                    ServiceChip(service: service)
-                }
             }
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 16)
-        .padding(.top, 12)
+        .padding(.leading, 12)
+        .padding(.trailing, 12)
         .padding(.bottom, 9)
+    }
+
+    /// Participant summary shown under the conversation name.
+    private var headerSubtitle: String? {
+        guard let conversation = model.conversation else { return nil }
+        if conversation.kind == .group {
+            return "\(conversation.participants.count) participants"
+        }
+        return conversation.participants.first?.displayName
+            ?? conversation.participants.first?.handle
+            ?? "Direct conversation"
     }
 }
 
