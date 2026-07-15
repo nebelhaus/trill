@@ -303,10 +303,10 @@ private struct SidebarView: View {
     }
 
     /// Progressive collapse. Higher level = fewer inline icons, more in the menu:
-    /// - 0: compose · filter · reload · search · hide
-    /// - 1: compose · search · hide            · ⋯(filter, reload)
-    /// - 2: compose · hide                     · ⋯(search, filter, reload)
-    /// - 3: compose                            · ⋯(search, filter, reload, hide)
+    /// - 0: compose · filters · reload · search · hide
+    /// - 1: compose · search · hide             · ⋯(filters, reload)
+    /// - 2: compose · hide                      · ⋯(search, filters, reload)
+    /// - 3: compose                             · ⋯(search, filters, reload, hide)
     private func headerRow(level: Int) -> some View {
         HStack(spacing: 4) {
             Text("Messages")
@@ -316,6 +316,7 @@ private struct SidebarView: View {
             composeButton
             if level == 0 {
                 unreadFilterButton
+                needsReplyFilterButton
                 reloadButton
             }
             if level <= 1 { searchButton }
@@ -347,6 +348,18 @@ private struct SidebarView: View {
         }
         .buttonStyle(RiceIconButtonStyle(isActive: model.showsUnreadOnly))
         .help(model.showsUnreadOnly ? "Show all conversations (⇧⌘U)" : "Show unread only (⇧⌘U)")
+    }
+
+    private var needsReplyFilterButton: some View {
+        Button {
+            model.showsNeedsReplyOnly.toggle()
+        } label: {
+            Image(systemName: model.showsNeedsReplyOnly
+                  ? "arrowshape.turn.up.left.circle.fill"
+                  : "arrowshape.turn.up.left.circle")
+        }
+        .buttonStyle(RiceIconButtonStyle(isActive: model.showsNeedsReplyOnly))
+        .help(model.showsNeedsReplyOnly ? "Show all conversations (⇧⌘R)" : "Needs reply only (⇧⌘R)")
     }
 
     private var reloadButton: some View {
@@ -395,6 +408,14 @@ private struct SidebarView: View {
                       : "line.3.horizontal.decrease.circle")
             }
             Button {
+                model.showsNeedsReplyOnly.toggle()
+            } label: {
+                Label(model.showsNeedsReplyOnly ? "Show All Conversations" : "Show Needs Reply",
+                      systemImage: model.showsNeedsReplyOnly
+                      ? "arrowshape.turn.up.left.circle.fill"
+                      : "arrowshape.turn.up.left.circle")
+            }
+            Button {
                 model.load()
             } label: {
                 Label("Reload", systemImage: "arrow.clockwise")
@@ -429,15 +450,15 @@ private struct SidebarView: View {
                 message: "This provider returned no conversations."
             )
         case .loaded:
-            if model.visibleConversations.isEmpty {
+            if model.visibleConversations.isEmpty, model.filter != .all {
                 VStack(spacing: 10) {
                     Image(systemName: "checkmark.circle")
                         .riceFont(22)
                         .foregroundStyle(Rice.green)
-                    Text("No unread conversations")
+                    Text(model.filter == .needsReply ? "Nothing awaiting a reply" : "No unread conversations")
                         .riceFont(12, .medium)
                         .foregroundStyle(Rice.subtext1)
-                    Button("Show All") { model.showsUnreadOnly = false }
+                    Button("Show All") { model.filter = .all }
                         .buttonStyle(RiceSubtleButtonStyle())
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

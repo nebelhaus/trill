@@ -8,6 +8,7 @@ struct AppCommands: Commands {
     let toggleSidebar: () -> Void
     let togglePin: () -> Void
     let toggleUnreadFilter: () -> Void
+    let toggleNeedsReplyFilter: () -> Void
     let selectPinned: (Int) -> Void
     let useFixture: () -> Void
     let useMessages: () -> Void
@@ -33,6 +34,8 @@ struct AppCommands: Commands {
                 .keyboardShortcut("p", modifiers: [.command, .shift])
             Button("Unread Only", action: toggleUnreadFilter)
                 .keyboardShortcut("u", modifiers: [.command, .shift])
+            Button("Needs Reply Only", action: toggleNeedsReplyFilter)
+                .keyboardShortcut("r", modifiers: [.command, .shift])
             Divider()
             ForEach(1..<10) { slot in
                 Button("Pinned Conversation \(slot)") { selectPinned(slot - 1) }

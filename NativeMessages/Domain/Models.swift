@@ -36,6 +36,10 @@ struct Conversation: Hashable, Codable, Sendable, Identifiable {
     let lastActivity: Date
     let lastMessagePreview: String
     let unreadCount: Int?
+    /// Whether the most recent message in the thread was sent by me. Drives the
+    /// needs-reply triage filter: a thread whose last message is *from them*
+    /// (this is `false`) and has sat unanswered is what surfaces there.
+    let lastMessageFromMe: Bool
 }
 
 enum AttachmentAvailability: String, Codable, Sendable {

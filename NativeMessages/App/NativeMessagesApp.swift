@@ -31,6 +31,7 @@ struct NativeMessagesApp: App {
                 toggleSidebar: { inboxModel.toggleSidebar() },
                 togglePin: { inboxModel.toggleSelectedPin() },
                 toggleUnreadFilter: { inboxModel.showsUnreadOnly.toggle() },
+                toggleNeedsReplyFilter: { inboxModel.showsNeedsReplyOnly.toggle() },
                 selectPinned: { inboxModel.selectPinned(at: $0) },
                 useFixture: { inboxModel.switchProvider(to: .fixture) },
                 useMessages: { inboxModel.switchProvider(to: .messages) },

@@ -285,7 +285,8 @@ struct FixtureData: Sendable {
                 service: .iMessage,
                 lastActivity: groupMessages.last!.createdAt,
                 lastMessagePreview: groupMessages.last!.text,
-                unreadCount: 4
+                unreadCount: 4,
+                lastMessageFromMe: groupMessages.last!.isOutgoing
             ),
             Conversation(
                 id: smsID,
@@ -296,7 +297,8 @@ struct FixtureData: Sendable {
                 service: .sms,
                 lastActivity: smsMessages.last!.createdAt,
                 lastMessagePreview: smsMessages.last!.text,
-                unreadCount: 0
+                unreadCount: 0,
+                lastMessageFromMe: smsMessages.last!.isOutgoing
             ),
             Conversation(
                 id: directID,
@@ -307,7 +309,8 @@ struct FixtureData: Sendable {
                 service: .iMessage,
                 lastActivity: directMessages.last!.createdAt,
                 lastMessagePreview: directMessages.last!.text,
-                unreadCount: 2
+                unreadCount: 2,
+                lastMessageFromMe: directMessages.last!.isOutgoing
             ),
         ]
 

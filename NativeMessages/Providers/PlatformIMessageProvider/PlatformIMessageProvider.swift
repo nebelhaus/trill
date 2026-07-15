@@ -98,7 +98,10 @@ enum PlatformIMessageMapper {
             service: service,
             lastActivity: date(milliseconds: source.timestamp ?? source.createdAt ?? 0),
             lastMessagePreview: source.partialLastMessage?.text ?? "",
-            unreadCount: source.unreadCount ?? (source.isUnread ? 1 : 0)
+            unreadCount: source.unreadCount ?? (source.isUnread ? 1 : 0),
+            // This spike provider can't cheaply resolve last-message direction;
+            // treat as "from me" so it never falsely flags needs-reply.
+            lastMessageFromMe: true
         )
     }
 

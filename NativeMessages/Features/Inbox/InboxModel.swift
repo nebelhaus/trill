@@ -15,6 +15,18 @@ enum ProviderMode: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// Which slice of the conversation list the sidebar shows. These are mutually
+/// exclusive views of the same list, not composable flags — picking one clears
+/// the others, mirroring how a mail client's mailbox selection works.
+enum InboxFilter: String, Sendable {
+    /// Every conversation, newest first.
+    case all
+    /// Only threads with unread messages from them.
+    case unread
+    /// Triage view: threads whose last message is from them and unanswered.
+    case needsReply
+}
+
 enum InboxLoadState: Equatable {
     case idle
     case loading
@@ -59,8 +71,22 @@ final class InboxModel: ObservableObject {
     @Published var searchSeed: String?
     @Published var isComposePresented = false
     @Published var isSidebarVisible = true
-    @Published var showsUnreadOnly = UserDefaults.standard.bool(forKey: "showsUnreadOnly") {
-        didSet { UserDefaults.standard.set(showsUnreadOnly, forKey: "showsUnreadOnly") }
+    /// Active sidebar filter, persisted across launches. Migrates the legacy
+    /// `showsUnreadOnly` bool the first time so an existing unread-only view is
+    /// preserved. `showsUnreadOnly` / `showsNeedsReplyOnly` are convenience
+    /// toggles over this single source of truth.
+    @Published var filter: InboxFilter = InboxModel.loadPersistedFilter() {
+        didSet { UserDefaults.standard.set(filter.rawValue, forKey: InboxModel.filterKey) }
+    }
+
+    var showsUnreadOnly: Bool {
+        get { filter == .unread }
+        set { filter = newValue ? .unread : .all }
+    }
+
+    var showsNeedsReplyOnly: Bool {
+        get { filter == .needsReply }
+        set { filter = newValue ? .needsReply : .all }
     }
     @Published private(set) var providerMode: ProviderMode = .fixture
     @Published private(set) var errorSummary: String?
@@ -74,6 +100,16 @@ final class InboxModel: ObservableObject {
     private var loadTask: Task<Void, Never>?
     private var eventTask: Task<Void, Never>?
     private static let providerModeKey = "providerMode"
+    private static let filterKey = "inboxFilter"
+
+    private static func loadPersistedFilter() -> InboxFilter {
+        let defaults = UserDefaults.standard
+        if let raw = defaults.string(forKey: filterKey), let stored = InboxFilter(rawValue: raw) {
+            return stored
+        }
+        // One-time migration from the pre-triage unread-only bool.
+        return defaults.bool(forKey: "showsUnreadOnly") ? .unread : .all
+    }
 
     init(database: AppDatabase) {
         self.database = database
@@ -169,9 +205,18 @@ final class InboxModel: ObservableObject {
     /// Sidebar list after the unread-only filter. The selected conversation
     /// stays visible so toggling the filter never yanks the open thread.
     var visibleConversations: [Conversation] {
-        guard showsUnreadOnly else { return conversations }
-        return conversations.filter {
-            hasVisibleUnread($0) || $0.id == selectedConversationID
+        switch filter {
+        case .all:
+            return conversations
+        case .unread:
+            return conversations.filter {
+                hasVisibleUnread($0) || $0.id == selectedConversationID
+            }
+        case .needsReply:
+            let now = Date.now
+            return conversations.filter {
+                NeedsReply.needsReply($0, now: now) || $0.id == selectedConversationID
+            }
         }
     }
 

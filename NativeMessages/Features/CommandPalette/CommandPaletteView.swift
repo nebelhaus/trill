@@ -112,6 +112,14 @@ struct CommandPaletteView: View {
                 model.showsUnreadOnly.toggle()
             },
             PaletteAction(
+                id: "needsReply",
+                title: model.showsNeedsReplyOnly ? "Show All Conversations" : "Show Needs Reply",
+                systemImage: "arrowshape.turn.up.left.circle",
+                shortcut: "⇧⌘R"
+            ) {
+                model.showsNeedsReplyOnly.toggle()
+            },
+            PaletteAction(
                 id: "sidebar",
                 title: model.isSidebarVisible ? "Hide Sidebar" : "Show Sidebar",
                 systemImage: "sidebar.left",

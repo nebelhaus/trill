@@ -119,17 +119,17 @@ struct ChatDatabaseReader: Sendable {
         }
     }
 
-    func lastMessagePreview(chatRowID: Int64) throws -> (text: String?, body: Data?, hasAttachments: Bool)? {
+    func lastMessagePreview(chatRowID: Int64) throws -> (text: String?, body: Data?, hasAttachments: Bool, isFromMe: Bool)? {
         try withConnection { db in
             try query(db, """
-                SELECT m.text, m.attributedBody, m.cache_has_attachments
+                SELECT m.text, m.attributedBody, m.cache_has_attachments, m.is_from_me
                 FROM message m
                 JOIN chat_message_join j ON j.message_id = m.ROWID
                 WHERE j.chat_id = ? AND m.associated_message_type = 0 AND m.item_type = 0
                 ORDER BY m.date DESC
                 LIMIT 1
                 """, bind: [.int(chatRowID)]) { stmt in
-                (text(stmt, 0), blob(stmt, 1), sqlite3_column_int(stmt, 2) == 1)
+                (text(stmt, 0), blob(stmt, 1), sqlite3_column_int(stmt, 2) == 1, sqlite3_column_int(stmt, 3) == 1)
             }.first
         }
     }

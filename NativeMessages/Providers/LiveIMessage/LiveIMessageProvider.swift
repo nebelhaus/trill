@@ -302,7 +302,10 @@ actor LiveIMessageProvider: MessagesProvider {
             lastActivity: Self.date(fromAppleNanoseconds: chat.lastMessageDate),
             lastMessagePreview: previewText.nonEmpty
                 ?? ((preview?.hasAttachments ?? false) ? "Attachment" : ""),
-            unreadCount: unread > 0 ? unread : nil
+            unreadCount: unread > 0 ? unread : nil,
+            // No last message (empty thread) counts as "from me" so it never
+            // lands in the needs-reply triage view.
+            lastMessageFromMe: preview?.isFromMe ?? true
         )
     }
 
