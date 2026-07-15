@@ -53,7 +53,7 @@ Everything below respects these.
 
 | Idea | What | Effort | Feas. | Notes |
 |------|------|--------|-------|-------|
-| **Conversation stats panel** | Per-thread: total messages, you-vs-them ratio, median response time, most-active hours, current streak | M | ✅ | All derivable from `date` + `is_from_me`. High delight, low risk. |
+| **Conversation stats panel** | Per-thread: total messages, you-vs-them ratio, median response time, most-active hours, current streak | M | ✅ 🚢 | Shipped (`b28906a`). Chart button in the header opens a sheet; a pure `ConversationStatsBuilder` over lightweight `MessageStatSample`s (`date` + `is_from_me`) feeds it, with a narrow `statSamples` provider query so whole-thread aggregation stays cheap. |
 | **Relationship timeline** | Per contact: first message ever, total volume, media count, longest silence, cadence over time | M–L | ✅ | Great "wow" surface for the primary persona. |
 | **Needs-reply detector** | Smart filter/section: threads whose last message is *from them* and unanswered for N hours | S–M | ✅ 🚢 | Shipped (`999debf`). ⇧⌘R toggles the triage filter; `lastMessageFromMe` + `reactedToLatestInbound` (both from chat.db — a tapback I left counts as a reply) feed a pure `NeedsReply` helper (3h default). |
 | **Year in review** | An annual "wrapped" recap: top contacts, message counts, busiest day, top emoji/tapback | L | ✅ | Seasonal delight; reuses the stats primitives. |
