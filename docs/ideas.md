@@ -63,7 +63,7 @@ Everything below respects these.
 
 | Idea | What | Effort | Feas. | Notes |
 |------|------|--------|-------|-------|
-| **Command palette (⌘K)** | Fuzzy jump to any conversation, action, or setting; the keyboard spine of the app | M | ✅ | PRD explicitly wants this. Pairs with everything. |
+| **Command palette (⌘K)** | Fuzzy jump to any conversation, action, or setting; the keyboard spine of the app | M | ✅ 🚢 | Shipped (`0474b5c`). ⌘K opens it; full-text message search moved to ⇧⌘F. Subsumes the Quick switcher. |
 | **Snooze a thread** | Hide a conversation until a chosen time, then resurface it | M | ✅ | Local scheduler + overlay flag. PRD-aligned. |
 | **Folders / tags** | User-defined labels and folders for conversations, local-only | M–L | ✅ | Overlay in `AppDatabase`; sidebar sections. PRD core. |
 | **Archive** | Remove a thread from the main list without losing it | S | ✅ | Overlay flag; filter in `visibleConversations`. |
@@ -149,10 +149,10 @@ Everything below respects these.
 If picking without further discussion, this order maximizes value per effort and
 compounds well:
 
-1. **Command palette (⌘K)** — `M`. The keyboard spine; every other feature
-   becomes reachable through it. PRD-central.
+1. ~~**Command palette (⌘K)**~~ — ✅ shipped (`0474b5c`). The keyboard spine;
+   every other feature becomes reachable through it. PRD-central.
 2. **Needs-reply detector** — `S–M`. Highest day-to-day utility; turns the app
-   into a triage tool, not just a viewer.
+   into a triage tool, not just a viewer. **← next up.**
 3. **Advanced search operators** — `M`. Unlocks the retrieval superpower with
    modest work atop existing search.
 4. **Scheduled send** — `M`. The one genuinely powerful send-side capability
