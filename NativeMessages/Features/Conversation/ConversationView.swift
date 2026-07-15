@@ -125,7 +125,12 @@ private struct MessageTimelineView: View {
                     )
                 case .loaded:
                     ScrollView {
-                        LazyVStack(spacing: density.timelineSpacing) {
+                        // Eager VStack, not Lazy: a page is only ~36 rows, and
+                        // LazyVStack + .defaultScrollAnchor(.bottom) leaves the
+                        // viewport blank until a scroll forces row realization —
+                        // the churn is worst in image-heavy threads whose async
+                        // thumbnails keep resizing rows during initial layout.
+                        VStack(spacing: density.timelineSpacing) {
                             if model.nextBefore != nil {
                                 loadOlderButton(proxy: proxy)
                             }
