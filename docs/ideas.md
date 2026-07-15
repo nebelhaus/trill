@@ -85,7 +85,7 @@ Everything below respects these.
 
 | Idea | What | Effort | Feas. | Notes |
 |------|------|--------|-------|-------|
-| **Scheduled send** | Queue a message to dispatch at a chosen time via the existing AppleScript path | M | ✅ | Fully feasible and genuinely useful; a local scheduler fires the send. Highest-value send-side idea. |
+| **Scheduled send** | Queue a message to dispatch at a chosen time via the existing AppleScript path | M | ⛔ | **Deferred until we have a server.** Technically buildable, but the send path drives Messages.app locally over Apple Events — there is no server anywhere. So a scheduled message can only fire while this Mac is awake (or wakeable from sleep); if the laptop is off/closed at the chosen time it silently can't send. The only true fix is a cloud relay that sends on our behalf, which would mean uploading message text off-device — a hard no against the local-first/privacy premise. Revisit if the app ever gains a server component. |
 | **Undo send window** | Buffer the dispatch a few seconds so an accidental send can be cancelled | S | ✅ | Delay the AppleScript call; cancel before it fires. |
 | **Tapback handoff** | Since we can't send tapbacks, one click focuses the target message in Messages.app so the user reacts there | S | ⚠️ | AppleScript can reveal/activate; the react itself is manual. Honest bridge over a hard limit. |
 | **Message templates** | Structured, fill-in-the-blank outgoing messages | S–M | ✅ | Composer-side only. |
@@ -155,8 +155,9 @@ compounds well:
    triage tool, not just a viewer. ⇧⌘R filters to threads awaiting your reply.
 3. **Advanced search operators** — `M`. Unlocks the retrieval superpower with
    modest work atop existing search. **← next up.**
-4. **Scheduled send** — `M`. The one genuinely powerful send-side capability
-   available to us, and a clear differentiator.
+4. ~~**Scheduled send**~~ — ⛔ deferred until we have a server. Would only fire
+   while this Mac is awake; off/closed = silent miss, and the only true fix
+   (a cloud relay) breaks local-first. See the row above.
 5. **Menu-bar mini-inbox** — `M`. Ambient presence; "leave it open all day."
 6. **Privacy blur** — `S–M`. Small, trust-building, and demoable.
 
