@@ -95,7 +95,7 @@ Everything below respects these.
 
 | Idea | What | Effort | Feas. | Notes |
 |------|------|--------|-------|-------|
-| **Menu-bar mini-inbox** | `NSStatusItem` with unread count + a dropdown of recent threads; click opens the window on that thread. Optional launch-at-login | M | ✅ | Glance without keeping the window up. |
+| **Menu-bar mini-inbox** | `NSStatusItem` with unread count + a dropdown of recent threads; click opens the window on that thread. Optional launch-at-login | M | ✅ 🚢 | Shipped. `MenuBarExtra` (window style) shows an unread count + recent threads reusing `InboxModel`; clicking a thread reveals the main window on it. Toggle in Settings (`showMenuBarItem`). Launch-at-login left for later. |
 | **Notification Center widget** | A small widget showing recent unread | M | ⚠️ | Widgets need an extension target + shared container; more plumbing than it looks. |
 | **Focus/DND awareness** | Respect macOS Focus when deciding whether to alert | S–M | ✅ | Pairs with the sound-design idea. |
 
@@ -159,8 +159,8 @@ compounds well:
 4. ~~**Scheduled send**~~ — ⛔ deferred until we have a server. Would only fire
    while this Mac is awake; off/closed = silent miss, and the only true fix
    (a cloud relay) breaks local-first. See the row above.
-5. **Menu-bar mini-inbox** — `M`. Ambient presence; "leave it open all day."
-   **← next up.**
+5. ~~**Menu-bar mini-inbox**~~ — ✅ shipped. Ambient presence; glance at the
+   unread count and recent threads without keeping the window up.
 6. ~~**Privacy blur**~~ — ✅ shipped. Small, trust-building, and demoable.
 
 Delight pairing when a lighter turn is wanted: **send/receive sounds** +

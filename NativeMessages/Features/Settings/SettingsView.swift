@@ -6,6 +6,7 @@ struct SettingsView: View {
     @AppStorage("uiScale") private var uiScale = 1.0
     @AppStorage("sendOnReturn") private var sendOnReturn = true
     @AppStorage("privacyBlur") private var privacyBlur = false
+    @AppStorage("showMenuBarItem") private var showMenuBarItem = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -96,6 +97,20 @@ struct SettingsView: View {
                         .buttonStyle(DensityChoiceStyle(isSelected: !privacyBlur))
                 }
                 Text("Blurs message previews and bubbles until you hover — screen-share and shoulder-surf safe.")
+                    .riceFont(10)
+                    .foregroundStyle(Rice.overlay0)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Menu bar")
+                    .riceSectionHeader()
+                HStack(spacing: 6) {
+                    Button("Show") { showMenuBarItem = true }
+                        .buttonStyle(DensityChoiceStyle(isSelected: showMenuBarItem))
+                    Button("Hide") { showMenuBarItem = false }
+                        .buttonStyle(DensityChoiceStyle(isSelected: !showMenuBarItem))
+                }
+                Text("A menu-bar icon with the unread count and a dropdown of recent threads.")
                     .riceFont(10)
                     .foregroundStyle(Rice.overlay0)
             }
