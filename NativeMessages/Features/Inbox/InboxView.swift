@@ -597,6 +597,7 @@ private struct ConversationRowButton: View {
                             .riceFont(11)
                             .foregroundStyle(Rice.subtext0)
                             .lineLimit(2, reservesSpace: true)
+                            .privacyBlurred(revealed: isHovering)
                         Spacer(minLength: 4)
                         VStack(alignment: .trailing, spacing: 3) {
                             ServiceChip(service: conversation.service)

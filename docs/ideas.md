@@ -123,7 +123,7 @@ Everything below respects these.
 
 | Idea | What | Effort | Feas. | Notes |
 |------|------|--------|-------|-------|
-| **Privacy blur** | Blur message previews until hover/focus — screen-share and shoulder-surf safe | S–M | ✅ | High trust-per-effort. |
+| **Privacy blur** | Blur message previews until hover/focus — screen-share and shoulder-surf safe | S–M | ✅ 🚢 | Shipped. `privacyBlur` setting toggle; a `privacyBlurred(revealed:)` modifier gates sidebar row previews (reveal on row hover) and conversation bubble content (reveal on bubble hover). |
 | **App lock** | Touch ID / passcode gate on launch or after idle | M | ✅ | `LocalAuthentication`. |
 | **Incognito peek** | Open a thread without writing a local read mark | S | ✅ | Skip `markCleared`. Cheap, thoughtful. |
 | **Data transparency panel** | Show exactly what local data the app stores + a one-click clear | S–M | ✅ | Reinforces the local-first promise. |
@@ -161,7 +161,7 @@ compounds well:
    (a cloud relay) breaks local-first. See the row above.
 5. **Menu-bar mini-inbox** — `M`. Ambient presence; "leave it open all day."
    **← next up.**
-6. **Privacy blur** — `S–M`. Small, trust-building, and demoable.
+6. ~~**Privacy blur**~~ — ✅ shipped. Small, trust-building, and demoable.
 
 Delight pairing when a lighter turn is wanted: **send/receive sounds** +
 **delivery timeline detail** — both `S`, both charming.

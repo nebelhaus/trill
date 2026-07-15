@@ -5,6 +5,7 @@ struct SettingsView: View {
     @AppStorage("accentName") private var accentName = "mauve"
     @AppStorage("uiScale") private var uiScale = 1.0
     @AppStorage("sendOnReturn") private var sendOnReturn = true
+    @AppStorage("privacyBlur") private var privacyBlur = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -81,6 +82,20 @@ struct SettingsView: View {
                 Text(sendOnReturn
                     ? "Return sends · Shift+Return adds a line"
                     : "⌘Return sends · Return adds a line")
+                    .riceFont(10)
+                    .foregroundStyle(Rice.overlay0)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Privacy blur")
+                    .riceSectionHeader()
+                HStack(spacing: 6) {
+                    Button("On") { privacyBlur = true }
+                        .buttonStyle(DensityChoiceStyle(isSelected: privacyBlur))
+                    Button("Off") { privacyBlur = false }
+                        .buttonStyle(DensityChoiceStyle(isSelected: !privacyBlur))
+                }
+                Text("Blurs message previews and bubbles until you hover — screen-share and shoulder-surf safe.")
                     .riceFont(10)
                     .foregroundStyle(Rice.overlay0)
             }

@@ -167,6 +167,30 @@ struct AvatarView: View {
     }
 }
 
+/// Blurs sensitive content — message previews and bubbles — until it's
+/// revealed on hover/focus, so screen-shares and shoulder-surfers can't read
+/// it. Gated on the "privacyBlur" setting; a no-op when the setting is off.
+struct PrivacyBlur: ViewModifier {
+    let isRevealed: Bool
+    @AppStorage("privacyBlur") private var privacyBlur = false
+
+    func body(content: Content) -> some View {
+        let obscured = privacyBlur && !isRevealed
+        content
+            .blur(radius: obscured ? 6 : 0)
+            .opacity(obscured ? 0.55 : 1)
+            .animation(.easeOut(duration: 0.15), value: obscured)
+    }
+}
+
+extension View {
+    /// Blurs this view until `isRevealed`, when the privacy-blur setting is on.
+    /// Pass the surrounding row/bubble's hover state as the reveal trigger.
+    func privacyBlurred(revealed isRevealed: Bool) -> some View {
+        modifier(PrivacyBlur(isRevealed: isRevealed))
+    }
+}
+
 /// 1px flat divider.
 struct RiceDivider: View {
     var axis: Axis = .horizontal

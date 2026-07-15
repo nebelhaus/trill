@@ -368,6 +368,7 @@ private struct MessageRow: View {
     var onJump: (MessageID) -> Void = { _ in }
 
     @Environment(\.riceAccent) private var accent
+    @State private var isRevealed = false
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
@@ -405,9 +406,11 @@ private struct MessageRow: View {
                         AttachmentView(attachment: attachment)
                     }
                 }
+                .privacyBlurred(revealed: isRevealed)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 7)
                 .background(bubbleColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .onHover { isRevealed = $0 }
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .strokeBorder(accent, lineWidth: isHighlighted ? 1.5 : 0)
