@@ -9,6 +9,15 @@ struct SettingsView: View {
     @AppStorage("showMenuBarItem") private var showMenuBarItem = true
 
     var body: some View {
+        ScrollView {
+            content
+        }
+        .frame(width: 420)
+        .frame(maxHeight: 640)
+        .background(Rice.base)
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Accent")
@@ -115,13 +124,14 @@ struct SettingsView: View {
                     .foregroundStyle(Rice.overlay0)
             }
 
+            SnippetSettingsView()
+
             Text("Native Messages wears the Nebelung rice: flat, dark, desaturated Catppuccin.")
                 .riceFont(10)
                 .foregroundStyle(Rice.overlay0)
         }
         .padding(24)
         .frame(width: 420, alignment: .leading)
-        .background(Rice.base)
     }
 }
 
