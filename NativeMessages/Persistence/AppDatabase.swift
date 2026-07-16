@@ -16,7 +16,7 @@ enum AppDatabaseError: LocalizedError, Sendable {
 }
 
 actor AppDatabase {
-    static let currentSchemaVersion = 4
+    static let currentSchemaVersion = 6
 
     private final class Connection: @unchecked Sendable {
         let raw: OpaquePointer
@@ -138,6 +138,98 @@ actor AppDatabase {
         return result
     }
 
+    // MARK: - Folders
+
+    func folders() throws -> [Folder] {
+        let handle = connection.raw
+        var statement: OpaquePointer?
+        let sql = "SELECT id, name, color, sort_order FROM folders ORDER BY sort_order ASC"
+        guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK else { throw Self.error(handle) }
+        defer { sqlite3_finalize(statement) }
+        var result: [Folder] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let id = sqlite3_column_text(statement, 0),
+                  let name = sqlite3_column_text(statement, 1),
+                  let color = sqlite3_column_text(statement, 2)
+            else { continue }
+            result.append(Folder(
+                id: String(cString: id),
+                name: String(cString: name),
+                colorName: String(cString: color),
+                sortOrder: sqlite3_column_double(statement, 3)
+            ))
+        }
+        return result
+    }
+
+    /// Persists a fully-formed folder. The caller (InboxModel) generates the id
+    /// and sort order so it can insert the folder optimistically and keep the
+    /// local and stored rows in lockstep.
+    func insertFolder(_ folder: Folder, createdAt: Date) throws {
+        try execute(
+            "INSERT INTO folders (id, name, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?)",
+            bindings: [
+                .text(folder.id),
+                .text(folder.name),
+                .text(folder.colorName),
+                .double(folder.sortOrder),
+                .double(createdAt.timeIntervalSince1970),
+            ]
+        )
+    }
+
+    func updateFolder(id: String, name: String, colorName: String) throws {
+        try execute(
+            "UPDATE folders SET name = ?, color = ? WHERE id = ?",
+            bindings: [.text(name), .text(colorName), .text(id)]
+        )
+    }
+
+    func deleteFolder(id: String) throws {
+        try execute("BEGIN IMMEDIATE TRANSACTION")
+        do {
+            try execute("DELETE FROM folder_members WHERE folder_id = ?", bindings: [.text(id)])
+            try execute("DELETE FROM folders WHERE id = ?", bindings: [.text(id)])
+            try execute("COMMIT")
+        } catch {
+            try? execute("ROLLBACK")
+            throw error
+        }
+    }
+
+    func setFolderMembership(folderID: String, conversationID: ConversationID, member: Bool) throws {
+        if member {
+            try execute(
+                "INSERT OR REPLACE INTO folder_members (folder_id, conversation_key, added_at) VALUES (?, ?, ?)",
+                bindings: [.text(folderID), .text(conversationID.persistenceKey), .double(Date().timeIntervalSince1970)]
+            )
+        } else {
+            try execute(
+                "DELETE FROM folder_members WHERE folder_id = ? AND conversation_key = ?",
+                bindings: [.text(folderID), .text(conversationID.persistenceKey)]
+            )
+        }
+    }
+
+    func folderMembers() throws -> [String: Set<ConversationID>] {
+        let handle = connection.raw
+        var statement: OpaquePointer?
+        let sql = "SELECT folder_id, conversation_key FROM folder_members"
+        guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK else { throw Self.error(handle) }
+        defer { sqlite3_finalize(statement) }
+        var result: [String: Set<ConversationID>] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let folderID = sqlite3_column_text(statement, 0),
+                  let key = sqlite3_column_text(statement, 1)
+            else { continue }
+            guard let id = ConversationID(persistenceKey: String(cString: key)) else {
+                throw AppDatabaseError.invalidStoredIdentifier
+            }
+            result[String(cString: folderID), default: []].insert(id)
+        }
+        return result
+    }
+
     func saveCursor(_ cursor: EventCursor, providerID: ProviderID) throws {
         try execute(
             "INSERT OR REPLACE INTO provider_cursors (provider_id, cursor, updated_at) VALUES (?, ?, ?)",
@@ -209,6 +301,8 @@ actor AppDatabase {
             (2, "CREATE TABLE drafts (conversation_key TEXT PRIMARY KEY NOT NULL, body TEXT NOT NULL, updated_at REAL NOT NULL)"),
             (3, "CREATE TABLE provider_cursors (provider_id TEXT PRIMARY KEY NOT NULL, cursor TEXT NOT NULL, updated_at REAL NOT NULL)"),
             (4, "CREATE TABLE read_marks (conversation_key TEXT PRIMARY KEY NOT NULL, marked_at REAL NOT NULL)"),
+            (5, "CREATE TABLE folders (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, color TEXT NOT NULL, sort_order REAL NOT NULL, created_at REAL NOT NULL)"),
+            (6, "CREATE TABLE folder_members (folder_id TEXT NOT NULL, conversation_key TEXT NOT NULL, added_at REAL NOT NULL, PRIMARY KEY (folder_id, conversation_key))"),
         ]
         for (nextVersion, sql) in migrations where nextVersion > version {
             try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION")

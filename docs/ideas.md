@@ -65,7 +65,7 @@ Everything below respects these.
 |------|------|--------|-------|-------|
 | **Command palette (⌘K)** | Fuzzy jump to any conversation, action, or setting; the keyboard spine of the app | M | ✅ 🚢 | Shipped (`0474b5c`). ⌘K opens it; full-text message search moved to ⇧⌘F. Subsumes the Quick switcher. |
 | **Snooze a thread** | Hide a conversation until a chosen time, then resurface it | M | ✅ | Local scheduler + overlay flag. PRD-aligned. |
-| **Folders / tags** | User-defined labels and folders for conversations, local-only | M–L | ✅ | Overlay in `AppDatabase`; sidebar sections. PRD core. |
+| **Folders / tags** | User-defined labels and folders for conversations, local-only | M–L | ✅ 🚢 | Shipped. `folders` + `folder_members` overlay tables (many-to-many, so folders double as tags); each folder carries a name + Rice accent color. A sidebar scope list ("All Messages" + folders + New Folder) narrows `visibleConversations` *before* the unread/needs-reply filter, so the two axes compose. Assign via a conversation's Folders context submenu; manage via folder-row context menu + a reusable `FolderEditorView`. Also reachable from ⌘K. **⚠️ Merge note:** this uses `AppDatabase` migrations 5 & 6 — the in-flight *Canned responses / snippets* branch also claims migration 5. Both are correct against `master` (1–4) in isolation, but whichever merges **second** must renumber its migrations (in both the `migrations` array and `currentSchemaVersion`) so they don't collide. |
 | **Archive** | Remove a thread from the main list without losing it | S | ✅ | Overlay flag; filter in `visibleConversations`. |
 | **Mute a conversation** | Suppress that thread's notifications locally | S | ✅ | Overlay flag checked in `maybeNotify`. |
 | **VIP contacts** | Always-notify + always-pin a chosen set, in their own section | S–M | ✅ | Overlay set; complements existing pins. |
@@ -77,7 +77,7 @@ Everything below respects these.
 |------|------|--------|-------|-------|
 | **Vim-ish list nav** | `j`/`k` move threads, `Enter` opens, `g`/`G` ends, all without the mouse | S–M | ✅ | Focus/selection model already exists. |
 | **Quick switcher** | ⌘K-style recent-conversation switcher (editor tab-switch feel) | S–M | ✅ | Subset of the command palette; could ship first. |
-| **Canned responses / snippets** | Reusable text with a picker or `/`-trigger in the composer | M | ✅ | Overlay-stored; pure composer sugar. |
+| **Canned responses / snippets** | Reusable text with a picker or `/`-trigger in the composer | M | ✅ | Overlay-stored; pure composer sugar. **⚠️ Merge note:** its `snippets` overlay table claims `AppDatabase` migration 5, which collides with the shipped *Folders / tags* branch — whichever merges second renumbers (see that row). |
 | **Slash commands** | `/shrug`, `/unflip`, `/date`, insert-snippet in the composer | S | ✅ | Text transforms before send. |
 | **Shortcut cheat-sheet (⌘/)** | Overlay listing every keybinding | S | ✅ | Discoverability for a keyboard-first app. |
 

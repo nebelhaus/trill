@@ -45,4 +45,56 @@ final class AppDatabaseTests: XCTestCase {
         XCTAssertEqual(updatedMarks.count, 1)
         XCTAssertEqual(updatedMarks[conversation]?.timeIntervalSince1970 ?? 0, laterMark.timeIntervalSince1970, accuracy: 0.001)
     }
+
+    func testFoldersAndMembership() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("NativeMessagesTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try AppDatabase(url: root.appendingPathComponent("app.sqlite3"))
+
+        let version = try await database.schemaVersion()
+        XCTAssertEqual(version, AppDatabase.currentSchemaVersion)
+        XCTAssertEqual(AppDatabase.currentSchemaVersion, 6)
+
+        let provider = ProviderID(rawValue: "fixture")
+        let alice = ConversationID(provider: provider, externalGUID: "alice")
+        let bob = ConversationID(provider: provider, externalGUID: "bob")
+
+        // Insert two folders and confirm they read back in sort order.
+        let work = Folder(id: UUID().uuidString, name: "Work", colorName: "blue", sortOrder: 1)
+        let family = Folder(id: UUID().uuidString, name: "Family", colorName: "green", sortOrder: 2)
+        try await database.insertFolder(work, createdAt: Date())
+        try await database.insertFolder(family, createdAt: Date())
+        let loaded = try await database.folders()
+        XCTAssertEqual(loaded.map(\.name), ["Work", "Family"])
+        XCTAssertEqual(loaded.first?.colorName, "blue")
+
+        // Alice is in both folders; Bob only in Work.
+        try await database.setFolderMembership(folderID: work.id, conversationID: alice, member: true)
+        try await database.setFolderMembership(folderID: family.id, conversationID: alice, member: true)
+        try await database.setFolderMembership(folderID: work.id, conversationID: bob, member: true)
+        var members = try await database.folderMembers()
+        XCTAssertEqual(members[work.id], [alice, bob])
+        XCTAssertEqual(members[family.id], [alice])
+
+        // Rename + recolor round-trips.
+        try await database.updateFolder(id: work.id, name: "Job", colorName: "peach")
+        let afterRename = try await database.folders()
+        let renamed = afterRename.first { $0.id == work.id }
+        XCTAssertEqual(renamed?.name, "Job")
+        XCTAssertEqual(renamed?.colorName, "peach")
+
+        // Removing one membership leaves the others intact.
+        try await database.setFolderMembership(folderID: work.id, conversationID: bob, member: false)
+        members = try await database.folderMembers()
+        XCTAssertEqual(members[work.id], [alice])
+
+        // Deleting a folder removes it and cascades its membership rows.
+        try await database.deleteFolder(id: work.id)
+        let afterDelete = try await database.folders()
+        XCTAssertEqual(afterDelete.map(\.id), [family.id])
+        members = try await database.folderMembers()
+        XCTAssertNil(members[work.id])
+        XCTAssertEqual(members[family.id], [alice])
+    }
 }
