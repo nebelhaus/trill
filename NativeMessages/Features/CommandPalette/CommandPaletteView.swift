@@ -146,6 +146,28 @@ struct CommandPaletteView: View {
             )
         }
 
+        // Folder scope: clear (when active) + one filter action per folder, plus
+        // a create action. Keeps folders reachable from the keyboard spine.
+        if model.selectedFolderID != nil {
+            catalog.append(
+                PaletteAction(id: "folder-all", title: "Show All Messages", systemImage: "tray.full", shortcut: nil) {
+                    model.selectFolder(nil)
+                }
+            )
+        }
+        for folder in model.folders {
+            catalog.append(
+                PaletteAction(id: "folder-\(folder.id)", title: "Filter: \(folder.name)", systemImage: "folder", shortcut: nil) {
+                    model.selectFolder(folder.id)
+                }
+            )
+        }
+        catalog.append(
+            PaletteAction(id: "new-folder", title: "New Folder…", systemImage: "folder.badge.plus", shortcut: nil) {
+                model.folderEditor = .create(seed: nil)
+            }
+        )
+
         let other: ProviderMode = model.providerMode == .messages ? .fixture : .messages
         catalog.append(
             PaletteAction(id: "provider", title: "Switch to \(other.title)", systemImage: "arrow.left.arrow.right", shortcut: nil) {

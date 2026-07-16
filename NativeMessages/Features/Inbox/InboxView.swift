@@ -59,6 +59,9 @@ struct InboxView: View {
             .sheet(isPresented: $model.isComposePresented) {
                 ComposeSheet(model: model)
             }
+            .sheet(item: $model.folderEditor) { mode in
+                FolderEditorView(model: model, mode: mode)
+            }
             .task { model.load() }
             .onChange(of: model.selectedConversationID) { _, selection in
                 model.select(selection)
@@ -279,11 +282,64 @@ private struct SidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            if model.state == .loaded {
+                folderSection
+                RiceDivider()
+            }
             content
             RiceDivider()
             footer
         }
         .background(Rice.mantle)
+    }
+
+    // MARK: - Folder section
+
+    /// Selectable folder scope: All Messages + each folder + a New Folder row.
+    /// Picking one narrows the conversation list (composes with the unread /
+    /// needs-reply filters). Right-click a folder to rename, recolor, or delete.
+    private var folderSection: some View {
+        VStack(spacing: 1) {
+            FolderChipRow(
+                title: "All Messages",
+                colorName: nil,
+                count: model.conversations.count,
+                isSelected: model.selectedFolderID == nil
+            ) { model.selectFolder(nil) }
+
+            ForEach(model.folders) { folder in
+                FolderChipRow(
+                    title: folder.name,
+                    colorName: folder.colorName,
+                    count: model.memberCount(of: folder.id),
+                    isSelected: model.selectedFolderID == folder.id
+                ) { model.selectFolder(folder.id) }
+                .contextMenu {
+                    Button("Rename / Recolor…") { model.folderEditor = .edit(folder) }
+                    Button("Delete Folder", role: .destructive) { model.deleteFolder(folder.id) }
+                }
+            }
+
+            Button { model.folderEditor = .create(seed: nil) } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus")
+                        .riceFont(10)
+                        .foregroundStyle(Rice.subtext0)
+                        .frame(width: 8)
+                    Text("New Folder")
+                        .riceFont(12, .medium)
+                        .foregroundStyle(Rice.subtext0)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 2)
+        .padding(.bottom, 6)
     }
 
     /// The title never truncates; icons fold into a "⋯" menu as space runs out.
@@ -456,18 +512,8 @@ private struct SidebarView: View {
                 message: "This provider returned no conversations."
             )
         case .loaded:
-            if model.visibleConversations.isEmpty, model.filter != .all {
-                VStack(spacing: 10) {
-                    Image(systemName: "checkmark.circle")
-                        .riceFont(22)
-                        .foregroundStyle(Rice.green)
-                    Text(model.filter == .needsReply ? "Nothing awaiting a reply" : "No unread conversations")
-                        .riceFont(12, .medium)
-                        .foregroundStyle(Rice.subtext1)
-                    Button("Show All") { model.filter = .all }
-                        .buttonStyle(RiceSubtleButtonStyle())
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if model.visibleConversations.isEmpty, model.filter != .all || model.selectedFolderID != nil {
+                emptyScopeState
             } else {
                 conversationList
             }
@@ -483,6 +529,33 @@ private struct SidebarView: View {
                     .buttonStyle(RiceSubtleButtonStyle())
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// Shown when the active folder scope and/or filter leaves nothing to list.
+    /// The reset clears both axes so the user always lands back on everything.
+    private var emptyScopeState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "checkmark.circle")
+                .riceFont(22)
+                .foregroundStyle(Rice.green)
+            Text(emptyScopeMessage)
+                .riceFont(12, .medium)
+                .foregroundStyle(Rice.subtext1)
+            Button("Show All Messages") {
+                model.filter = .all
+                model.selectFolder(nil)
+            }
+            .buttonStyle(RiceSubtleButtonStyle())
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var emptyScopeMessage: String {
+        switch model.filter {
+        case .needsReply: return "Nothing awaiting a reply"
+        case .unread: return "No unread conversations"
+        case .all: return "No conversations in this folder"
         }
     }
 
@@ -502,6 +575,25 @@ private struct SidebarView: View {
                     .contextMenu {
                         Button(model.pinnedIDs.contains(conversation.id) ? "Unpin" : "Pin") {
                             model.togglePin(conversation.id)
+                        }
+                        Menu("Folders") {
+                            let containing = model.folders(containing: conversation.id)
+                            ForEach(model.folders) { folder in
+                                Button {
+                                    model.toggleMembership(conversation.id, inFolder: folder.id)
+                                } label: {
+                                    // SwiftUI renders the checkmark only when the
+                                    // Label's image is a checkmark; plain Text for
+                                    // non-members keeps the rows aligned.
+                                    if containing.contains(folder.id) {
+                                        Label(folder.name, systemImage: "checkmark")
+                                    } else {
+                                        Text(folder.name)
+                                    }
+                                }
+                            }
+                            if !model.folders.isEmpty { Divider() }
+                            Button("New Folder…") { model.folderEditor = .create(seed: conversation.id) }
                         }
                     }
                 }
@@ -639,6 +731,184 @@ private struct ConversationRowButton: View {
         if isSelected { return accent.opacity(0.18) }
         if isHovering { return Rice.surface0.opacity(0.55) }
         return .clear
+    }
+}
+
+// MARK: - Folders
+
+/// One selectable row in the sidebar's folder scope list. `colorName == nil`
+/// marks the "All Messages" row (a tray glyph instead of a color dot).
+private struct FolderChipRow: View {
+    let title: String
+    let colorName: String?
+    let count: Int
+    let isSelected: Bool
+    let action: () -> Void
+
+    @Environment(\.riceAccent) private var accent
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                marker
+                Text(title)
+                    .riceFont(12, .medium)
+                    .foregroundStyle(Rice.text)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text("\(count)")
+                    .riceFont(10)
+                    .foregroundStyle(Rice.overlay0)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(rowBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .accessibilityLabel("\(title), \(count) conversations")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+
+    @ViewBuilder
+    private var marker: some View {
+        if let colorName {
+            Circle()
+                .fill(Rice.accent(named: colorName))
+                .frame(width: 8, height: 8)
+        } else {
+            Image(systemName: "tray.full")
+                .riceFont(9)
+                .foregroundStyle(Rice.subtext0)
+                .frame(width: 8)
+        }
+    }
+
+    private var rowBackground: Color {
+        if isSelected { return accent.opacity(0.18) }
+        if isHovering { return Rice.surface0.opacity(0.55) }
+        return .clear
+    }
+}
+
+/// Whether the folder editor is creating a new folder (optionally seeding a
+/// conversation into it) or editing an existing one. `Identifiable` so it drives
+/// a `.sheet(item:)`.
+enum FolderEditorMode: Identifiable {
+    case create(seed: ConversationID?)
+    case edit(Folder)
+
+    var id: String {
+        switch self {
+        case .create: "create"
+        case let .edit(folder): "edit-\(folder.id)"
+        }
+    }
+}
+
+/// Create / rename / recolor a folder. Reuses the accent swatch row from
+/// Settings so folder colors match the app's Rice palette.
+private struct FolderEditorView: View {
+    @ObservedObject var model: InboxModel
+    let mode: FolderEditorMode
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var name: String
+    @State private var colorName: String
+    @FocusState private var isNameFocused: Bool
+
+    init(model: InboxModel, mode: FolderEditorMode) {
+        self.model = model
+        self.mode = mode
+        switch mode {
+        case .create:
+            _name = State(initialValue: "")
+            _colorName = State(initialValue: Rice.accentNames.first ?? "mauve")
+        case let .edit(folder):
+            _name = State(initialValue: folder.name)
+            _colorName = State(initialValue: folder.colorName)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(isEditing ? "Edit Folder" : "New Folder")
+                .riceFont(15, .semibold)
+                .foregroundStyle(Rice.text)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Name")
+                    .riceSectionHeader()
+                TextField("Folder name", text: $name)
+                    .textFieldStyle(.plain)
+                    .riceFont(13)
+                    .foregroundStyle(Rice.text)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(Rice.surface0, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .focused($isNameFocused)
+                    .onSubmit(commit)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Color")
+                    .riceSectionHeader()
+                HStack(spacing: 8) {
+                    ForEach(Rice.accentNames, id: \.self) { swatch in
+                        Button {
+                            colorName = swatch
+                        } label: {
+                            Circle()
+                                .fill(Rice.accent(named: swatch))
+                                .frame(width: 18, height: 18)
+                                .overlay(
+                                    Circle()
+                                        .strokeBorder(Rice.text, lineWidth: colorName == swatch ? 2 : 0)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(swatch) color")
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(RiceSubtleButtonStyle())
+                    .keyboardShortcut(.cancelAction)
+                Button(isEditing ? "Save" : "Create", action: commit)
+                    .buttonStyle(RiceProminentButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(trimmedName.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 340)
+        .background(Rice.mantle)
+        .onAppear { isNameFocused = true }
+    }
+
+    private var isEditing: Bool {
+        if case .edit = mode { return true }
+        return false
+    }
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func commit() {
+        guard !trimmedName.isEmpty else { return }
+        switch mode {
+        case let .create(seed):
+            model.createFolder(name: trimmedName, colorName: colorName, seedConversation: seed)
+        case let .edit(folder):
+            model.updateFolder(folder.id, name: trimmedName, colorName: colorName)
+        }
+        dismiss()
     }
 }
 

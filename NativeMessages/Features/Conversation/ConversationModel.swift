@@ -20,6 +20,28 @@ final class ConversationModel: ObservableObject {
     @Published private(set) var revealTarget: MessageID?
     @Published private(set) var highlightedMessageID: MessageID?
 
+    // MARK: Find in conversation (⌘F)
+
+    /// Whether the in-thread find bar is showing.
+    @Published var isFindPresented = false
+    /// Live find query; bound to the find bar's text field. Recomputes matches
+    /// on every keystroke.
+    @Published var findQuery = "" {
+        didSet { recomputeFindMatches() }
+    }
+    /// Matching message IDs in chronological (oldest → newest) order.
+    @Published private(set) var findMatches: [MessageID] = []
+    /// Same set, for O(1) per-row membership checks in the timeline.
+    @Published private(set) var findMatchSet: Set<MessageID> = []
+    /// Caret into `findMatches` — the match the view scrolls to and emphasizes.
+    @Published private(set) var findCurrentIndex = 0
+
+    /// The match currently under the find caret, if any.
+    var currentFindMatchID: MessageID? {
+        guard findMatches.indices.contains(findCurrentIndex) else { return nil }
+        return findMatches[findCurrentIndex]
+    }
+
     private var repository: MessagesRepository
     private var loadTask: Task<Void, Never>?
     private var isRefreshing = false
@@ -46,6 +68,7 @@ final class ConversationModel: ObservableObject {
         state = .idle
         revealTarget = nil
         highlightedMessageID = nil
+        resetFind()
     }
 
     func select(_ conversation: Conversation, reveal: MessageID? = nil) {
@@ -56,6 +79,7 @@ final class ConversationModel: ObservableObject {
         state = .loading
         revealTarget = nil
         highlightedMessageID = nil
+        resetFind()
         let repository = repository
         loadTask = Task { [weak self] in
             guard let self else { return }
@@ -112,6 +136,7 @@ final class ConversationModel: ObservableObject {
         messages = byID.values.sorted(by: Self.chronological)
         if state == .empty, !messages.isEmpty { state = .loaded }
         if nextBefore == nil { nextBefore = page.nextBefore }
+        if isFindPresented { recomputeFindMatches() }
     }
 
     /// Merges a message arriving from the live event stream.
@@ -121,6 +146,7 @@ final class ConversationModel: ObservableObject {
         guard !messages.contains(where: { $0.id == message.id }) else { return }
         messages = (messages + [message]).sorted(by: Self.chronological)
         state = .loaded
+        if isFindPresented { recomputeFindMatches() }
     }
 
     func reveal(_ id: MessageID) {
@@ -131,6 +157,78 @@ final class ConversationModel: ObservableObject {
 
     func consumeRevealTarget() {
         revealTarget = nil
+    }
+
+    // MARK: - Find in conversation
+
+    /// Opens the find bar over the current thread. Scoped to the messages loaded
+    /// in the timeline — paging earlier messages in re-runs the match.
+    func beginFind() {
+        guard conversation != nil else { return }
+        isFindPresented = true
+        recomputeFindMatches()
+    }
+
+    /// Closes the find bar and drops all match state.
+    func endFind() {
+        guard isFindPresented else { return }
+        resetFind()
+    }
+
+    /// Advances the caret to the next (newer) match, wrapping at the end.
+    func findNext() {
+        guard !findMatches.isEmpty else { return }
+        findCurrentIndex = (findCurrentIndex + 1) % findMatches.count
+        revealCurrentFindMatch()
+    }
+
+    /// Moves the caret to the previous (older) match, wrapping at the start.
+    func findPrevious() {
+        guard !findMatches.isEmpty else { return }
+        findCurrentIndex = (findCurrentIndex - 1 + findMatches.count) % findMatches.count
+        revealCurrentFindMatch()
+    }
+
+    /// Case-insensitive substring match over message text, oldest → newest.
+    nonisolated static func matchingMessageIDs(in messages: [Message], query: String) -> [MessageID] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return [] }
+        return messages.filter { $0.text.lowercased().contains(needle) }.map(\.id)
+    }
+
+    private func recomputeFindMatches() {
+        let previousCurrent = currentFindMatchID
+        findMatches = Self.matchingMessageIDs(in: messages, query: findQuery)
+        findMatchSet = Set(findMatches)
+        guard !findMatches.isEmpty else {
+            findCurrentIndex = 0
+            return
+        }
+        // Keep the caret pinned to the same message across recomputes (typing a
+        // longer query, paging older messages in). If it's gone — or this is a
+        // fresh query — land on the newest match, nearest where the reader is,
+        // and scroll to it.
+        if let previousCurrent, let index = findMatches.firstIndex(of: previousCurrent) {
+            findCurrentIndex = index
+        } else {
+            findCurrentIndex = findMatches.count - 1
+            revealCurrentFindMatch()
+        }
+    }
+
+    private func revealCurrentFindMatch() {
+        guard let id = currentFindMatchID else { return }
+        revealTarget = id
+    }
+
+    private func resetFind() {
+        isFindPresented = false
+        findMatches = []
+        findMatchSet = []
+        findCurrentIndex = 0
+        // Assign through the stored property directly to avoid the didSet
+        // recompute racing the cleared match state above.
+        if !findQuery.isEmpty { findQuery = "" }
     }
 
     /// Pages backwards (bounded) until the target message is loaded, then
@@ -157,6 +255,16 @@ final class ConversationModel: ObservableObject {
         return (try? await repository.media(in: conversation.id, limit: limit)) ?? []
     }
 
+    /// Aggregates the whole thread's timestamps into the stats-panel figures.
+    /// Nil when there's no open conversation; `.empty` when the thread has no
+    /// messages. Reads the full history, so it runs on demand, not on every load.
+    func loadStats() async -> ConversationStats? {
+        guard let conversation else { return nil }
+        let repository = repository
+        guard let samples = try? await repository.statSamples(in: conversation.id) else { return nil }
+        return ConversationStatsBuilder.build(from: samples, now: Date())
+    }
+
     func loadOlder() async {
         guard let conversation, let nextBefore, !isLoadingOlder else { return }
         isLoadingOlder = true
@@ -171,6 +279,7 @@ final class ConversationModel: ObservableObject {
             let older = page.messages.filter { !known.contains($0.id) }
             messages = (older + messages).sorted(by: Self.chronological)
             self.nextBefore = page.nextBefore
+            if isFindPresented { recomputeFindMatches() }
         } catch {
             AppLog.ui.error("Older-message page failed error=\(String(describing: type(of: error)), privacy: .public)")
         }

@@ -46,6 +46,19 @@ final class InboxModel: ObservableObject {
     @Published private(set) var health: ProviderHealth = .fixture
     @Published private(set) var capabilities = ProviderCapabilities()
     @Published private(set) var pinnedIDs: Set<ConversationID> = []
+    /// User-defined folders (local overlay), sidebar order. See `Folder`.
+    @Published private(set) var folders: [Folder] = []
+    /// folderID → the conversations filed under it. One dictionary serves both
+    /// the sidebar counts and the per-conversation membership checkmarks.
+    @Published private(set) var folderMembers: [String: Set<ConversationID>] = [:]
+    /// Active folder scope for the sidebar. `nil` = All Messages. Applied before
+    /// the `filter` axis in `visibleConversations`, and persisted across launches
+    /// (validated against existing folders on load, since a folder can be deleted).
+    @Published var selectedFolderID: String? = UserDefaults.standard.string(forKey: InboxModel.selectedFolderKey) {
+        didSet {
+            UserDefaults.standard.set(selectedFolderID, forKey: InboxModel.selectedFolderKey)
+        }
+    }
     /// chat.db is read-only, so opening a thread can't mark it read upstream.
     /// This overlay hides a thread's badge locally once viewed, until a
     /// message newer than the viewing time arrives (or Messages.app syncs).
@@ -72,6 +85,9 @@ final class InboxModel: ObservableObject {
     @Published var isComposePresented = false
     /// The Universal Library (⌘⇧L) overlay — all-conversations media browser.
     @Published var isLibraryPresented = false
+    /// Drives the create/edit folder sheet. Set from the sidebar's folder rows,
+    /// a conversation's Folders menu, or the command palette. `nil` = closed.
+    @Published var folderEditor: FolderEditorMode?
     @Published var isSidebarVisible = true
     /// Active sidebar filter, persisted across launches. Migrates the legacy
     /// `showsUnreadOnly` bool the first time so an existing unread-only view is
@@ -103,6 +119,7 @@ final class InboxModel: ObservableObject {
     private var eventTask: Task<Void, Never>?
     private static let providerModeKey = "providerMode"
     private static let filterKey = "inboxFilter"
+    private static let selectedFolderKey = "selectedFolderID"
 
     private static func loadPersistedFilter() -> InboxFilter {
         let defaults = UserDefaults.standard
@@ -169,9 +186,18 @@ final class InboxModel: ObservableObject {
                 async let page = repository.conversations(page: ConversationPageRequest(limit: 100))
                 async let pins = database.pinnedConversationIDs()
                 async let marks = database.readMarks()
-                let (loadedPage, loadedPins, loadedMarks) = try await (page, pins, marks)
+                async let loadedFolders = database.folders()
+                async let loadedMembers = database.folderMembers()
+                let (loadedPage, loadedPins, loadedMarks, folderList, memberMap) =
+                    try await (page, pins, marks, loadedFolders, loadedMembers)
                 pinnedIDs = loadedPins
                 clearedUnreadAt = loadedMarks
+                folders = folderList
+                folderMembers = memberMap
+                // Drop a stale folder scope whose folder was deleted while away.
+                if let selected = selectedFolderID, !folderList.contains(where: { $0.id == selected }) {
+                    selectedFolderID = nil
+                }
                 conversations = sort(loadedPage.conversations)
                 state = conversations.isEmpty ? .empty : .loaded
                 updateDockBadge()
@@ -207,19 +233,38 @@ final class InboxModel: ObservableObject {
     /// Sidebar list after the unread-only filter. The selected conversation
     /// stays visible so toggling the filter never yanks the open thread.
     var visibleConversations: [Conversation] {
+        // Folder scope narrows the pool first; the filter axis then applies to
+        // that slice, so the two compose (e.g. "unread within Work"). The open
+        // thread always stays visible so switching scopes never yanks it.
+        let scoped: [Conversation]
+        if let folderID = selectedFolderID {
+            // Scope to members even when the folder is empty — an empty folder
+            // shows nothing, not everything. The open thread stays visible.
+            let members = folderMembers[folderID] ?? []
+            scoped = conversations.filter { members.contains($0.id) || $0.id == selectedConversationID }
+        } else {
+            scoped = conversations
+        }
         switch filter {
         case .all:
-            return conversations
+            return scoped
         case .unread:
-            return conversations.filter {
+            return scoped.filter {
                 hasVisibleUnread($0) || $0.id == selectedConversationID
             }
         case .needsReply:
             let now = Date.now
-            return conversations.filter {
+            return scoped.filter {
                 NeedsReply.needsReply($0, now: now) || $0.id == selectedConversationID
             }
         }
+    }
+
+    /// The currently-scoped folder, if any. Drives the sidebar's selected state
+    /// and empty-state copy.
+    var selectedFolder: Folder? {
+        guard let selectedFolderID else { return nil }
+        return folders.first { $0.id == selectedFolderID }
     }
 
     /// Pinned conversations in sidebar order (they sort first).
@@ -435,6 +480,96 @@ final class InboxModel: ObservableObject {
                 try await database.setPinned(shouldPin, conversationID: id)
             } catch {
                 AppLog.database.error("Pin persistence failed error=\(String(describing: type(of: error)), privacy: .public)")
+            }
+        }
+    }
+
+    // MARK: - Folders
+
+    /// Folder IDs a conversation currently belongs to — feeds the context-menu
+    /// checkmarks.
+    func folders(containing id: ConversationID) -> Set<String> {
+        var result: Set<String> = []
+        for (folderID, members) in folderMembers where members.contains(id) {
+            result.insert(folderID)
+        }
+        return result
+    }
+
+    /// How many conversations are filed under a folder — the sidebar count badge.
+    func memberCount(of folderID: String) -> Int {
+        folderMembers[folderID]?.count ?? 0
+    }
+
+    func selectFolder(_ id: String?) {
+        selectedFolderID = id
+    }
+
+    /// Creates a folder, optionally filing `seedConversation` into it (from the
+    /// "New Folder…" affordance in a conversation's context menu). Optimistic:
+    /// mirror the new folder locally, then persist.
+    func createFolder(name: String, colorName: String, seedConversation: ConversationID? = nil) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let nextOrder = (folders.map(\.sortOrder).max() ?? 0) + 1
+        let folder = Folder(id: UUID().uuidString, name: trimmed, colorName: colorName, sortOrder: nextOrder)
+        folders.append(folder)
+        if let seedConversation {
+            folderMembers[folder.id, default: []].insert(seedConversation)
+        }
+        Task {
+            do {
+                // Persist with the same id we optimistically inserted so the
+                // local and stored rows stay in lockstep.
+                try await database.insertFolder(folder, createdAt: Date())
+                if let seedConversation {
+                    try await database.setFolderMembership(folderID: folder.id, conversationID: seedConversation, member: true)
+                }
+            } catch {
+                AppLog.database.error("Folder create failed error=\(String(describing: type(of: error)), privacy: .public)")
+            }
+        }
+    }
+
+    func updateFolder(_ id: String, name: String, colorName: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let index = folders.firstIndex(where: { $0.id == id }) else { return }
+        folders[index].name = trimmed
+        folders[index].colorName = colorName
+        Task {
+            do {
+                try await database.updateFolder(id: id, name: trimmed, colorName: colorName)
+            } catch {
+                AppLog.database.error("Folder update failed error=\(String(describing: type(of: error)), privacy: .public)")
+            }
+        }
+    }
+
+    func deleteFolder(_ id: String) {
+        folders.removeAll { $0.id == id }
+        folderMembers.removeValue(forKey: id)
+        if selectedFolderID == id { selectedFolderID = nil }
+        Task {
+            do {
+                try await database.deleteFolder(id: id)
+            } catch {
+                AppLog.database.error("Folder delete failed error=\(String(describing: type(of: error)), privacy: .public)")
+            }
+        }
+    }
+
+    func toggleMembership(_ conversationID: ConversationID, inFolder folderID: String) {
+        let isMember = folderMembers[folderID]?.contains(conversationID) ?? false
+        if isMember {
+            folderMembers[folderID]?.remove(conversationID)
+        } else {
+            folderMembers[folderID, default: []].insert(conversationID)
+        }
+        Task {
+            do {
+                try await database.setFolderMembership(folderID: folderID, conversationID: conversationID, member: !isMember)
+            } catch {
+                AppLog.database.error("Folder membership failed error=\(String(describing: type(of: error)), privacy: .public)")
             }
         }
     }

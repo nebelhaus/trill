@@ -46,6 +46,20 @@ struct Conversation: Hashable, Codable, Sendable, Identifiable {
     let reactedToLatestInbound: Bool
 }
 
+/// A user-defined, local-only label a conversation can belong to — the overlay
+/// analogue of a mail folder / tag. Membership is many-to-many (a conversation can
+/// live in several folders), so folders double as tags. All folder state is owned
+/// by `AppDatabase`; chat.db is never touched.
+struct Folder: Hashable, Codable, Sendable, Identifiable {
+    /// Stable UUID string — survives renames so membership rows never re-key.
+    let id: String
+    var name: String
+    /// One of `Rice.accentNames`; drives the folder's color dot.
+    var colorName: String
+    /// Ascending sidebar order; new folders append after the current max.
+    var sortOrder: Double
+}
+
 enum AttachmentAvailability: String, Codable, Sendable {
     case available
     case missing
@@ -299,6 +313,14 @@ struct ContactSuggestion: Hashable, Sendable, Identifiable {
     let handle: String
 
     var id: String { handle }
+}
+
+/// The minimum a message contributes to the conversation stats panel: when it
+/// landed and who sent it. Kept tiny so the whole thread can be aggregated
+/// without decoding bodies, attachments, or reactions.
+struct MessageStatSample: Hashable, Sendable {
+    let date: Date
+    let isFromMe: Bool
 }
 
 /// One entry in a conversation's media gallery: an attachment plus enough

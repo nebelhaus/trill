@@ -25,7 +25,9 @@ final class UniversalLibraryTests: XCTestCase {
 
     // MARK: - FixtureProvider classification
 
-    private func items(_ kind: LibraryKind, limit: Int = 500) async throws -> [LibraryItem] {
+    // `LibraryItem` collides with `DeveloperToolsSupport.LibraryItem` (pulled in
+    // via SwiftUI); qualify it here where both are visible under @testable import.
+    private func items(_ kind: LibraryKind, limit: Int = 500) async throws -> [NativeMessages.LibraryItem] {
         try await FixtureProvider().libraryItems(kind: kind, limit: limit)
     }
 

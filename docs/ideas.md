@@ -41,7 +41,7 @@ Everything below respects these.
 |------|------|--------|-------|-------|
 | **Universal Library (⌘⇧L)** | One browser for every image, link, and doc across *all* conversations, with type tabs and jump-to-source | M | ✅ 🚢 | Shipped. ⌘⇧L opens a centered overlay (palette/search pattern) with Images/Links/Files tabs. New `libraryItems(kind:limit:)` provider method over all-chats `ChatDatabaseReader.allAttachments` (media vs. file split by UTI/MIME) + `linkCandidates` (http/www-prefiltered scan → `LinkExtractor` URL detection, deduped per thread). Jump-to-source reuses `select(_:focus:)`; only reaches threads in the loaded list. |
 | **Advanced search operators** | `from:`, `in:group`, `has:link`, `has:image`, `before:`/`after:`, `is:unread` in the global search box | M | ✅ 🚢 | Shipped. Pure `SearchQueryParser` (raw string → `SearchFilters` + residual text) feeds one `MessageSearchQuery.matches` predicate both the fixture and live search paths apply. |
-| **Scoped in-thread find (⌘F)** | Find-in-conversation with match highlight and next/prev, without leaving the thread | S–M | ✅ | Reuse the reveal/highlight machinery already built for search-jump. |
+| **Scoped in-thread find (⌘F)** | Find-in-conversation with match highlight and next/prev, without leaving the thread | S–M | ✅ 🚢 | Shipped. ⌘F opens a docked find bar over the open thread; ⌘G / ⇧⌘G (or ⏎ / the chevrons) step matches. Scoped to loaded messages; reuses the reveal/highlight machinery. |
 | **Link inbox** | Every URL ever received, deduped, newest-first, with sender + timestamp + optional OG preview | M | ✅ | Extract from message text; OG fetch is optional/networked and can be a later toggle. |
 | **Saved / starred messages** | Local bookmarks on any message, browsable in one place | M | ✅ | Store `MessageID`s in `AppDatabase`; no chat.db write. |
 | **Jump to date** | Date scrubber / "go to date" to leap anywhere in a long thread instantly | M | ✅ | Cursor paging already keyed on message date. |
@@ -53,7 +53,7 @@ Everything below respects these.
 
 | Idea | What | Effort | Feas. | Notes |
 |------|------|--------|-------|-------|
-| **Conversation stats panel** | Per-thread: total messages, you-vs-them ratio, median response time, most-active hours, current streak | M | ✅ | All derivable from `date` + `is_from_me`. High delight, low risk. |
+| **Conversation stats panel** | Per-thread: total messages, you-vs-them ratio, median response time, most-active hours, current streak | M | ✅ 🚢 | Shipped (`b28906a`). Chart button in the header opens a sheet; a pure `ConversationStatsBuilder` over lightweight `MessageStatSample`s (`date` + `is_from_me`) feeds it, with a narrow `statSamples` provider query so whole-thread aggregation stays cheap. |
 | **Relationship timeline** | Per contact: first message ever, total volume, media count, longest silence, cadence over time | M–L | ✅ | Great "wow" surface for the primary persona. |
 | **Needs-reply detector** | Smart filter/section: threads whose last message is *from them* and unanswered for N hours | S–M | ✅ 🚢 | Shipped (`999debf`). ⇧⌘R toggles the triage filter; `lastMessageFromMe` + `reactedToLatestInbound` (both from chat.db — a tapback I left counts as a reply) feed a pure `NeedsReply` helper (3h default). |
 | **Year in review** | An annual "wrapped" recap: top contacts, message counts, busiest day, top emoji/tapback | L | ✅ | Seasonal delight; reuses the stats primitives. |
@@ -65,7 +65,7 @@ Everything below respects these.
 |------|------|--------|-------|-------|
 | **Command palette (⌘K)** | Fuzzy jump to any conversation, action, or setting; the keyboard spine of the app | M | ✅ 🚢 | Shipped (`0474b5c`). ⌘K opens it; full-text message search moved to ⇧⌘F. Subsumes the Quick switcher. |
 | **Snooze a thread** | Hide a conversation until a chosen time, then resurface it | M | ✅ | Local scheduler + overlay flag. PRD-aligned. |
-| **Folders / tags** | User-defined labels and folders for conversations, local-only | M–L | ✅ | Overlay in `AppDatabase`; sidebar sections. PRD core. |
+| **Folders / tags** | User-defined labels and folders for conversations, local-only | M–L | ✅ 🚢 | Shipped. `folders` + `folder_members` overlay tables (many-to-many, so folders double as tags); each folder carries a name + Rice accent color. A sidebar scope list ("All Messages" + folders + New Folder) narrows `visibleConversations` *before* the unread/needs-reply filter, so the two axes compose. Assign via a conversation's Folders context submenu; manage via folder-row context menu + a reusable `FolderEditorView`. Also reachable from ⌘K. **⚠️ Merge note:** this uses `AppDatabase` migrations 5 & 6 — the in-flight *Canned responses / snippets* branch also claims migration 5. Both are correct against `master` (1–4) in isolation, but whichever merges **second** must renumber its migrations (in both the `migrations` array and `currentSchemaVersion`) so they don't collide. |
 | **Archive** | Remove a thread from the main list without losing it | S | ✅ | Overlay flag; filter in `visibleConversations`. |
 | **Mute a conversation** | Suppress that thread's notifications locally | S | ✅ | Overlay flag checked in `maybeNotify`. |
 | **VIP contacts** | Always-notify + always-pin a chosen set, in their own section | S–M | ✅ | Overlay set; complements existing pins. |
@@ -77,7 +77,7 @@ Everything below respects these.
 |------|------|--------|-------|-------|
 | **Vim-ish list nav** | `j`/`k` move threads, `Enter` opens, `g`/`G` ends, all without the mouse | S–M | ✅ | Focus/selection model already exists. |
 | **Quick switcher** | ⌘K-style recent-conversation switcher (editor tab-switch feel) | S–M | ✅ | Subset of the command palette; could ship first. |
-| **Canned responses / snippets** | Reusable text with a picker or `/`-trigger in the composer | M | ✅ | Overlay-stored; pure composer sugar. |
+| **Canned responses / snippets** | Reusable text with a picker or `/`-trigger in the composer | M | ✅ | Overlay-stored; pure composer sugar. **⚠️ Merge note:** its `snippets` overlay table claims `AppDatabase` migration 5, which collides with the shipped *Folders / tags* branch — whichever merges second renumbers (see that row). |
 | **Slash commands** | `/shrug`, `/unflip`, `/date`, insert-snippet in the composer | S | ✅ | Text transforms before send. |
 | **Shortcut cheat-sheet (⌘/)** | Overlay listing every keybinding | S | ✅ | Discoverability for a keyboard-first app. |
 
@@ -165,3 +165,21 @@ compounds well:
 
 Delight pairing when a lighter turn is wanted: **send/receive sounds** +
 **delivery timeline detail** — both `S`, both charming.
+
+## Current in-flight slate (2026-07-16)
+
+A second wave chosen for **parallel-safety** — four distinct subsystems that
+share no view or query surface, so they can be built at once without collisions:
+
+1. **Universal Library (⌘⇧L)** — 🔨 in progress. Retrieval lane (media query +
+   new browser). The loudest "we beat Messages" surface.
+2. ~~**Conversation stats panel**~~ — ✅ shipped (`b28906a`). Analytics lane.
+3. **Folders / tags** — 🔨 in progress. Organization lane (`AppDatabase`
+   overlay + sidebar `visibleConversations`). PRD-core.
+4. **Canned responses / snippets** — 🔨 in progress. Composition lane
+   (composer-only).
+
+Coordination note: 3 and 4 both add tables to `AppDatabase`; give their
+migrations distinct, ordered version numbers so they merge cleanly. Second
+wave once these land: Snooze / Archive / VIP (sidebar lane) and Link inbox /
+Attachment search (media lane).

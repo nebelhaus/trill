@@ -5,6 +5,9 @@ struct AppCommands: Commands {
     let showPalette: () -> Void
     let showSearch: () -> Void
     let showLibrary: () -> Void
+    let findInConversation: () -> Void
+    let findNext: () -> Void
+    let findPrevious: () -> Void
     let reload: () -> Void
     let toggleSidebar: () -> Void
     let togglePin: () -> Void
@@ -30,6 +33,12 @@ struct AppCommands: Commands {
                 .keyboardShortcut("f", modifiers: [.command, .shift])
             Button("Library…", action: showLibrary)
                 .keyboardShortcut("l", modifiers: [.command, .shift])
+            Button("Find in Conversation…", action: findInConversation)
+                .keyboardShortcut("f", modifiers: .command)
+            Button("Find Next", action: findNext)
+                .keyboardShortcut("g", modifiers: .command)
+            Button("Find Previous", action: findPrevious)
+                .keyboardShortcut("g", modifiers: [.command, .shift])
             Button("Reload", action: reload)
                 .keyboardShortcut("r", modifiers: .command)
             Divider()

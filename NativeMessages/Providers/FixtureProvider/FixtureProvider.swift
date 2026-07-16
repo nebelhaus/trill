@@ -147,6 +147,12 @@ actor FixtureProvider: MessagesProvider {
         }
     }
 
+    func statSamples(in conversation: ConversationID) async throws -> [MessageStatSample] {
+        guard conversation.provider == id else { throw MessagesProviderError.wrongProvider }
+        guard let history = fixture.messages[conversation] else { return [] }
+        return history.map { MessageStatSample(date: $0.createdAt, isFromMe: $0.isOutgoing) }
+    }
+
     func emit(_ event: ProviderEvent) {
         for continuation in continuations.values {
             continuation.yield(event)

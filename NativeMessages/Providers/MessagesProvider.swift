@@ -15,6 +15,7 @@ protocol MessagesProvider: Sendable {
     func contactSuggestions(matching term: String) async -> [ContactSuggestion]
     func media(in conversation: ConversationID, limit: Int) async throws -> [MediaItem]
     func libraryItems(kind: LibraryKind, limit: Int) async throws -> [LibraryItem]
+    func statSamples(in conversation: ConversationID) async throws -> [MessageStatSample]
 }
 
 extension MessagesProvider {
@@ -27,6 +28,8 @@ extension MessagesProvider {
     func media(in conversation: ConversationID, limit: Int) async throws -> [MediaItem] { [] }
 
     func libraryItems(kind: LibraryKind, limit: Int) async throws -> [LibraryItem] { [] }
+
+    func statSamples(in conversation: ConversationID) async throws -> [MessageStatSample] { [] }
 }
 
 enum MessagesProviderError: LocalizedError, Sendable {
