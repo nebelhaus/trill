@@ -77,7 +77,7 @@ Everything below respects these.
 |------|------|--------|-------|-------|
 | **Vim-ish list nav** | `j`/`k` move threads, `Enter` opens, `g`/`G` ends, all without the mouse | S–M | ✅ | Focus/selection model already exists. |
 | **Quick switcher** | ⌘K-style recent-conversation switcher (editor tab-switch feel) | S–M | ✅ | Subset of the command palette; could ship first. |
-| **Canned responses / snippets** | Reusable text with a picker or `/`-trigger in the composer | M | ✅ | Overlay-stored; pure composer sugar. **⚠️ Merge note:** its `snippets` overlay table claims `AppDatabase` migration 5, which collides with the shipped *Folders / tags* branch — whichever merges second renumbers (see that row). |
+| **Canned responses / snippets** | Reusable text with a picker or `/`-trigger in the composer | M | ✅ 🚢 | Shipped. `snippets` overlay table (migration 7, renumbered from 5 to clear the Folders collision) + `SnippetStore` shared by composer and Settings. A trailing `/keyword` opens a floating picker (`SnippetTrigger` parse → `SnippetRanking` over `FuzzyMatch`); ↑↓ pick · ↵/⇥ insert · esc dismiss, routed through `GrowingTextView`. Manage in Settings; seeds a starter set on first launch. |
 | **Slash commands** | `/shrug`, `/unflip`, `/date`, insert-snippet in the composer | S | ✅ | Text transforms before send. |
 | **Shortcut cheat-sheet (⌘/)** | Overlay listing every keybinding | S | ✅ | Discoverability for a keyboard-first app. |
 

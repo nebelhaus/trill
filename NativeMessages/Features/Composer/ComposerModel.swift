@@ -11,15 +11,27 @@ final class ComposerModel: ObservableObject {
     @Published private(set) var sendFeedback: String?
     @Published private(set) var disabledExplanation = "Select a conversation to write a draft."
 
+    /// Snippet picker state. Non-empty `snippetMatches` means the `/`-trigger
+    /// popover is showing; `snippetSelection` is the highlighted row. Both drive
+    /// the `ComposerView` overlay and the `GrowingTextView` key routing.
+    @Published private(set) var snippetMatches: [Snippet] = []
+    @Published var snippetSelection = 0
+
     private let database: AppDatabase
+    private let snippets: SnippetStore
     private var sendAction: ((String, [URL]) async throws -> SendOutcome)?
     private var saveTask: Task<Void, Never>?
     private var restoreTask: Task<Void, Never>?
     private var isRestoring = false
+    /// Range of the live `/token` in `text`, replaced when a snippet is picked.
+    private var snippetTriggerRange: Range<String.Index>?
 
-    init(database: AppDatabase) {
+    init(database: AppDatabase, snippets: SnippetStore) {
         self.database = database
+        self.snippets = snippets
     }
+
+    var isSnippetPickerActive: Bool { !snippetMatches.isEmpty }
 
     deinit {
         saveTask?.cancel()
@@ -34,6 +46,7 @@ final class ComposerModel: ObservableObject {
     ) {
         saveTask?.cancel()
         restoreTask?.cancel()
+        clearSnippetPicker()
         self.conversationID = conversationID
         self.sendAction = sendAction
         sendFeedback = nil
@@ -91,6 +104,7 @@ final class ComposerModel: ObservableObject {
             case .accepted, .confirmed:
                 text = ""
                 pendingAttachments = []
+                clearSnippetPicker()
                 sendFeedback = nil
                 saveTask?.cancel()
                 try? await database.saveDraft("", conversationID: conversationID)
@@ -101,6 +115,7 @@ final class ComposerModel: ObservableObject {
                 // a retry can't duplicate what already went out.
                 text = ""
                 pendingAttachments = []
+                clearSnippetPicker()
                 saveTask?.cancel()
                 try? await database.saveDraft("", conversationID: conversationID)
                 sendFeedback = "Some of the message may not have sent — check Messages.app."
@@ -112,6 +127,7 @@ final class ComposerModel: ObservableObject {
 
     func textDidChange() {
         guard !isRestoring, let conversationID else { return }
+        refreshSnippetPicker()
         let value = text
         saveTask?.cancel()
         saveTask = Task { [database] in
@@ -124,6 +140,51 @@ final class ComposerModel: ObservableObject {
                 AppLog.database.error("Draft persistence failed error=\(String(describing: type(of: error)), privacy: .public)")
             }
         }
+    }
+
+    // MARK: - Snippets
+
+    /// Re-evaluate the `/`-trigger against the current text on every keystroke.
+    /// Shows the picker when the trailing token is a `/query` that ranks at
+    /// least one usable snippet; hides it otherwise.
+    private func refreshSnippetPicker() {
+        guard let match = SnippetTrigger.parse(text) else {
+            clearSnippetPicker()
+            return
+        }
+        let results = SnippetRanking.matches(query: match.query, snippets: snippets.snippets)
+        guard !results.isEmpty else {
+            clearSnippetPicker()
+            return
+        }
+        snippetTriggerRange = match.range
+        snippetMatches = results
+        if snippetSelection >= results.count { snippetSelection = 0 }
+    }
+
+    func moveSnippetSelection(_ delta: Int) {
+        let count = snippetMatches.count
+        guard count > 0 else { return }
+        snippetSelection = (snippetSelection + delta + count) % count
+    }
+
+    /// Insert the highlighted snippet, replacing the `/token` that triggered it.
+    /// Returns `false` when there's nothing to commit so the caller (the text
+    /// view's Return handler) can fall through to its normal behavior.
+    @discardableResult
+    func commitSelectedSnippet() -> Bool {
+        guard snippetMatches.indices.contains(snippetSelection),
+              let range = snippetTriggerRange else { return false }
+        let body = snippetMatches[snippetSelection].body
+        text.replaceSubrange(range, with: body)
+        clearSnippetPicker()
+        return true
+    }
+
+    func clearSnippetPicker() {
+        if !snippetMatches.isEmpty { snippetMatches = [] }
+        snippetSelection = 0
+        snippetTriggerRange = nil
     }
 
     private static func feedback(for reason: UserFacingSendError) -> String {

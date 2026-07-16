@@ -16,7 +16,7 @@ enum AppDatabaseError: LocalizedError, Sendable {
 }
 
 actor AppDatabase {
-    static let currentSchemaVersion = 6
+    static let currentSchemaVersion = 7
 
     private final class Connection: @unchecked Sendable {
         let raw: OpaquePointer
@@ -244,6 +244,43 @@ actor AppDatabase {
         ).map { EventCursor(rawValue: $0) }
     }
 
+    func snippets() throws -> [Snippet] {
+        let handle = connection.raw
+        var statement: OpaquePointer?
+        let sql = "SELECT id, title, body, updated_at FROM snippets ORDER BY title COLLATE NOCASE ASC"
+        guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK else { throw Self.error(handle) }
+        defer { sqlite3_finalize(statement) }
+        var result: [Snippet] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let idColumn = sqlite3_column_text(statement, 0),
+                  let titleColumn = sqlite3_column_text(statement, 1),
+                  let bodyColumn = sqlite3_column_text(statement, 2) else { continue }
+            result.append(Snippet(
+                id: String(cString: idColumn),
+                title: String(cString: titleColumn),
+                body: String(cString: bodyColumn),
+                updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 3))
+            ))
+        }
+        return result
+    }
+
+    func upsertSnippet(_ snippet: Snippet) throws {
+        try execute(
+            "INSERT OR REPLACE INTO snippets (id, title, body, updated_at) VALUES (?, ?, ?, ?)",
+            bindings: [
+                .text(snippet.id),
+                .text(snippet.title),
+                .text(snippet.body),
+                .double(snippet.updatedAt.timeIntervalSince1970),
+            ]
+        )
+    }
+
+    func deleteSnippet(id: String) throws {
+        try execute("DELETE FROM snippets WHERE id = ?", bindings: [.text(id)])
+    }
+
     private enum Binding {
         case text(String)
         case double(Double)
@@ -303,6 +340,7 @@ actor AppDatabase {
             (4, "CREATE TABLE read_marks (conversation_key TEXT PRIMARY KEY NOT NULL, marked_at REAL NOT NULL)"),
             (5, "CREATE TABLE folders (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, color TEXT NOT NULL, sort_order REAL NOT NULL, created_at REAL NOT NULL)"),
             (6, "CREATE TABLE folder_members (folder_id TEXT NOT NULL, conversation_key TEXT NOT NULL, added_at REAL NOT NULL, PRIMARY KEY (folder_id, conversation_key))"),
+            (7, "CREATE TABLE snippets (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, updated_at REAL NOT NULL)"),
         ]
         for (nextVersion, sql) in migrations where nextVersion > version {
             try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION")
