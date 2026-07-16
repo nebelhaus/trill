@@ -50,6 +50,12 @@ struct InboxView: View {
                 }
             }
             .animation(.easeOut(duration: 0.12), value: model.isPalettePresented)
+            .overlay {
+                if model.isLibraryPresented {
+                    UniversalLibraryView(model: model)
+                }
+            }
+            .animation(.easeOut(duration: 0.12), value: model.isLibraryPresented)
             .sheet(isPresented: $model.isComposePresented) {
                 ComposeSheet(model: model)
             }

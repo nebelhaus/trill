@@ -70,6 +70,8 @@ final class InboxModel: ObservableObject {
     /// full-text overlay opens already carrying what the user typed.
     @Published var searchSeed: String?
     @Published var isComposePresented = false
+    /// The Universal Library (⌘⇧L) overlay — all-conversations media browser.
+    @Published var isLibraryPresented = false
     @Published var isSidebarVisible = true
     /// Active sidebar filter, persisted across launches. Migrates the legacy
     /// `showsUnreadOnly` bool the first time so an existing unread-only view is
@@ -449,6 +451,25 @@ final class InboxModel: ObservableObject {
             searchResults = []
             AppLog.ui.error("Search failed error=\(String(describing: type(of: error)), privacy: .public)")
         }
+    }
+
+    // MARK: - Universal Library
+
+    /// Every image, link, or file across all conversations, for the ⌘⇧L browser.
+    func loadLibrary(kind: LibraryKind, limit: Int = 300) async -> [LibraryItem] {
+        (try? await repository.libraryItems(kind: kind, limit: limit)) ?? []
+    }
+
+    /// Display name of a loaded conversation, for library-item context. Nil when
+    /// the thread isn't in the currently-loaded list.
+    func conversationName(for id: ConversationID) -> String? {
+        conversations.first(where: { $0.id == id })?.displayName
+    }
+
+    /// Jump from a library item to its source message, closing the library.
+    func openLibraryItem(_ item: LibraryItem) {
+        isLibraryPresented = false
+        select(item.conversationID, focus: item.messageID)
     }
 
     private func updateDockBadge() {

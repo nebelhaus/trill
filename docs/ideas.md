@@ -39,7 +39,7 @@ Everything below respects these.
 
 | Idea | What | Effort | Feas. | Notes |
 |------|------|--------|-------|-------|
-| **Universal Library (⌘⇧L)** | One browser for every image, link, and doc across *all* conversations, with type tabs and jump-to-source | M | ✅ | Generalizes the existing per-conversation gallery + `media()` query to an all-chats query. |
+| **Universal Library (⌘⇧L)** | One browser for every image, link, and doc across *all* conversations, with type tabs and jump-to-source | M | ✅ 🚢 | Shipped. ⌘⇧L opens a centered overlay (palette/search pattern) with Images/Links/Files tabs. New `libraryItems(kind:limit:)` provider method over all-chats `ChatDatabaseReader.allAttachments` (media vs. file split by UTI/MIME) + `linkCandidates` (http/www-prefiltered scan → `LinkExtractor` URL detection, deduped per thread). Jump-to-source reuses `select(_:focus:)`; only reaches threads in the loaded list. |
 | **Advanced search operators** | `from:`, `in:group`, `has:link`, `has:image`, `before:`/`after:`, `is:unread` in the global search box | M | ✅ 🚢 | Shipped. Pure `SearchQueryParser` (raw string → `SearchFilters` + residual text) feeds one `MessageSearchQuery.matches` predicate both the fixture and live search paths apply. |
 | **Scoped in-thread find (⌘F)** | Find-in-conversation with match highlight and next/prev, without leaving the thread | S–M | ✅ | Reuse the reveal/highlight machinery already built for search-jump. |
 | **Link inbox** | Every URL ever received, deduped, newest-first, with sender + timestamp + optional OG preview | M | ✅ | Extract from message text; OG fetch is optional/networked and can be a later toggle. |

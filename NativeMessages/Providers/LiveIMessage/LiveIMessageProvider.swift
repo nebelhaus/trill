@@ -282,6 +282,60 @@ actor LiveIMessageProvider: MessagesProvider {
             || (attachment.uniformTypeIdentifier?.contains("movie") ?? false)
     }
 
+    func libraryItems(kind: LibraryKind, limit: Int) async throws -> [LibraryItem] {
+        switch kind {
+        case .image, .file:
+            let wantsMedia = kind == .image
+            // Widen the pull: after dropping link-preview payload shells and
+            // splitting media vs. other, only a fraction matches the tab.
+            return Array(
+                try reader.allAttachments(limit: limit * 5)
+                    .filter { !Self.isPluginPayload($0.row) }
+                    .compactMap { entry -> LibraryItem? in
+                        let attachment = Self.attachment(entry.row)
+                        guard Self.isMedia(attachment) == wantsMedia else { return nil }
+                        return LibraryItem(
+                            id: attachment.id,
+                            kind: kind,
+                            messageID: MessageID(provider: id, externalGUID: entry.messageGUID),
+                            conversationID: ConversationID(provider: id, externalGUID: entry.chatGUID),
+                            createdAt: Self.date(fromAppleNanoseconds: entry.date),
+                            attachment: attachment,
+                            url: nil,
+                            messageText: nil
+                        )
+                    }
+                    .prefix(limit)
+            )
+        case .link:
+            var items: [LibraryItem] = []
+            var seen = Set<String>()
+            for entry in try reader.linkCandidates(limit: limit * 6) {
+                let text = displayText(text: entry.text, body: entry.body)
+                guard !text.isEmpty else { continue }
+                let conversationID = ConversationID(provider: id, externalGUID: entry.chatGUID)
+                for url in LinkExtractor.urls(in: text) {
+                    // One row per (thread, URL): a link reshared within a thread
+                    // is noise, but the same link across threads is worth showing.
+                    let dedupeKey = conversationID.id + "|" + url.absoluteString
+                    guard seen.insert(dedupeKey).inserted else { continue }
+                    items.append(LibraryItem(
+                        id: entry.guid + "|" + url.absoluteString,
+                        kind: .link,
+                        messageID: MessageID(provider: id, externalGUID: entry.guid),
+                        conversationID: conversationID,
+                        createdAt: Self.date(fromAppleNanoseconds: entry.date),
+                        attachment: nil,
+                        url: url,
+                        messageText: text
+                    ))
+                    if items.count >= limit { return items }
+                }
+            }
+            return items
+        }
+    }
+
     // MARK: - Mapping
 
     private func conversation(from chat: ChatDatabaseReader.ChatRow) async throws -> Conversation {

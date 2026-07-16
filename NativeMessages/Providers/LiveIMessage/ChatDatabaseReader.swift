@@ -336,6 +336,72 @@ struct ChatDatabaseReader: Sendable {
         }
     }
 
+    /// Every attachment across *all* chats, newest-first, with the owning
+    /// message's GUID, the chat GUID, and date — the all-conversations
+    /// generalization of `media`. Powers the Universal Library's Images and
+    /// Files tabs (the caller splits media vs. other by UTI/MIME).
+    func allAttachments(limit: Int) throws -> [(row: AttachmentRow, messageGUID: String, chatGUID: String, date: Int64)] {
+        try withConnection { db in
+            try query(db, """
+                SELECT maj.message_id, a.guid, a.filename, a.mime_type, a.uti, a.transfer_name,
+                       IFNULL(a.total_bytes, 0), m.guid, c.guid, m.date
+                FROM attachment a
+                JOIN message_attachment_join maj ON maj.attachment_id = a.ROWID
+                JOIN message m ON m.ROWID = maj.message_id
+                JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+                JOIN chat c ON c.ROWID = cmj.chat_id
+                WHERE IFNULL(m.date_retracted, 0) = 0
+                ORDER BY m.date DESC
+                LIMIT ?
+                """, bind: [.int(Int64(limit))]) { stmt in
+                (
+                    row: AttachmentRow(
+                        messageRowID: sqlite3_column_int64(stmt, 0),
+                        guid: text(stmt, 1) ?? "",
+                        filename: text(stmt, 2),
+                        mimeType: text(stmt, 3),
+                        uti: text(stmt, 4),
+                        transferName: text(stmt, 5),
+                        totalBytes: sqlite3_column_int64(stmt, 6)
+                    ),
+                    messageGUID: text(stmt, 7) ?? "",
+                    chatGUID: text(stmt, 8) ?? "",
+                    date: sqlite3_column_int64(stmt, 9)
+                )
+            }
+        }
+    }
+
+    /// Recent messages that look like they carry a URL, across every chat, for
+    /// the link library. The `http`/`www` prefilter bounds the decode + detect
+    /// pass to a small candidate set instead of scanning the whole message
+    /// table; bare-domain-only mentions (rare) are the accepted miss.
+    func linkCandidates(limit: Int) throws -> [(guid: String, text: String?, body: Data?, chatGUID: String, date: Int64)] {
+        try withConnection { db in
+            try query(db, """
+                SELECT m.guid, m.text, m.attributedBody, c.guid, m.date
+                FROM message m
+                JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+                JOIN chat c ON c.ROWID = cmj.chat_id
+                WHERE m.associated_message_type = 0 AND m.item_type = 0
+                  AND IFNULL(m.date_retracted, 0) = 0
+                  AND (m.text LIKE '%http%' OR m.text LIKE '%www.%'
+                       OR instr(m.attributedBody, CAST('http' AS BLOB)) > 0
+                       OR instr(m.attributedBody, CAST('www.' AS BLOB)) > 0)
+                ORDER BY m.date DESC
+                LIMIT ?
+                """, bind: [.int(Int64(limit))]) { stmt in
+                (
+                    guid: text(stmt, 0) ?? "",
+                    text: text(stmt, 1),
+                    body: blob(stmt, 2),
+                    chatGUID: text(stmt, 3) ?? "",
+                    date: sqlite3_column_int64(stmt, 4)
+                )
+            }
+        }
+    }
+
     /// Case-insensitive-ish text search. `instr` covers attributedBody blobs
     /// byte-wise (case-sensitive); results are re-filtered after decoding.
     func searchMessages(term: String, limit: Int) throws -> [MessageRow] {

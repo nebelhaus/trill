@@ -28,6 +28,7 @@ struct NativeMessagesApp: App {
                 newMessage: { inboxModel.isComposePresented = true },
                 showPalette: { inboxModel.isPalettePresented = true },
                 showSearch: { inboxModel.isSearchPresented = true },
+                showLibrary: { inboxModel.isLibraryPresented = true },
                 reload: { inboxModel.load() },
                 toggleSidebar: { inboxModel.toggleSidebar() },
                 togglePin: { inboxModel.toggleSelectedPin() },

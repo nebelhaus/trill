@@ -98,6 +98,55 @@ actor FixtureProvider: MessagesProvider {
             .map { $0 }
     }
 
+    func libraryItems(kind: LibraryKind, limit: Int) async throws -> [LibraryItem] {
+        let dated = fixture.messages
+            .flatMap { conversation, history in history.map { (conversation, $0) } }
+            .sorted { $0.1.createdAt > $1.1.createdAt }
+        switch kind {
+        case .image, .file:
+            let wantsMedia = kind == .image
+            return Array(
+                dated.flatMap { conversation, message in
+                    message.attachments.compactMap { attachment -> LibraryItem? in
+                        guard attachment.isImage == wantsMedia else { return nil }
+                        return LibraryItem(
+                            id: attachment.id,
+                            kind: kind,
+                            messageID: message.id,
+                            conversationID: conversation,
+                            createdAt: message.createdAt,
+                            attachment: attachment,
+                            url: nil,
+                            messageText: nil
+                        )
+                    }
+                }
+                .prefix(limit)
+            )
+        case .link:
+            var items: [LibraryItem] = []
+            var seen = Set<String>()
+            for (conversation, message) in dated {
+                for url in LinkExtractor.urls(in: message.text) {
+                    let dedupeKey = conversation.id + "|" + url.absoluteString
+                    guard seen.insert(dedupeKey).inserted else { continue }
+                    items.append(LibraryItem(
+                        id: message.id.id + "|" + url.absoluteString,
+                        kind: .link,
+                        messageID: message.id,
+                        conversationID: conversation,
+                        createdAt: message.createdAt,
+                        attachment: nil,
+                        url: url,
+                        messageText: message.text
+                    ))
+                    if items.count >= limit { return items }
+                }
+            }
+            return items
+        }
+    }
+
     func emit(_ event: ProviderEvent) {
         for continuation in continuations.values {
             continuation.yield(event)

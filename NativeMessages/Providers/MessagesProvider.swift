@@ -14,6 +14,7 @@ protocol MessagesProvider: Sendable {
     func react(_ request: ReactionRequest) async throws -> ReactionOutcome
     func contactSuggestions(matching term: String) async -> [ContactSuggestion]
     func media(in conversation: ConversationID, limit: Int) async throws -> [MediaItem]
+    func libraryItems(kind: LibraryKind, limit: Int) async throws -> [LibraryItem]
 }
 
 extension MessagesProvider {
@@ -24,6 +25,8 @@ extension MessagesProvider {
     func contactSuggestions(matching term: String) async -> [ContactSuggestion] { [] }
 
     func media(in conversation: ConversationID, limit: Int) async throws -> [MediaItem] { [] }
+
+    func libraryItems(kind: LibraryKind, limit: Int) async throws -> [LibraryItem] { [] }
 }
 
 enum MessagesProviderError: LocalizedError, Sendable {
