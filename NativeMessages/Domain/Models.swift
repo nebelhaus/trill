@@ -301,6 +301,14 @@ struct ContactSuggestion: Hashable, Sendable, Identifiable {
     var id: String { handle }
 }
 
+/// The minimum a message contributes to the conversation stats panel: when it
+/// landed and who sent it. Kept tiny so the whole thread can be aggregated
+/// without decoding bodies, attachments, or reactions.
+struct MessageStatSample: Hashable, Sendable {
+    let date: Date
+    let isFromMe: Bool
+}
+
 /// One entry in a conversation's media gallery: an attachment plus enough
 /// context to jump back to the message it arrived with.
 struct MediaItem: Hashable, Sendable, Identifiable {

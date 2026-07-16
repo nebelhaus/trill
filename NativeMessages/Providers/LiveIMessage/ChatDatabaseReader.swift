@@ -336,6 +336,24 @@ struct ChatDatabaseReader: Sendable {
         }
     }
 
+    /// Direction + timestamp for every real message in a chat, oldest-first.
+    /// Deliberately narrow — no bodies, blobs, or joins beyond the chat link —
+    /// so aggregating a whole thread's history for the stats panel stays cheap.
+    func statSamples(chatRowID: Int64) throws -> [(isFromMe: Bool, date: Int64)] {
+        try withConnection { db in
+            try query(db, """
+                SELECT m.is_from_me, m.date
+                FROM message m
+                JOIN chat_message_join j ON j.message_id = m.ROWID
+                WHERE j.chat_id = ? AND m.associated_message_type = 0 AND m.item_type = 0
+                  AND IFNULL(m.date_retracted, 0) = 0
+                ORDER BY m.date ASC
+                """, bind: [.int(chatRowID)]) { stmt in
+                (isFromMe: sqlite3_column_int(stmt, 0) == 1, date: sqlite3_column_int64(stmt, 1))
+            }
+        }
+    }
+
     /// Case-insensitive-ish text search. `instr` covers attributedBody blobs
     /// byte-wise (case-sensitive); results are re-filtered after decoding.
     func searchMessages(term: String, limit: Int) throws -> [MessageRow] {

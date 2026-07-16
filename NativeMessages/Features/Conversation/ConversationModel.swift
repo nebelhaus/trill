@@ -255,6 +255,16 @@ final class ConversationModel: ObservableObject {
         return (try? await repository.media(in: conversation.id, limit: limit)) ?? []
     }
 
+    /// Aggregates the whole thread's timestamps into the stats-panel figures.
+    /// Nil when there's no open conversation; `.empty` when the thread has no
+    /// messages. Reads the full history, so it runs on demand, not on every load.
+    func loadStats() async -> ConversationStats? {
+        guard let conversation else { return nil }
+        let repository = repository
+        guard let samples = try? await repository.statSamples(in: conversation.id) else { return nil }
+        return ConversationStatsBuilder.build(from: samples, now: Date())
+    }
+
     func loadOlder() async {
         guard let conversation, let nextBefore, !isLoadingOlder else { return }
         isLoadingOlder = true
