@@ -32,10 +32,15 @@ struct ConversationView: View {
                 header
             }
             RiceDivider()
+            if model.isFindPresented {
+                FindBar(model: model)
+                RiceDivider()
+            }
             MessageTimelineView(model: model, density: density)
             RiceDivider()
             ComposerView(model: composer, maxHeight: paneHeight * 0.5)
         }
+        .animation(.easeOut(duration: 0.14), value: model.isFindPresented)
         .background(Rice.base)
         .background(
             GeometryReader { proxy in
@@ -239,6 +244,8 @@ private struct MessageTimelineView: View {
 
                             let latestOutgoingID = model.messages.last(where: \.isOutgoing)?.id
                             let replies = repliesByOrigin
+                            let findMatches = model.findMatchSet
+                            let currentFindMatch = model.currentFindMatchID
                             ForEach(Array(model.messages.enumerated()), id: \.element.id) { index, message in
                                 if startsDay(at: index) {
                                     DaySeparator(date: message.createdAt)
@@ -249,6 +256,8 @@ private struct MessageTimelineView: View {
                                     endsGroup: endsGroup(at: index),
                                     isLatestOutgoing: message.id == latestOutgoingID,
                                     isHighlighted: message.id == model.highlightedMessageID,
+                                    isFindMatch: findMatches.contains(message.id),
+                                    isCurrentFindMatch: message.id == currentFindMatch,
                                     replyIDs: replies[message.id] ?? [],
                                     onJump: { target in
                                         withAnimation(.easeInOut(duration: 0.25)) {
@@ -332,6 +341,76 @@ private struct MessageTimelineView: View {
     }
 }
 
+/// In-thread find bar (⌘F). Browser-style: docked under the header, scoped to
+/// the messages loaded in the timeline. ⏎ / ⇧⏎ (or the chevrons) step through
+/// matches; esc closes.
+private struct FindBar: View {
+    @ObservedObject var model: ConversationModel
+    @FocusState private var isFieldFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .riceFont(12)
+                .foregroundStyle(Rice.subtext0)
+            TextField("Find in conversation", text: $model.findQuery)
+                .textFieldStyle(.plain)
+                .riceFont(13)
+                .foregroundStyle(Rice.text)
+                .focused($isFieldFocused)
+                .onSubmit { model.findNext() }
+
+            Text(matchLabel)
+                .riceFont(10, .medium)
+                .monospacedDigit()
+                .foregroundStyle(hasNoMatches ? Rice.red : Rice.subtext0)
+                .lineLimit(1)
+                .fixedSize()
+
+            RiceDivider(axis: .vertical).frame(height: 16)
+
+            Button { model.findPrevious() } label: {
+                Image(systemName: "chevron.up")
+            }
+            .buttonStyle(RiceIconButtonStyle())
+            .disabled(model.findMatches.isEmpty)
+            .help("Previous match (⇧⌘G)")
+
+            Button { model.findNext() } label: {
+                Image(systemName: "chevron.down")
+            }
+            .buttonStyle(RiceIconButtonStyle())
+            .disabled(model.findMatches.isEmpty)
+            .help("Next match (⌘G)")
+
+            Button { model.endFind() } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(RiceIconButtonStyle())
+            .help("Close find (esc)")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(Rice.mantle)
+        .onAppear { isFieldFocused = true }
+        .onExitCommand { model.endFind() }
+    }
+
+    private var trimmedQuery: String {
+        model.findQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var hasNoMatches: Bool {
+        !trimmedQuery.isEmpty && model.findMatches.isEmpty
+    }
+
+    private var matchLabel: String {
+        if trimmedQuery.isEmpty { return " " }
+        if model.findMatches.isEmpty { return "No matches" }
+        return "\(model.findCurrentIndex + 1) of \(model.findMatches.count)"
+    }
+}
+
 private struct DaySeparator: View {
     let date: Date
 
@@ -364,6 +443,8 @@ private struct MessageRow: View {
     let endsGroup: Bool
     let isLatestOutgoing: Bool
     var isHighlighted = false
+    var isFindMatch = false
+    var isCurrentFindMatch = false
     var replyIDs: [MessageID] = []
     var onJump: (MessageID) -> Void = { _ in }
 
@@ -413,9 +494,11 @@ private struct MessageRow: View {
                 .onHover { isRevealed = $0 }
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(accent, lineWidth: isHighlighted ? 1.5 : 0)
+                        .strokeBorder(accent.opacity(strongHighlight ? 1 : 0.5), lineWidth: borderWidth)
                 )
                 .animation(.easeOut(duration: 0.4), value: isHighlighted)
+                .animation(.easeOut(duration: 0.2), value: isFindMatch)
+                .animation(.easeOut(duration: 0.2), value: isCurrentFindMatch)
                 .contextMenu {
                     if !message.text.isEmpty {
                         Button("Copy Text") {
@@ -489,6 +572,19 @@ private struct MessageRow: View {
 
     private var bubbleColor: Color {
         message.isOutgoing ? accent.opacity(0.22) : Rice.surface0
+    }
+
+    /// A reveal flash or the current find match gets a full-strength accent
+    /// outline; other find matches get a fainter one so the current one stands
+    /// out while every match stays visible.
+    private var strongHighlight: Bool {
+        isHighlighted || isCurrentFindMatch
+    }
+
+    private var borderWidth: CGFloat {
+        if strongHighlight { return 1.5 }
+        if isFindMatch { return 1 }
+        return 0
     }
 
     private var accessibilitySummary: String {

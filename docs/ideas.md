@@ -41,7 +41,7 @@ Everything below respects these.
 |------|------|--------|-------|-------|
 | **Universal Library (⌘⇧L)** | One browser for every image, link, and doc across *all* conversations, with type tabs and jump-to-source | M | ✅ | Generalizes the existing per-conversation gallery + `media()` query to an all-chats query. |
 | **Advanced search operators** | `from:`, `in:group`, `has:link`, `has:image`, `before:`/`after:`, `is:unread` in the global search box | M | ✅ 🚢 | Shipped. Pure `SearchQueryParser` (raw string → `SearchFilters` + residual text) feeds one `MessageSearchQuery.matches` predicate both the fixture and live search paths apply. |
-| **Scoped in-thread find (⌘F)** | Find-in-conversation with match highlight and next/prev, without leaving the thread | S–M | ✅ | Reuse the reveal/highlight machinery already built for search-jump. |
+| **Scoped in-thread find (⌘F)** | Find-in-conversation with match highlight and next/prev, without leaving the thread | S–M | ✅ 🚢 | Shipped. ⌘F opens a docked find bar over the open thread; ⌘G / ⇧⌘G (or ⏎ / the chevrons) step matches. Scoped to loaded messages; reuses the reveal/highlight machinery. |
 | **Link inbox** | Every URL ever received, deduped, newest-first, with sender + timestamp + optional OG preview | M | ✅ | Extract from message text; OG fetch is optional/networked and can be a later toggle. |
 | **Saved / starred messages** | Local bookmarks on any message, browsable in one place | M | ✅ | Store `MessageID`s in `AppDatabase`; no chat.db write. |
 | **Jump to date** | Date scrubber / "go to date" to leap anywhere in a long thread instantly | M | ✅ | Cursor paging already keyed on message date. |
