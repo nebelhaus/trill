@@ -12,6 +12,9 @@ struct ComposerView: View {
     @AppStorage("sendOnReturn") private var sendOnReturn = true
     @State private var isDropTargeted = false
     @State private var measuredHeight: CGFloat = 0
+    /// Measured height of the snippet popover, so it can be offset fully above
+    /// the box regardless of how many rows it has.
+    @State private var snippetPickerHeight: CGFloat = 0
 
     /// Floor used only until the first real measurement lands, kept below a
     /// true single line so it never forces the box taller than one row.
@@ -44,7 +47,10 @@ struct ComposerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // Raised above the footnote so the floating snippet popover isn't
+            // painted over by the sibling that follows it in the stack.
             box
+                .zIndex(1)
             footnote
         }
         .padding(.horizontal, 14)
@@ -83,6 +89,29 @@ struct ComposerView: View {
                     lineWidth: isDropTargeted ? 1.5 : 1
                 )
         )
+        // Float the snippet picker just above the box, leading-aligned. Anchored
+        // to the box's top edge, then offset up by its own measured height (plus
+        // a gap) so it grows upward into the timeline instead of over the box.
+        .overlay(alignment: .topLeading) {
+            if model.isSnippetPickerActive {
+                SnippetPickerView(
+                    matches: model.snippetMatches,
+                    selection: model.snippetSelection,
+                    onSelect: { index in
+                        model.snippetSelection = index
+                        model.commitSelectedSnippet()
+                    }
+                )
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: SnippetPickerHeightKey.self, value: proxy.size.height)
+                    }
+                )
+                .offset(y: -(snippetPickerHeight + 6))
+                .onPreferenceChange(SnippetPickerHeightKey.self) { snippetPickerHeight = $0 }
+                .transition(.opacity)
+            }
+        }
     }
 
     private var editor: some View {
@@ -93,6 +122,10 @@ struct ComposerView: View {
             isEnabled: model.conversationID != nil,
             sendOnReturn: sendOnReturn,
             isScrollable: measuredHeight >= ceiling - 0.5,
+            isSnippetPickerActive: model.isSnippetPickerActive,
+            onSnippetMove: { model.moveSnippetSelection($0) },
+            onSnippetCommit: { model.commitSelectedSnippet() },
+            onSnippetCancel: { model.clearSnippetPicker() },
             onSend: { Task { await model.send() } }
         )
         .frame(height: editorHeight)
@@ -281,5 +314,12 @@ struct ComposerView: View {
         } catch {
             AppLog.ui.error("Pasted image staging failed error=\(String(describing: type(of: error)), privacy: .public)")
         }
+    }
+}
+
+private struct SnippetPickerHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

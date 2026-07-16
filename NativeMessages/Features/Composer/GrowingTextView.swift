@@ -17,6 +17,14 @@ struct GrowingTextView: NSViewRepresentable {
     /// Only true once the box is pinned at its max height — below that it grows
     /// to fit, so the scroller stays hidden and never flashes mid-growth.
     var isScrollable: Bool
+    /// When the snippet picker is open, ↑/↓ move its selection, Return/Tab commit
+    /// the highlighted snippet, and Escape dismisses it — all before the normal
+    /// Return-to-send policy runs.
+    var isSnippetPickerActive = false
+    var onSnippetMove: (Int) -> Void = { _ in }
+    /// Returns `true` when a snippet was inserted, so the key is consumed.
+    var onSnippetCommit: () -> Bool = { false }
+    var onSnippetCancel: () -> Void = {}
     var onSend: () -> Void
 
     /// Small gutter so text clears the caret and rounded corners without
@@ -66,6 +74,12 @@ struct GrowingTextView: NSViewRepresentable {
         context.coordinator.parent = self
         if textView.string != text {
             textView.string = text
+            // The string only differs when SwiftUI drove the change (draft
+            // restore, or a picked snippet) — never mid-typing, where the
+            // coordinator already synced `parent.text`. Park the caret at the
+            // end so the user keeps writing where the inserted text left off
+            // instead of at position 0, where `setString:` would leave it.
+            textView.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
         }
         textView.isEditable = isEnabled
         textView.isSelectable = isEnabled
@@ -93,6 +107,24 @@ struct GrowingTextView: NSViewRepresentable {
         /// every flavor of Return; the live event tells us which modifiers rode
         /// along so we can send, or fall through to a real newline.
         func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            // Snippet picker owns the arrow/commit/cancel keys while it's open.
+            if parent.isSnippetPickerActive {
+                switch selector {
+                case #selector(NSResponder.moveUp(_:)):
+                    parent.onSnippetMove(-1)
+                    return true
+                case #selector(NSResponder.moveDown(_:)):
+                    parent.onSnippetMove(1)
+                    return true
+                case #selector(NSResponder.cancelOperation(_:)):
+                    parent.onSnippetCancel()
+                    return true
+                case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertTab(_:)):
+                    if parent.onSnippetCommit() { return true }
+                default:
+                    break
+                }
+            }
             guard selector == #selector(NSResponder.insertNewline(_:)) else { return false }
             let flags = NSApp.currentEvent?.modifierFlags ?? []
             if parent.sendOnReturn {

@@ -130,7 +130,7 @@ final class InboxModel: ObservableObject {
         return defaults.bool(forKey: "showsUnreadOnly") ? .unread : .all
     }
 
-    init(database: AppDatabase) {
+    init(database: AppDatabase, snippets: SnippetStore) {
         self.database = database
         let mode = UserDefaults.standard.string(forKey: Self.providerModeKey)
             .flatMap(ProviderMode.init(rawValue:)) ?? .messages
@@ -138,7 +138,7 @@ final class InboxModel: ObservableObject {
         let repository = MessagesRepository(provider: Self.makeProvider(mode), database: database)
         self.repository = repository
         conversationModel = ConversationModel(repository: repository)
-        composerModel = ComposerModel(database: database)
+        composerModel = ComposerModel(database: database, snippets: snippets)
         notifications.openConversation = { [weak self] id in
             self?.select(id)
         }

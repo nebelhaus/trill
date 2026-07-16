@@ -3,12 +3,15 @@ import SwiftUI
 @main
 struct NativeMessagesApp: App {
     @StateObject private var inboxModel: InboxModel
+    @StateObject private var snippetStore: SnippetStore
     @AppStorage("uiScale") private var uiScale = 1.0
     @AppStorage("accentName") private var accentName = "mauve"
     @AppStorage("showMenuBarItem") private var showMenuBarItem = true
 
     init() {
-        _inboxModel = StateObject(wrappedValue: AppEnvironment.makeInboxModel())
+        let services = AppEnvironment.makeServices()
+        _inboxModel = StateObject(wrappedValue: services.inbox)
+        _snippetStore = StateObject(wrappedValue: services.snippets)
     }
 
     var body: some Scene {
@@ -49,6 +52,7 @@ struct NativeMessagesApp: App {
         Settings {
             RicedRoot {
                 SettingsView()
+                    .environmentObject(snippetStore)
             }
         }
 

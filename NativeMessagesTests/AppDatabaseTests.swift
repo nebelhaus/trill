@@ -54,7 +54,7 @@ final class AppDatabaseTests: XCTestCase {
 
         let version = try await database.schemaVersion()
         XCTAssertEqual(version, AppDatabase.currentSchemaVersion)
-        XCTAssertEqual(AppDatabase.currentSchemaVersion, 6)
+        XCTAssertEqual(AppDatabase.currentSchemaVersion, 7)
 
         let provider = ProviderID(rawValue: "fixture")
         let alice = ConversationID(provider: provider, externalGUID: "alice")
