@@ -16,7 +16,7 @@ enum AppDatabaseError: LocalizedError, Sendable {
 }
 
 actor AppDatabase {
-    static let currentSchemaVersion = 9
+    static let currentSchemaVersion = 13
 
     private final class Connection: @unchecked Sendable {
         let raw: OpaquePointer
@@ -114,6 +114,33 @@ actor AppDatabase {
         var result = Set<ConversationID>()
         for key in keys {
             guard let id = ConversationID(persistenceKey: key) else { throw AppDatabaseError.invalidStoredIdentifier }
+            result.insert(id)
+        }
+        return result
+    }
+
+    /// Saved-message bookmarks are a flat overlay set keyed by the message's
+    /// `persistenceKey` — same shape as pinned/VIP conversations, one row per
+    /// bookmark with a "when added" timestamp for newest-first ordering.
+    func setSaved(_ saved: Bool, messageID: MessageID) throws {
+        if saved {
+            try execute(
+                "INSERT OR REPLACE INTO saved_messages (message_key, saved_at) VALUES (?, ?)",
+                bindings: [.text(messageID.persistenceKey), .double(Date().timeIntervalSince1970)]
+            )
+        } else {
+            try execute(
+                "DELETE FROM saved_messages WHERE message_key = ?",
+                bindings: [.text(messageID.persistenceKey)]
+            )
+        }
+    }
+
+    func savedMessageIDs() throws -> Set<MessageID> {
+        let keys = try textRows("SELECT message_key FROM saved_messages ORDER BY saved_at DESC")
+        var result = Set<MessageID>()
+        for key in keys {
+            guard let id = MessageID(persistenceKey: key) else { throw AppDatabaseError.invalidStoredIdentifier }
             result.insert(id)
         }
         return result
@@ -414,6 +441,17 @@ actor AppDatabase {
             (7, "CREATE TABLE snippets (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, updated_at REAL NOT NULL)"),
             (8, "CREATE TABLE vip_conversations (conversation_key TEXT PRIMARY KEY NOT NULL, added_at REAL NOT NULL)"),
             (9, "CREATE TABLE link_previews (url TEXT PRIMARY KEY NOT NULL, title TEXT, summary TEXT, image_url TEXT, site_name TEXT, fetched_at REAL NOT NULL)"),
+            // Saved / starred messages: local bookmarks on any message, keyed by
+            // MessageID.persistenceKey. No chat.db write.
+            //
+            // ⚠️ Merge note: this branch was cut from schema v9, but `master` has
+            // since claimed 10–12 (archived / muted / snoozed conversations). We
+            // deliberately number this 13 rather than 10 so it (a) merges into
+            // master with no renumber and (b) actually applies against the shared
+            // app-support overlay DB, which other branches have already advanced
+            // to v12 — a migration numbered ≤ 12 would be silently skipped there.
+            // `IF NOT EXISTS` keeps it idempotent across that shared DB.
+            (13, "CREATE TABLE IF NOT EXISTS saved_messages (message_key TEXT PRIMARY KEY NOT NULL, saved_at REAL NOT NULL)"),
         ]
         for (nextVersion, sql) in migrations where nextVersion > version {
             try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION")

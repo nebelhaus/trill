@@ -50,6 +50,9 @@ final class InboxModel: ObservableObject {
     /// their own sidebar section, and always allowed to notify. A superset of
     /// pinning — a VIP is implicitly pinned even without a `pinnedIDs` entry.
     @Published private(set) var vipIDs: Set<ConversationID> = []
+    /// Bookmarked message IDs (local overlay). Drives the star toggle + glyph in
+    /// the timeline and the Universal Library's Saved tab. No chat.db write.
+    @Published private(set) var savedMessageIDs: Set<MessageID> = []
     /// User-defined folders (local overlay), sidebar order. See `Folder`.
     @Published private(set) var folders: [Folder] = []
     /// folderID → the conversations filed under it. One dictionary serves both
@@ -238,10 +241,12 @@ final class InboxModel: ObservableObject {
                 async let marks = database.readMarks()
                 async let loadedFolders = database.folders()
                 async let loadedMembers = database.folderMembers()
-                let (loadedPage, loadedPins, loadedVIPs, loadedMarks, folderList, memberMap) =
-                    try await (page, pins, vips, marks, loadedFolders, loadedMembers)
+                async let saved = database.savedMessageIDs()
+                let (loadedPage, loadedPins, loadedVIPs, loadedMarks, folderList, memberMap, loadedSaved) =
+                    try await (page, pins, vips, marks, loadedFolders, loadedMembers, saved)
                 pinnedIDs = loadedPins
                 vipIDs = loadedVIPs
+                savedMessageIDs = loadedSaved
                 clearedUnreadAt = loadedMarks
                 folders = folderList
                 folderMembers = memberMap
@@ -584,6 +589,23 @@ final class InboxModel: ObservableObject {
                 try await database.setVIP(shouldVIP, conversationID: id)
             } catch {
                 AppLog.database.error("VIP persistence failed error=\(String(describing: type(of: error)), privacy: .public)")
+            }
+        }
+    }
+
+    func isSaved(_ id: MessageID) -> Bool { savedMessageIDs.contains(id) }
+
+    /// Bookmarks or un-bookmarks a message. Optimistic in-memory update (so the
+    /// star and the Saved tab react immediately) with a background overlay write,
+    /// mirroring `togglePin`/`toggleVIP`.
+    func toggleSaved(_ id: MessageID) {
+        let shouldSave = !savedMessageIDs.contains(id)
+        if shouldSave { savedMessageIDs.insert(id) } else { savedMessageIDs.remove(id) }
+        Task {
+            do {
+                try await database.setSaved(shouldSave, messageID: id)
+            } catch {
+                AppLog.database.error("Saved-message persistence failed error=\(String(describing: type(of: error)), privacy: .public)")
             }
         }
     }

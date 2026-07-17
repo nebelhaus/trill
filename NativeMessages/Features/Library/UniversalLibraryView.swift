@@ -122,6 +122,7 @@ struct UniversalLibraryView: View {
                 case .image: imageGrid(items)
                 case .link: linkList(items)
                 case .file: fileList(items)
+                case .saved: savedList(items)
                 }
             }
         } else {
@@ -134,6 +135,7 @@ struct UniversalLibraryView: View {
         case .image: "No photos or videos across your conversations yet."
         case .link: "No links have been shared in your conversations yet."
         case .file: "No files have been shared in your conversations yet."
+        case .saved: "Bookmark a message from its right-click menu to keep it here."
         }
     }
 
@@ -187,9 +189,40 @@ struct UniversalLibraryView: View {
         .quickLookPreview($quickLookURL, in: items.compactMap { $0.attachment?.localURL })
     }
 
+    private func savedList(_ items: [LibraryItem]) -> some View {
+        ScrollView {
+            LazyVStack(spacing: 1) {
+                ForEach(items) { item in
+                    LibrarySavedRow(item: item, conversationName: model.conversationName(for: item.conversationID)) {
+                        model.openLibraryItem(item)
+                    }
+                    .contextMenu { itemMenu(item) }
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+        }
+    }
+
+    /// Drops a just-unsaved bookmark from the loaded Saved tab so the row
+    /// disappears immediately, without a full reload.
+    private func removeSaved(_ item: LibraryItem) {
+        model.toggleSaved(item.messageID)
+        itemsByKind[.saved]?.removeAll { $0.messageID == item.messageID }
+    }
+
     @ViewBuilder
     private func itemMenu(_ item: LibraryItem) -> some View {
         Button("Show in Conversation") { model.openLibraryItem(item) }
+        if item.kind == .saved {
+            if !(item.messageText ?? "").isEmpty {
+                Button("Copy Text") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(item.messageText ?? "", forType: .string)
+                }
+            }
+            Button("Remove from Saved") { removeSaved(item) }
+        }
         if let url = item.url {
             Button("Open Link") { NSWorkspace.shared.open(url) }
             Button("Copy Link") {
@@ -468,5 +501,71 @@ private struct LibraryFileRow: View {
         }
         parts.append(item.createdAt.formatted(date: .abbreviated, time: .omitted))
         return parts.joined(separator: " · ")
+    }
+}
+
+/// A bookmarked message in the Saved tab: sender + body preview, with the source
+/// thread and date beneath. Tapping jumps back to the message in its thread.
+private struct LibrarySavedRow: View {
+    let item: LibraryItem
+    let conversationName: String?
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "bookmark.fill")
+                    .riceFont(11)
+                    .foregroundStyle(Rice.overlay1)
+                    .frame(width: 20)
+                    .padding(.top, 1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(sender)
+                        .riceFont(11, .semibold)
+                        .foregroundStyle(Rice.subtext1)
+                        .lineLimit(1)
+                    Text(messageBody)
+                        .riceFont(12)
+                        .foregroundStyle(Rice.text)
+                        .lineLimit(3)
+                        .multilineTextAlignment(.leading)
+                    Text(subtitle)
+                        .riceFont(10)
+                        .foregroundStyle(Rice.subtext0)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "arrow.up.forward.square")
+                    .riceFont(10)
+                    .foregroundStyle(Rice.overlay0)
+                    .opacity(isHovering ? 1 : 0)
+                    .padding(.top, 1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(isHovering ? Rice.surface0.opacity(0.5) : .clear,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help("Show in conversation")
+    }
+
+    private var sender: String { item.senderName ?? "You" }
+
+    /// The message body, or a stand-in when a bookmarked message is attachment-only.
+    private var messageBody: String {
+        if let text = item.messageText, !text.isEmpty { return text }
+        if let name = item.attachment?.displayName { return name }
+        return "Attachment"
+    }
+
+    private var subtitle: String {
+        let date = item.createdAt.formatted(date: .abbreviated, time: .shortened)
+        if let conversationName { return "\(conversationName) · \(date)" }
+        return date
     }
 }

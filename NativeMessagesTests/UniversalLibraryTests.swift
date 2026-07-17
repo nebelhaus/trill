@@ -65,6 +65,51 @@ final class UniversalLibraryTests: XCTestCase {
         XCTAssertLessThanOrEqual(capped.count, 1)
     }
 
+    // MARK: - Saved messages
+
+    private func makeDatabase() throws -> AppDatabase {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("NativeMessagesTests-\(UUID().uuidString)", isDirectory: true)
+        return try AppDatabase(url: root.appendingPathComponent("app.sqlite3"))
+    }
+
+    func testProviderResolvesMessagesByID() async throws {
+        let provider = ProviderID(rawValue: "fixture")
+        let ids = [
+            MessageID(provider: provider, externalGUID: "fixture-direct-0"),
+            MessageID(provider: provider, externalGUID: "fixture-group-6"),
+            MessageID(provider: provider, externalGUID: "does-not-exist"),
+        ]
+        let resolved = try await FixtureProvider().messages(ids: ids)
+        XCTAssertEqual(Set(resolved.map(\.id.externalGUID)), ["fixture-direct-0", "fixture-group-6"])
+    }
+
+    func testSavedTabBuildsFromOverlayNewestFirst() async throws {
+        let database = try makeDatabase()
+        let provider = ProviderID(rawValue: "fixture")
+        // group-6 is chronologically after direct-0 in the standard fixtures.
+        let older = MessageID(provider: provider, externalGUID: "fixture-direct-0")
+        let newer = MessageID(provider: provider, externalGUID: "fixture-group-6")
+        try await database.setSaved(true, messageID: older)
+        try await database.setSaved(true, messageID: newer)
+
+        let repository = MessagesRepository(provider: FixtureProvider(), database: database)
+        let saved = try await repository.libraryItems(kind: .saved, limit: 300)
+
+        XCTAssertEqual(saved.map(\.messageID), [newer, older], "Newest saved message first")
+        XCTAssertTrue(saved.allSatisfy { $0.kind == .saved })
+        // A link found in group-6's body must not leak in as a link item here.
+        XCTAssertTrue(saved.allSatisfy { $0.url == nil })
+        XCTAssertEqual(saved.first?.messageText?.isEmpty, false)
+    }
+
+    func testSavedTabIsEmptyWithoutBookmarks() async throws {
+        let database = try makeDatabase()
+        let repository = MessagesRepository(provider: FixtureProvider(), database: database)
+        let saved = try await repository.libraryItems(kind: .saved, limit: 300)
+        XCTAssertTrue(saved.isEmpty)
+    }
+
     // MARK: - LinkPreview OG parsing
 
     private let base = URL(string: "https://example.com/article")!

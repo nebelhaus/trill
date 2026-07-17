@@ -44,6 +44,11 @@ actor FixtureProvider: MessagesProvider {
         return MessagePage(messages: items, nextBefore: start > 0 ? String(totalLoaded) : nil)
     }
 
+    func messages(ids: [MessageID]) async throws -> [Message] {
+        let wanted = Set(ids)
+        return fixture.messages.values.flatMap { $0 }.filter { wanted.contains($0.id) }
+    }
+
     func search(_ query: MessageSearchQuery) async throws -> MessageSearchPage {
         let offset = try Self.offset(from: query.cursor)
         guard query.hasCriteria else { return MessageSearchPage(messages: [], nextCursor: nil) }
@@ -144,6 +149,10 @@ actor FixtureProvider: MessagesProvider {
                 }
             }
             return items
+        case .saved:
+            // Bookmarks come from the app-owned overlay via the repository, not
+            // from the fixture message set.
+            return []
         }
     }
 

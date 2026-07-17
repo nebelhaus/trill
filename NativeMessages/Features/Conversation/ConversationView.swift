@@ -13,6 +13,10 @@ struct ConversationView: View {
     var onTogglePin: () -> Void = {}
     var isVIP = false
     var onToggleVIP: () -> Void = {}
+    /// Bookmarked message IDs and the per-message toggle, threaded down to each
+    /// bubble for the star glyph + Save context action. Owned by `InboxModel`.
+    var savedMessageIDs: Set<MessageID> = []
+    var onToggleSaved: (MessageID) -> Void = { _ in }
     /// Single-column layout: the header grows a leading back button that pops
     /// to the conversation list, mobile-nav-bar style.
     var isCompact = false
@@ -39,7 +43,12 @@ struct ConversationView: View {
                 FindBar(model: model)
                 RiceDivider()
             }
-            MessageTimelineView(model: model, density: density)
+            MessageTimelineView(
+                model: model,
+                density: density,
+                savedMessageIDs: savedMessageIDs,
+                onToggleSaved: onToggleSaved
+            )
             RiceDivider()
             ComposerView(model: composer, maxHeight: paneHeight * 0.5)
         }
@@ -235,6 +244,8 @@ struct ConversationView: View {
 private struct MessageTimelineView: View {
     @ObservedObject var model: ConversationModel
     let density: DisplayDensity
+    let savedMessageIDs: Set<MessageID>
+    let onToggleSaved: (MessageID) -> Void
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -282,12 +293,14 @@ private struct MessageTimelineView: View {
                                     isHighlighted: message.id == model.highlightedMessageID,
                                     isFindMatch: findMatches.contains(message.id),
                                     isCurrentFindMatch: message.id == currentFindMatch,
+                                    isSaved: savedMessageIDs.contains(message.id),
                                     replyIDs: replies[message.id] ?? [],
                                     onJump: { target in
                                         withAnimation(.easeInOut(duration: 0.25)) {
                                             proxy.scrollTo(target, anchor: .center)
                                         }
-                                    }
+                                    },
+                                    onToggleSaved: { onToggleSaved(message.id) }
                                 )
                                 .id(message.id)
                             }
@@ -469,8 +482,10 @@ private struct MessageRow: View {
     var isHighlighted = false
     var isFindMatch = false
     var isCurrentFindMatch = false
+    var isSaved = false
     var replyIDs: [MessageID] = []
     var onJump: (MessageID) -> Void = { _ in }
+    var onToggleSaved: () -> Void = {}
 
     @Environment(\.riceAccent) private var accent
     @State private var isRevealed = false
@@ -530,6 +545,12 @@ private struct MessageRow: View {
                             NSPasteboard.general.setString(message.text, forType: .string)
                         }
                     }
+                    Button {
+                        onToggleSaved()
+                    } label: {
+                        Label(isSaved ? "Remove from Saved" : "Save Message",
+                              systemImage: isSaved ? "bookmark.slash" : "bookmark")
+                    }
                     if let quoted = message.quoted {
                         Button("Jump to Original") { onJump(quoted.id) }
                     }
@@ -538,6 +559,19 @@ private struct MessageRow: View {
                     if !message.reactions.isEmpty {
                         ReactionBadges(reactions: message.reactions)
                             .offset(x: message.isOutgoing ? -10 : 10, y: -11)
+                    }
+                }
+                // Star sits on the corner opposite the reactions so the two never
+                // overlap; a bookmarked message reads at a glance in the timeline.
+                .overlay(alignment: message.isOutgoing ? .topTrailing : .topLeading) {
+                    if isSaved {
+                        Image(systemName: "bookmark.fill")
+                            .riceFont(9)
+                            .foregroundStyle(accent)
+                            .padding(3)
+                            .background(Rice.mantle, in: Circle())
+                            .offset(x: message.isOutgoing ? 7 : -7, y: -7)
+                            .accessibilityLabel("Saved")
                     }
                 }
                 .padding(.top, message.reactions.isEmpty ? 0 : 11)

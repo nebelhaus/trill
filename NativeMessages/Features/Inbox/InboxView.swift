@@ -224,6 +224,8 @@ struct InboxView: View {
                     onTogglePin: model.toggleSelectedPin,
                     isVIP: model.selectedConversationID.map { model.isVIP($0) } ?? false,
                     onToggleVIP: model.toggleSelectedVIP,
+                    savedMessageIDs: model.savedMessageIDs,
+                    onToggleSaved: model.toggleSaved,
                     isCompact: isCompact,
                     onBack: { model.select(nil) }
                 )
