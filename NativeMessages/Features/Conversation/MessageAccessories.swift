@@ -196,3 +196,91 @@ struct SenderBadge: View {
         return name.first(where: \.isLetter).map { String($0).uppercased() } ?? "#"
     }
 }
+
+/// A Messages-style Open Graph card rendered under a message that contains a link.
+/// Gated on the `linkPreviews` setting and the injected loader; renders nothing
+/// while loading, when disabled, or when the page exposed no usable metadata —
+/// so a plain bubble is never displaced by an empty box.
+struct InlineLinkPreview: View {
+    let url: URL
+
+    @AppStorage("linkPreviews") private var linkPreviews = false
+    @Environment(\.linkPreviewLoader) private var loader
+    @State private var preview: LinkPreview?
+    @State private var image: NSImage?
+
+    private static let maxWidth: CGFloat = 268
+
+    var body: some View {
+        // The empty state is a zero-size anchor, not nothing: SwiftUI won't run a
+        // `.task` attached to a view whose content is conditionally empty, so the
+        // fetch would never fire. The clear anchor keeps the task alive while the
+        // preview is loading (or absent) without occupying layout space.
+        Group {
+            if linkPreviews, let preview, !preview.isEmpty {
+                card(preview)
+            } else {
+                Color.clear.frame(width: 0, height: 0)
+            }
+        }
+        .task(id: taskID) { await load() }
+    }
+
+    private func card(_ preview: LinkPreview) -> some View {
+        Button {
+            NSWorkspace.shared.open(url)
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: Self.maxWidth, height: 132)
+                        .clipped()
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    if let title = preview.title {
+                        Text(title)
+                            .riceFont(12, .semibold)
+                            .foregroundStyle(Rice.text)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                    if let summary = preview.summary {
+                        Text(summary)
+                            .riceFont(10)
+                            .foregroundStyle(Rice.subtext1)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                    Text(preview.siteName ?? url.host() ?? url.absoluteString)
+                        .riceFont(9)
+                        .foregroundStyle(Rice.overlay0)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .frame(width: Self.maxWidth, alignment: .leading)
+            }
+            .background(Rice.surface1, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Rice.surface2, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help(url.absoluteString)
+    }
+
+    private var taskID: String { "\(linkPreviews)|\(url.absoluteString)" }
+
+    private func load() async {
+        guard linkPreviews, let loader else { return }
+        let fetched = await loader.load(url)
+        preview = fetched
+        if let imageURL = fetched.imageURL {
+            image = await RemoteImageLoader.load(imageURL)
+        }
+    }
+}

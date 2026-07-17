@@ -7,6 +7,7 @@ struct SettingsView: View {
     @AppStorage("sendOnReturn") private var sendOnReturn = true
     @AppStorage("privacyBlur") private var privacyBlur = false
     @AppStorage("showMenuBarItem") private var showMenuBarItem = true
+    @AppStorage("linkPreviews") private var linkPreviews = false
 
     var body: some View {
         ScrollView {
@@ -120,6 +121,20 @@ struct SettingsView: View {
                         .buttonStyle(DensityChoiceStyle(isSelected: !showMenuBarItem))
                 }
                 Text("A menu-bar icon with the unread count and a dropdown of recent threads.")
+                    .riceFont(10)
+                    .foregroundStyle(Rice.overlay0)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Link previews")
+                    .riceSectionHeader()
+                HStack(spacing: 6) {
+                    Button("On") { linkPreviews = true }
+                        .buttonStyle(DensityChoiceStyle(isSelected: linkPreviews))
+                    Button("Off") { linkPreviews = false }
+                        .buttonStyle(DensityChoiceStyle(isSelected: !linkPreviews))
+                }
+                Text("Fetches Open Graph titles, descriptions, and thumbnails for links in the Library (⌘⇧L). Networked — each link's host is contacted; results are cached.")
                     .riceFont(10)
                     .foregroundStyle(Rice.overlay0)
             }

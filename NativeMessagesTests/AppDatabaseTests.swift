@@ -46,6 +46,34 @@ final class AppDatabaseTests: XCTestCase {
         XCTAssertEqual(updatedMarks[conversation]?.timeIntervalSince1970 ?? 0, laterMark.timeIntervalSince1970, accuracy: 0.001)
     }
 
+    func testVIPMembership() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("NativeMessagesTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try AppDatabase(url: root.appendingPathComponent("app.sqlite3"))
+
+        let provider = ProviderID(rawValue: "fixture")
+        let alice = ConversationID(provider: provider, externalGUID: "alice")
+        let bob = ConversationID(provider: provider, externalGUID: "bob")
+
+        var vips = try await database.vipConversationIDs()
+        XCTAssertTrue(vips.isEmpty)
+
+        try await database.setVIP(true, conversationID: alice)
+        try await database.setVIP(true, conversationID: bob)
+        vips = try await database.vipConversationIDs()
+        XCTAssertEqual(vips, [alice, bob])
+
+        // Setting VIP twice is idempotent (INSERT OR REPLACE).
+        try await database.setVIP(true, conversationID: alice)
+        vips = try await database.vipConversationIDs()
+        XCTAssertEqual(vips, [alice, bob])
+
+        try await database.setVIP(false, conversationID: alice)
+        vips = try await database.vipConversationIDs()
+        XCTAssertEqual(vips, [bob])
+    }
+
     func testFoldersAndMembership() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("NativeMessagesTests-\(UUID().uuidString)", isDirectory: true)
@@ -54,7 +82,7 @@ final class AppDatabaseTests: XCTestCase {
 
         let version = try await database.schemaVersion()
         XCTAssertEqual(version, AppDatabase.currentSchemaVersion)
-        XCTAssertEqual(AppDatabase.currentSchemaVersion, 10)
+        XCTAssertEqual(AppDatabase.currentSchemaVersion, 12)
 
         let provider = ProviderID(rawValue: "fixture")
         let alice = ConversationID(provider: provider, externalGUID: "alice")
@@ -109,18 +137,24 @@ final class AppDatabaseTests: XCTestCase {
         let bob = ConversationID(provider: provider, externalGUID: "bob")
 
         // Archive is a membership set — presence is the flag, removal clears it.
+        // Hoist each awaited read to a local; XCTAssert autoclosures can't await.
         try await database.setArchived(true, conversationID: alice)
         try await database.setArchived(true, conversationID: bob)
-        XCTAssertEqual(try await database.archivedConversationIDs(), [alice, bob])
+        var archived = try await database.archivedConversationIDs()
+        XCTAssertEqual(archived, [alice, bob])
         try await database.setArchived(false, conversationID: bob)
-        XCTAssertEqual(try await database.archivedConversationIDs(), [alice])
+        archived = try await database.archivedConversationIDs()
+        XCTAssertEqual(archived, [alice])
 
         // Mute is an independent set from archive.
         try await database.setMuted(true, conversationID: bob)
-        XCTAssertEqual(try await database.mutedConversationIDs(), [bob])
-        XCTAssertEqual(try await database.archivedConversationIDs(), [alice])
+        let muted = try await database.mutedConversationIDs()
+        XCTAssertEqual(muted, [bob])
+        archived = try await database.archivedConversationIDs()
+        XCTAssertEqual(archived, [alice])
         try await database.setMuted(false, conversationID: bob)
-        XCTAssertTrue(try await database.mutedConversationIDs().isEmpty)
+        let mutedAfterClear = try await database.mutedConversationIDs()
+        XCTAssertTrue(mutedAfterClear.isEmpty)
 
         // Snooze stores a wake time; re-snoozing replaces it; nil clears it.
         let wake = Date(timeIntervalSince1970: 1_800_000_000)
@@ -133,6 +167,36 @@ final class AppDatabaseTests: XCTestCase {
         XCTAssertEqual(snoozed.count, 1)
         XCTAssertEqual(snoozed[alice]?.timeIntervalSince1970 ?? 0, laterWake.timeIntervalSince1970, accuracy: 0.001)
         try await database.setSnooze(until: nil, conversationID: alice)
-        XCTAssertTrue(try await database.snoozedConversations().isEmpty)
+        snoozed = try await database.snoozedConversations()
+        XCTAssertTrue(snoozed.isEmpty)
+    }
+
+    func testLinkPreviewCacheRoundTrips() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("NativeMessagesTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try AppDatabase(url: root.appendingPathComponent("app.sqlite3"))
+
+        // Unknown URL → nil, signalling "never fetched" so the loader hits the network.
+        let missing = try await database.linkPreview(forURL: "https://none.example")
+        XCTAssertNil(missing)
+
+        // A full preview survives the round-trip.
+        let rich = LinkPreview(
+            title: "Title",
+            summary: "Summary",
+            imageURL: URL(string: "https://cdn.example/a.jpg"),
+            siteName: "Example"
+        )
+        try await database.saveLinkPreview(rich, forURL: "https://example.com/a")
+        let loaded = try await database.linkPreview(forURL: "https://example.com/a")
+        XCTAssertEqual(loaded, rich)
+
+        // An empty preview persists as a real (non-nil) row so we don't refetch a
+        // page that has no metadata — but it reads back as empty.
+        try await database.saveLinkPreview(.empty, forURL: "https://bare.example")
+        let empty = try await database.linkPreview(forURL: "https://bare.example")
+        XCTAssertNotNil(empty)
+        XCTAssertEqual(empty?.isEmpty, true)
     }
 }

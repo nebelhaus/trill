@@ -64,4 +64,62 @@ final class UniversalLibraryTests: XCTestCase {
         let capped = try await items(.image, limit: 1)
         XCTAssertLessThanOrEqual(capped.count, 1)
     }
+
+    // MARK: - LinkPreview OG parsing
+
+    private let base = URL(string: "https://example.com/article")!
+
+    func testParsesOpenGraphTags() {
+        let html = """
+        <html><head>
+        <meta property="og:title" content="The Headline">
+        <meta property="og:description" content="A short summary.">
+        <meta property="og:image" content="https://cdn.example.com/a.jpg">
+        <meta property="og:site_name" content="Example">
+        </head><body>ignored</body></html>
+        """
+        let preview = LinkPreviewLoader.parse(html: html, baseURL: base)
+        XCTAssertEqual(preview.title, "The Headline")
+        XCTAssertEqual(preview.summary, "A short summary.")
+        XCTAssertEqual(preview.imageURL?.absoluteString, "https://cdn.example.com/a.jpg")
+        XCTAssertEqual(preview.siteName, "Example")
+        XCTAssertFalse(preview.isEmpty)
+    }
+
+    func testAttributeOrderAndSingleQuotesAreTolerated() {
+        let html = "<meta content='Backwards' property='og:title'>"
+        XCTAssertEqual(LinkPreviewLoader.parse(html: html, baseURL: base).title, "Backwards")
+    }
+
+    func testResolvesRelativeImageAndDecodesEntities() {
+        let html = """
+        <meta property="og:title" content="Tom &amp; Jerry &#39;24">
+        <meta property="og:image" content="/img/hero.png">
+        """
+        let preview = LinkPreviewLoader.parse(html: html, baseURL: base)
+        XCTAssertEqual(preview.title, "Tom & Jerry '24")
+        XCTAssertEqual(preview.imageURL?.absoluteString, "https://example.com/img/hero.png")
+    }
+
+    func testFallsBackToTitleAndMetaDescription() {
+        let html = """
+        <html><head><title>Plain Title</title>
+        <meta name="description" content="Meta desc.">
+        </head></html>
+        """
+        let preview = LinkPreviewLoader.parse(html: html, baseURL: base)
+        XCTAssertEqual(preview.title, "Plain Title")
+        XCTAssertEqual(preview.summary, "Meta desc.")
+        // No og:image → image stays nil, but the host seeds a site name.
+        XCTAssertNil(preview.imageURL)
+        XCTAssertEqual(preview.siteName, "example.com")
+    }
+
+    func testPageWithoutMetadataIsEmpty() {
+        let preview = LinkPreviewLoader.parse(html: "<html><body>nothing</body></html>", baseURL: base)
+        XCTAssertNil(preview.title)
+        XCTAssertNil(preview.summary)
+        XCTAssertNil(preview.imageURL)
+        XCTAssertTrue(preview.isEmpty)
+    }
 }

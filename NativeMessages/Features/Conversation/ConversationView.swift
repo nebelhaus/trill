@@ -11,6 +11,8 @@ struct ConversationView: View {
     var isSidebarCollapsed = false
     var isPinned = false
     var onTogglePin: () -> Void = {}
+    var isVIP = false
+    var onToggleVIP: () -> Void = {}
     /// Single-column layout: the header grows a leading back button that pops
     /// to the conversation list, mobile-nav-bar style.
     var isCompact = false
@@ -150,6 +152,11 @@ struct ConversationView: View {
 
     private func headerActions(showsChip: Bool) -> some View {
         HStack(spacing: 10) {
+            Button(action: onToggleVIP) {
+                Image(systemName: isVIP ? "star.fill" : "star")
+            }
+            .buttonStyle(RiceIconButtonStyle(isActive: isVIP))
+            .help(isVIP ? "Remove from VIP (⌃⌘V)" : "Add to VIP (⌃⌘V)")
             Button(action: onTogglePin) {
                 Image(systemName: isPinned ? "pin.fill" : "pin")
             }
@@ -195,6 +202,11 @@ struct ConversationView: View {
 
                 Spacer(minLength: 6)
 
+                Button(action: onToggleVIP) {
+                    Image(systemName: isVIP ? "star.fill" : "star")
+                }
+                .buttonStyle(RiceIconButtonStyle(isActive: isVIP))
+                .help(isVIP ? "Remove from VIP (⌃⌘V)" : "Add to VIP (⌃⌘V)")
                 Button(action: onTogglePin) {
                     Image(systemName: isPinned ? "pin.fill" : "pin")
                 }
@@ -530,6 +542,10 @@ private struct MessageRow: View {
                 }
                 .padding(.top, message.reactions.isEmpty ? 0 : 11)
 
+                if let previewURL {
+                    InlineLinkPreview(url: previewURL)
+                }
+
                 if !replyIDs.isEmpty {
                     Button {
                         if let latest = replyIDs.last { onJump(latest) }
@@ -584,6 +600,12 @@ private struct MessageRow: View {
 
     private var bubbleColor: Color {
         message.isOutgoing ? accent.opacity(0.22) : Rice.surface0
+    }
+
+    /// The first link in the message body, previewed as an OG card under the
+    /// bubble. Just the first — one card keeps a link-heavy message readable.
+    private var previewURL: URL? {
+        message.text.isEmpty ? nil : LinkExtractor.urls(in: message.text).first
     }
 
     /// A reveal flash or the current find match gets a full-strength accent

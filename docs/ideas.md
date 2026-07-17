@@ -11,7 +11,7 @@ user-owned organization) with concrete, prioritized, feasibility-tagged items.
 - **Feasibility** — `✅` clean within our constraints · `⚠️` possible but
   constrained/tricky · `⛔` blocked by a hard constraint (kept here so it isn't
   re-proposed).
-- **Status** — `🚢` shipped · blank = open.
+- **Status** — `🚢` shipped · `🚫` declined (deliberately not pursuing) · blank = open.
 
 The single biggest asset this app has that Apple's Messages does not: **direct,
 read-only access to the entire local `chat.db`.** The retrieval, analytics, and
@@ -42,11 +42,11 @@ Everything below respects these.
 | **Universal Library (⌘⇧L)** | One browser for every image, link, and doc across *all* conversations, with type tabs and jump-to-source | M | ✅ 🚢 | Shipped. ⌘⇧L opens a centered overlay (palette/search pattern) with Images/Links/Files tabs. New `libraryItems(kind:limit:)` provider method over all-chats `ChatDatabaseReader.allAttachments` (media vs. file split by UTI/MIME) + `linkCandidates` (http/www-prefiltered scan → `LinkExtractor` URL detection, deduped per thread). Jump-to-source reuses `select(_:focus:)`; only reaches threads in the loaded list. |
 | **Advanced search operators** | `from:`, `in:group`, `has:link`, `has:image`, `before:`/`after:`, `is:unread` in the global search box | M | ✅ 🚢 | Shipped. Pure `SearchQueryParser` (raw string → `SearchFilters` + residual text) feeds one `MessageSearchQuery.matches` predicate both the fixture and live search paths apply. |
 | **Scoped in-thread find (⌘F)** | Find-in-conversation with match highlight and next/prev, without leaving the thread | S–M | ✅ 🚢 | Shipped. ⌘F opens a docked find bar over the open thread; ⌘G / ⇧⌘G (or ⏎ / the chevrons) step matches. Scoped to loaded messages; reuses the reveal/highlight machinery. |
-| **Link inbox** | Every URL ever received, deduped, newest-first, with sender + timestamp + optional OG preview | M | ✅ | Extract from message text; OG fetch is optional/networked and can be a later toggle. |
+| **Link inbox** | Every URL ever received, deduped, newest-first, with sender + timestamp + optional OG preview | M | ✅ 🚢 | Shipped (`c9fb4f1`). The Universal Library's Links tab is the inbox (all URLs, deduped per thread, newest-first, sender + timestamp). OG preview landed as the opt-in `linkPreviews` setting: a `LinkPreviewLoader` actor (3-tier cache — memory / `AppDatabase` `link_previews` table / in-flight coalescing; tolerant OG/`<title>`/meta parser; promotes `http→https` so ATS doesn't drop bare-domain links). Rich cards render both in the Links tab and under linked message bubbles (`InlineLinkPreview`, wired via a `linkPreviewLoader` environment value). |
 | **Saved / starred messages** | Local bookmarks on any message, browsable in one place | M | ✅ | Store `MessageID`s in `AppDatabase`; no chat.db write. |
 | **Jump to date** | Date scrubber / "go to date" to leap anywhere in a long thread instantly | M | ✅ | Cursor paging already keyed on message date. |
 | **On this day** | Surface messages from today's date in prior years | M | ✅ | Pure query over `date`; delightful and unique. |
-| **Attachment search** | Find attachments by filename, type, or size across chats | S–M | ✅ | We already index attachment rows. |
+| **Attachment search** | Find attachments by filename, type, or size across chats | S–M | ✅ 🚫 | Declined — the shipped Universal Library + advanced search operators (`has:image`, `from:`) cover this need well enough. |
 | **Conversation export** | Export a thread (or date range) to Markdown / plain text / HTML | M | ✅ | Read-only serialization of what's already loaded. |
 
 ## Insight & analytics — impossible in Apple Messages
@@ -56,27 +56,27 @@ Everything below respects these.
 | **Conversation stats panel** | Per-thread: total messages, you-vs-them ratio, median response time, most-active hours, current streak | M | ✅ 🚢 | Shipped (`b28906a`). Chart button in the header opens a sheet; a pure `ConversationStatsBuilder` over lightweight `MessageStatSample`s (`date` + `is_from_me`) feeds it, with a narrow `statSamples` provider query so whole-thread aggregation stays cheap. |
 | **Relationship timeline** | Per contact: first message ever, total volume, media count, longest silence, cadence over time | M–L | ✅ | Great "wow" surface for the primary persona. |
 | **Needs-reply detector** | Smart filter/section: threads whose last message is *from them* and unanswered for N hours | S–M | ✅ 🚢 | Shipped (`999debf`). ⇧⌘R toggles the triage filter; `lastMessageFromMe` + `reactedToLatestInbound` (both from chat.db — a tapback I left counts as a reply) feed a pure `NeedsReply` helper (3h default). |
-| **Year in review** | An annual "wrapped" recap: top contacts, message counts, busiest day, top emoji/tapback | L | ✅ | Seasonal delight; reuses the stats primitives. |
-| **Response-time insights** | How fast you reply to whom, and who leaves you on read | M | ✅ | Sensitive framing; keep it private/local and non-judgy. |
+| **Year in review** | An annual "wrapped" recap: top contacts, message counts, busiest day, top emoji/tapback | L | ✅ 🚫 | Declined — feasible but not worth the L-sized effort for a seasonal gimmick. |
+| **Response-time insights** | How fast you reply to whom, and who leaves you on read | M | ✅ ⚠️ | **Partially shipped.** The core metric exists per-thread in the stats panel (`ConversationStatsBuilder` → "You reply in" / "They reply in", turn-switch-aware medians). Still missing the *cross-contact* surface the idea is really about: an all-conversations ranking of who you answer fastest and "who leaves you on read." That aggregate (run the median-reply builder over every thread, sort, present) is the net-new work. Sensitive framing; keep it private/local and non-judgy. |
 
 ## Organization & triage
 
 | Idea | What | Effort | Feas. | Notes |
 |------|------|--------|-------|-------|
 | **Command palette (⌘K)** | Fuzzy jump to any conversation, action, or setting; the keyboard spine of the app | M | ✅ 🚢 | Shipped (`0474b5c`). ⌘K opens it; full-text message search moved to ⇧⌘F. Subsumes the Quick switcher. |
-| **Snooze a thread** | Hide a conversation until a chosen time, then resurface it | M | ✅ 🚢 | Shipped. `snoozed_conversations` overlay table (migration 10) maps a thread → wake time; `snoozedUntil` hides it from every normal scope while `wake > now`. A pure, tested `SnoozeOption` (1h/3h/this-evening/tomorrow/next-week, all guaranteed future) computes the wake date; an InboxModel timer (`rescheduleSnoozeWake`) fires exactly when the next thread is due and prunes it, so resurfacing is event-driven, not polled. Snooze/Unsnooze via the row context menu. |
+| **Snooze a thread** | Hide a conversation until a chosen time, then resurface it | M | ✅ 🚢 | Shipped. `snoozed_conversations` overlay table (migration 12, renumbered from 10) maps a thread → wake time; `snoozedUntil` hides it from every normal scope while `wake > now`. A pure, tested `SnoozeOption` (1h/3h/this-evening/tomorrow/next-week, all guaranteed future) computes the wake date; an InboxModel timer (`rescheduleSnoozeWake`) fires exactly when the next thread is due and prunes it, so resurfacing is event-driven, not polled. Snooze/Unsnooze via the row context menu. |
 | **Folders / tags** | User-defined labels and folders for conversations, local-only | M–L | ✅ 🚢 | Shipped. `folders` + `folder_members` overlay tables (many-to-many, so folders double as tags); each folder carries a name + Rice accent color. A sidebar scope list ("All Messages" + folders + New Folder) narrows `visibleConversations` *before* the unread/needs-reply filter, so the two axes compose. Assign via a conversation's Folders context submenu; manage via folder-row context menu + a reusable `FolderEditorView`. Also reachable from ⌘K. **⚠️ Merge note:** this uses `AppDatabase` migrations 5 & 6 — the in-flight *Canned responses / snippets* branch also claims migration 5. Both are correct against `master` (1–4) in isolation, but whichever merges **second** must renumber its migrations (in both the `migrations` array and `currentSchemaVersion`) so they don't collide. |
-| **Archive** | Remove a thread from the main list without losing it | S | ✅ 🚢 | Shipped. `archived_conversations` overlay set (migration 8); archived threads drop out of every normal scope in `visibleConversations` and are reachable via a sidebar **Archived** scope chip (shown only once non-empty, mutually exclusive with folder scope). Archive/Unarchive via the row context menu or ⌘K. |
-| **Mute a conversation** | Suppress that thread's notifications locally | S | ✅ 🚢 | Shipped. `muted_conversations` overlay set (migration 9), checked in `maybeNotify`. Muted threads stay in the list with a `bell.slash` glyph; toggle via the row context menu or ⌘K. |
-| **VIP contacts** | Always-notify + always-pin a chosen set, in their own section | S–M | ✅ | Overlay set; complements existing pins. |
-| **Filter by service** | Toggle iMessage / SMS / RCS visibility | S | ✅ | Service is already on every conversation. |
+| **Archive** | Remove a thread from the main list without losing it | S | ✅ 🚢 | Shipped. `archived_conversations` overlay set (migration 10, renumbered from 8 to clear the VIP collision); archived threads drop out of every normal scope in `visibleConversations` and are reachable via a sidebar **Archived** scope chip (shown only once non-empty, mutually exclusive with folder scope). Archive/Unarchive via the row context menu or ⌘K. |
+| **Mute a conversation** | Suppress that thread's notifications locally | S | ✅ 🚢 | Shipped. `muted_conversations` overlay set (migration 11, renumbered from 9), checked in `maybeNotify`. Muted threads stay in the list with a `bell.slash` glyph; toggle via the row context menu or ⌘K. VIPs override mute (always-notify), per the VIP contract. |
+| **VIP contacts** | Always-notify + always-pin a chosen set, in their own section | S–M | ✅ 🚢 | Shipped. `vip_conversations` overlay table (migration 8) → `vipIDs` set on `InboxModel`, mirroring pins. VIP forms a sort tier *above* pinned (always-pin), gets its own titled "VIP" section atop the unscoped list (`showsVIPSection` / `visibleVIPConversations`), and threads an `isVIP` flag into `maybeNotify` → `NotificationCoordinator.post` for a ⭐-marked banner (the always-notify seam Mute now exempts). Toggle via row/thread context menu, the ⭐ toolbar button, ⌘K, or ⌃⌘V. |
+| **Filter by service** | Toggle iMessage / SMS / RCS visibility | S | ✅ 🚢 | Shipped. A composable axis (not the mutually-exclusive `filter`): `hiddenServices: Set<MessageServiceKind>` in `InboxModel`, persisted to UserDefaults, applied in `visibleConversations` *after* folder scope and *before* the unread/needs-reply filter, so all three compose. `.unknown` is never hidden (`MessageServiceKind.togglable` = iMessage/SMS/RCS). UI is a `Toggle`-row menu in the sidebar header driven through the shared `RiceIconButtonStyle` (`.menuStyle(.button)`) so it matches its neighbours and tints only when a service is hidden; a "Show All Services" reset doubles as the off switch. Mirrored into the overflow menu; the open thread always stays visible. |
 
 ## Power-user velocity
 
 | Idea | What | Effort | Feas. | Notes |
 |------|------|--------|-------|-------|
-| **Vim-ish list nav** | `j`/`k` move threads, `Enter` opens, `g`/`G` ends, all without the mouse | S–M | ✅ | Focus/selection model already exists. |
-| **Quick switcher** | ⌘K-style recent-conversation switcher (editor tab-switch feel) | S–M | ✅ | Subset of the command palette; could ship first. |
+| **Vim-ish list nav** | `j`/`k` move threads, `Enter` opens, `g`/`G` ends, all without the mouse | S–M | ✅ 🚫 | Declined — not a fit for the intended interaction model. |
+| **Quick switcher** | ⌘K-style recent-conversation switcher (editor tab-switch feel) | S–M | ✅ 🚫 | Declined — subsumed by the shipped command palette (⌘K). |
 | **Canned responses / snippets** | Reusable text with a picker or `/`-trigger in the composer | M | ✅ 🚢 | Shipped. `snippets` overlay table (migration 7, renumbered from 5 to clear the Folders collision) + `SnippetStore` shared by composer and Settings. A trailing `/keyword` opens a floating picker (`SnippetTrigger` parse → `SnippetRanking` over `FuzzyMatch`); ↑↓ pick · ↵/⇥ insert · esc dismiss, routed through `GrowingTextView`. Manage in Settings; seeds a starter set on first launch. |
 | **Slash commands** | `/shrug`, `/unflip`, `/date`, insert-snippet in the composer | S | ✅ | Text transforms before send. |
 | **Shortcut cheat-sheet (⌘/)** | Overlay listing every keybinding | S | ✅ | Discoverability for a keyboard-first app. |
@@ -189,11 +189,15 @@ Attachment search (media lane).
 **Snooze + Archive + Mute** shipped together as one sidebar-lane branch — they
 share the per-conversation overlay + `visibleConversations` + `maybeNotify`
 machinery, so building them apart would have meant three-way conflicts on the
-same functions. Three new `AppDatabase` tables, **migrations 8 (archive), 9
-(mute), 10 (snooze)**, bumping `currentSchemaVersion` to 10.
+same functions. Three new `AppDatabase` tables, **migrations 10 (archive), 11
+(mute), 12 (snooze)**, bumping `currentSchemaVersion` to 12.
 
-**⚠️ Merge note:** these claim migrations 8–10 against a `master` at 7. Any other
-in-flight branch that also adds an `AppDatabase` migration will collide — whoever
-merges **second** must renumber (in both the `migrations` array *and*
-`currentSchemaVersion`, plus the `AppDatabaseTests` version assertion). Same rule
-the Folders ↔ Snippets pair followed. Remaining sidebar-lane idea: **VIP contacts**.
+**Merge resolution:** this branch was authored against migrations 8–10 but merged
+*after* VIP contacts (migration 8) and Open Graph link previews (migration 9)
+landed on `master`, so — per the second-to-merge-renumbers rule — its migrations
+were renumbered to 10/11/12 (in the `migrations` array, `currentSchemaVersion`,
+and the `AppDatabaseTests` assertion). The merge also folded Mute into the VIP
+`maybeNotify` seam: **VIPs override Mute** (always-notify), which is exactly the
+exemption the VIP row anticipated. All migrations are now `CREATE TABLE IF NOT
+EXISTS` so a shared overlay DB collided across worktrees can still advance instead
+of failing `init` and silently dropping to a throwaway temp store.

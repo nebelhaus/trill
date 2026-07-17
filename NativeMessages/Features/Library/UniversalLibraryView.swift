@@ -156,7 +156,11 @@ struct UniversalLibraryView: View {
         ScrollView {
             LazyVStack(spacing: 1) {
                 ForEach(items) { item in
-                    LibraryLinkRow(item: item, conversationName: model.conversationName(for: item.conversationID)) {
+                    LibraryLinkRow(
+                        item: item,
+                        conversationName: model.conversationName(for: item.conversationID),
+                        loader: model.linkPreviewLoader
+                    ) {
                         if let url = item.url { NSWorkspace.shared.open(url) }
                     }
                     .contextMenu { itemMenu(item) }
@@ -253,35 +257,32 @@ private struct LibraryImageTile: View {
 private struct LibraryLinkRow: View {
     let item: LibraryItem
     let conversationName: String?
+    let loader: LinkPreviewLoader
     let action: () -> Void
 
+    @AppStorage("linkPreviews") private var linkPreviews = false
     @State private var isHovering = false
+    @State private var preview: LinkPreview?
+    @State private var thumbnail: NSImage?
+
+    /// A non-empty OG preview to render — only when previews are enabled *and*
+    /// the fetch turned up at least a title, summary, or image.
+    private var richPreview: LinkPreview? {
+        guard linkPreviews, let preview, !preview.isEmpty else { return nil }
+        return preview
+    }
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: "link")
-                    .riceFont(12)
-                    .foregroundStyle(Rice.overlay1)
-                    .frame(width: 20)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(displayURL)
-                        .riceFont(12, .medium)
-                        .foregroundStyle(Rice.text)
-                        .lineLimit(1)
-                    Text(subtitle)
-                        .riceFont(10)
-                        .foregroundStyle(Rice.subtext0)
-                        .lineLimit(1)
+            Group {
+                if let richPreview {
+                    richContent(richPreview)
+                } else {
+                    plainContent
                 }
-                Spacer(minLength: 4)
-                Image(systemName: "arrow.up.forward.square")
-                    .riceFont(10)
-                    .foregroundStyle(Rice.overlay0)
-                    .opacity(isHovering ? 1 : 0)
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .padding(.vertical, richPreview == nil ? 7 : 9)
             .background(isHovering ? Rice.surface0.opacity(0.5) : .clear,
                         in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -289,6 +290,106 @@ private struct LibraryLinkRow: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .help(item.url?.absoluteString ?? "")
+        .task(id: previewTaskID) { await loadPreview() }
+    }
+
+    // MARK: - Layouts
+
+    private var plainContent: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "link")
+                .riceFont(12)
+                .foregroundStyle(Rice.overlay1)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayURL)
+                    .riceFont(12, .medium)
+                    .foregroundStyle(Rice.text)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .riceFont(10)
+                    .foregroundStyle(Rice.subtext0)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            Image(systemName: "arrow.up.forward.square")
+                .riceFont(10)
+                .foregroundStyle(Rice.overlay0)
+                .opacity(isHovering ? 1 : 0)
+        }
+    }
+
+    private func richContent(_ preview: LinkPreview) -> some View {
+        HStack(spacing: 11) {
+            thumbnailView
+            VStack(alignment: .leading, spacing: 3) {
+                Text(preview.title ?? displayURL)
+                    .riceFont(12, .semibold)
+                    .foregroundStyle(Rice.text)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                if let summary = preview.summary {
+                    Text(summary)
+                        .riceFont(10)
+                        .foregroundStyle(Rice.subtext1)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+                HStack(spacing: 4) {
+                    Image(systemName: "link")
+                        .riceFont(8)
+                    Text(footer(preview))
+                        .lineLimit(1)
+                }
+                .riceFont(10)
+                .foregroundStyle(Rice.subtext0)
+            }
+            Spacer(minLength: 4)
+            Image(systemName: "arrow.up.forward.square")
+                .riceFont(10)
+                .foregroundStyle(Rice.overlay0)
+                .opacity(isHovering ? 1 : 0)
+        }
+    }
+
+    @ViewBuilder
+    private var thumbnailView: some View {
+        ZStack {
+            if let thumbnail {
+                Image(nsImage: thumbnail)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Rice.crust.opacity(0.6)
+                Image(systemName: "link")
+                    .riceFont(14)
+                    .foregroundStyle(Rice.overlay1)
+            }
+        }
+        .frame(width: 52, height: 52)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    // MARK: - Loading
+
+    /// Re-run the fetch when the URL changes or previews get toggled on.
+    private var previewTaskID: String {
+        "\(linkPreviews)|\(item.url?.absoluteString ?? "")"
+    }
+
+    private func loadPreview() async {
+        guard linkPreviews, let url = item.url else { return }
+        let fetched = await loader.load(url)
+        preview = fetched
+        if let imageURL = fetched.imageURL {
+            thumbnail = await RemoteImageLoader.load(imageURL)
+        }
+    }
+
+    private func footer(_ preview: LinkPreview) -> String {
+        let host = preview.siteName ?? item.url?.host()?.replacingOccurrences(of: "www.", with: "")
+        if let host { return "\(host) · \(subtitle)" }
+        return subtitle
     }
 
     private var displayURL: String {

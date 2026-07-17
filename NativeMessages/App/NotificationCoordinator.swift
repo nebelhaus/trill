@@ -45,10 +45,12 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         )
     }
 
-    func post(message: Message, conversationName: String) {
+    func post(message: Message, conversationName: String, isVIP: Bool = false) {
         guard isAuthorized, !message.isOutgoing else { return }
         let content = UNMutableNotificationContent()
-        content.title = conversationName
+        // A VIP banner is marked so it's recognizable at a glance in Notification
+        // Center — the visible half of "always-notify".
+        content.title = isVIP ? "⭐ \(conversationName)" : conversationName
         if let sender = message.sender?.displayName ?? message.sender?.handle,
            sender != conversationName {
             content.subtitle = sender

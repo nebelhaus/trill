@@ -46,6 +46,10 @@ final class InboxModel: ObservableObject {
     @Published private(set) var health: ProviderHealth = .fixture
     @Published private(set) var capabilities = ProviderCapabilities()
     @Published private(set) var pinnedIDs: Set<ConversationID> = []
+    /// VIP conversations (local overlay): always sorted above everything, given
+    /// their own sidebar section, and always allowed to notify. A superset of
+    /// pinning — a VIP is implicitly pinned even without a `pinnedIDs` entry.
+    @Published private(set) var vipIDs: Set<ConversationID> = []
     /// User-defined folders (local overlay), sidebar order. See `Folder`.
     @Published private(set) var folders: [Folder] = []
     /// folderID → the conversations filed under it. One dictionary serves both
@@ -119,11 +123,47 @@ final class InboxModel: ObservableObject {
         get { filter == .needsReply }
         set { filter = newValue ? .needsReply : .all }
     }
+
+    /// Services hidden from the sidebar. Unlike `filter`, this is a *composable*
+    /// axis (you can hide SMS while also scoping to a folder or unread), so it's
+    /// a set rather than a mutually-exclusive case. Empty = show everything. Only
+    /// `MessageServiceKind.togglable` services are ever placed here; `.unknown`
+    /// is never hidden. Persisted across launches.
+    @Published var hiddenServices: Set<MessageServiceKind> = InboxModel.loadHiddenServices() {
+        didSet {
+            UserDefaults.standard.set(
+                hiddenServices.map(\.rawValue).sorted().joined(separator: ","),
+                forKey: InboxModel.hiddenServicesKey
+            )
+        }
+    }
+
+    /// Whether a service is currently shown (drives the menu's checkmarks).
+    func showsService(_ service: MessageServiceKind) -> Bool {
+        !hiddenServices.contains(service)
+    }
+
+    /// Flip one service in or out of the sidebar.
+    func toggleService(_ service: MessageServiceKind) {
+        if hiddenServices.contains(service) {
+            hiddenServices.remove(service)
+        } else {
+            hiddenServices.insert(service)
+        }
+    }
+
+    /// Clear the service filter entirely — the menu's explicit "off" switch.
+    func showAllServices() {
+        hiddenServices.removeAll()
+    }
+
     @Published private(set) var providerMode: ProviderMode = .fixture
     @Published private(set) var errorSummary: String?
 
     let conversationModel: ConversationModel
     let composerModel: ComposerModel
+    /// Shared, cached Open Graph fetcher for the Universal Library's Links tab.
+    let linkPreviewLoader: LinkPreviewLoader
 
     private let database: AppDatabase
     private let notifications = NotificationCoordinator()
@@ -136,6 +176,7 @@ final class InboxModel: ObservableObject {
     private static let providerModeKey = "providerMode"
     private static let filterKey = "inboxFilter"
     private static let selectedFolderKey = "selectedFolderID"
+    private static let hiddenServicesKey = "hiddenServices"
 
     private static func loadPersistedFilter() -> InboxFilter {
         let defaults = UserDefaults.standard
@@ -146,8 +187,16 @@ final class InboxModel: ObservableObject {
         return defaults.bool(forKey: "showsUnreadOnly") ? .unread : .all
     }
 
+    private static func loadHiddenServices() -> Set<MessageServiceKind> {
+        guard let raw = UserDefaults.standard.string(forKey: hiddenServicesKey), !raw.isEmpty else {
+            return []
+        }
+        return Set(raw.split(separator: ",").compactMap { MessageServiceKind(rawValue: String($0)) })
+    }
+
     init(database: AppDatabase, snippets: SnippetStore) {
         self.database = database
+        linkPreviewLoader = LinkPreviewLoader(database: database)
         let mode = UserDefaults.standard.string(forKey: Self.providerModeKey)
             .flatMap(ProviderMode.init(rawValue:)) ?? .messages
         providerMode = mode
@@ -202,16 +251,18 @@ final class InboxModel: ObservableObject {
             do {
                 async let page = repository.conversations(page: ConversationPageRequest(limit: 100))
                 async let pins = database.pinnedConversationIDs()
+                async let vips = database.vipConversationIDs()
                 async let marks = database.readMarks()
                 async let loadedFolders = database.folders()
                 async let loadedMembers = database.folderMembers()
                 async let loadedArchived = database.archivedConversationIDs()
                 async let loadedMuted = database.mutedConversationIDs()
                 async let loadedSnoozed = database.snoozedConversations()
-                let (loadedPage, loadedPins, loadedMarks, folderList, memberMap) =
-                    try await (page, pins, marks, loadedFolders, loadedMembers)
+                let (loadedPage, loadedPins, loadedVIPs, loadedMarks, folderList, memberMap) =
+                    try await (page, pins, vips, marks, loadedFolders, loadedMembers)
                 let (archived, muted, snoozed) = try await (loadedArchived, loadedMuted, loadedSnoozed)
                 pinnedIDs = loadedPins
+                vipIDs = loadedVIPs
                 clearedUnreadAt = loadedMarks
                 folders = folderList
                 folderMembers = memberMap
@@ -284,15 +335,27 @@ final class InboxModel: ObservableObject {
         } else {
             scoped = active
         }
+        // Service axis narrows next, composing with folder scope and the filter
+        // below (e.g. "unread iMessage within Work"). Hidden services drop out;
+        // the open thread always stays visible so hiding its service never yanks
+        // it. Empty set is the common case, so skip the pass entirely then.
+        let serviced: [Conversation]
+        if hiddenServices.isEmpty {
+            serviced = scoped
+        } else {
+            serviced = scoped.filter {
+                !hiddenServices.contains($0.service) || $0.id == selectedConversationID
+            }
+        }
         switch filter {
         case .all:
-            return scoped
+            return serviced
         case .unread:
-            return scoped.filter {
+            return serviced.filter {
                 hasVisibleUnread($0) || $0.id == selectedConversationID
             }
         case .needsReply:
-            return scoped.filter {
+            return serviced.filter {
                 NeedsReply.needsReply($0, now: now) || $0.id == selectedConversationID
             }
         }
@@ -308,6 +371,28 @@ final class InboxModel: ObservableObject {
     /// Pinned conversations in sidebar order (they sort first).
     var pinnedConversations: [Conversation] {
         conversations.filter { pinnedIDs.contains($0.id) }
+    }
+
+    func isVIP(_ id: ConversationID) -> Bool { vipIDs.contains(id) }
+
+    /// Whether the sidebar should break out a dedicated VIP section. Only in the
+    /// unscoped "All Messages" view — a folder scope is already its own slice —
+    /// and only when at least one VIP survives the active filter.
+    var showsVIPSection: Bool {
+        selectedFolderID == nil && !visibleVIPConversations.isEmpty
+    }
+
+    /// VIPs within the current visible slice, in sidebar (VIP-first) order.
+    var visibleVIPConversations: [Conversation] {
+        visibleConversations.filter { vipIDs.contains($0.id) }
+    }
+
+    /// The rest of the visible slice. When `showsVIPSection` is false this is the
+    /// whole list, so the sidebar renders this unconditionally and only prepends
+    /// the VIP section when the flag is set.
+    var visibleNonVIPConversations: [Conversation] {
+        guard showsVIPSection else { return visibleConversations }
+        return visibleConversations.filter { !vipIDs.contains($0.id) }
     }
 
     /// Total unread across every thread, honoring the local read-mark overlay.
@@ -415,15 +500,20 @@ final class InboxModel: ObservableObject {
 
     private func maybeNotify(_ message: Message) {
         guard providerMode == .messages, !message.isOutgoing else { return }
-        // Muted threads never alert, even when unfocused.
-        guard !mutedIDs.contains(message.conversationID) else { return }
+        let isVIP = vipIDs.contains(message.conversationID)
+        // Muted threads never alert — except VIPs, which are "always-notify" and
+        // override mute per the VIP contract (see the banner note below).
+        guard isVIP || !mutedIDs.contains(message.conversationID) else { return }
         let isViewing = message.conversationID == selectedConversationID && NSApp.isActive
         guard !isViewing else { return }
         let name = conversations.first(where: { $0.id == message.conversationID })?.displayName
             ?? message.sender?.displayName
             ?? message.sender?.handle
             ?? "New message"
-        notifications.post(message: message, conversationName: name)
+        // VIP threads are "always-notify": they bypass the Mute gate above and
+        // get a distinct ⭐ banner. Focus-awareness, when it lands, must exempt
+        // VIPs the same way — this is the single seam for that override.
+        notifications.post(message: message, conversationName: name, isVIP: isVIP)
     }
 
     // MARK: - Compose
@@ -522,6 +612,26 @@ final class InboxModel: ObservableObject {
                 AppLog.database.error("Pin persistence failed error=\(String(describing: type(of: error)), privacy: .public)")
             }
         }
+    }
+
+    func toggleVIP(_ id: ConversationID) {
+        let shouldVIP = !vipIDs.contains(id)
+        if shouldVIP { vipIDs.insert(id) } else { vipIDs.remove(id) }
+        // VIP outranks pinning in the sort, so re-sort to float it to the top
+        // (or drop it back among the pins/rest when un-VIP'd).
+        conversations = sort(conversations)
+        Task {
+            do {
+                try await database.setVIP(shouldVIP, conversationID: id)
+            } catch {
+                AppLog.database.error("VIP persistence failed error=\(String(describing: type(of: error)), privacy: .public)")
+            }
+        }
+    }
+
+    func toggleSelectedVIP() {
+        guard let id = selectedConversationID else { return }
+        toggleVIP(id)
     }
 
     // MARK: - Folders
@@ -761,6 +871,11 @@ final class InboxModel: ObservableObject {
 
     private func sort(_ values: [Conversation]) -> [Conversation] {
         values.sorted { left, right in
+            // VIP > pinned > recency. VIP implies always-pin, so it forms a tier
+            // above the pin tier rather than reusing it.
+            let leftVIP = vipIDs.contains(left.id)
+            let rightVIP = vipIDs.contains(right.id)
+            if leftVIP != rightVIP { return leftVIP }
             let leftPinned = pinnedIDs.contains(left.id)
             let rightPinned = pinnedIDs.contains(right.id)
             if leftPinned != rightPinned { return leftPinned }

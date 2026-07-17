@@ -222,9 +222,12 @@ struct InboxView: View {
                     isSidebarCollapsed: isCompact || !model.isSidebarVisible,
                     isPinned: model.selectedConversationID.map { model.pinnedIDs.contains($0) } ?? false,
                     onTogglePin: model.toggleSelectedPin,
+                    isVIP: model.selectedConversationID.map { model.isVIP($0) } ?? false,
+                    onToggleVIP: model.toggleSelectedVIP,
                     isCompact: isCompact,
                     onBack: { model.select(nil) }
                 )
+                .environment(\.linkPreviewLoader, model.linkPreviewLoader)
             }
         }
     }
@@ -391,6 +394,7 @@ private struct SidebarView: View {
             if level == 0 {
                 unreadFilterButton
                 needsReplyFilterButton
+                serviceFilterMenu
                 reloadButton
             }
             if level <= 1 { searchButton }
@@ -434,6 +438,50 @@ private struct SidebarView: View {
         }
         .buttonStyle(RiceIconButtonStyle(isActive: model.showsNeedsReplyOnly))
         .help(model.showsNeedsReplyOnly ? "Show all conversations (⇧⌘R)" : "Needs reply only (⇧⌘R)")
+    }
+
+    /// Multi-select service visibility. Unlike the unread / needs-reply filters
+    /// this is a *composable* axis, so it's a checkmark menu rather than a single
+    /// toggle button. A distinct bubble icon (not the funnel the unread filter
+    /// uses) fills and tints with the accent when anything is hidden, so the
+    /// header reads at a glance whether a service filter is on. Sizing mirrors
+    /// `RiceIconButtonStyle` so it sits flush with its neighbours.
+    private var serviceFilterMenu: some View {
+        let active = !model.hiddenServices.isEmpty
+        // Drive the Menu through the *same* RiceIconButtonStyle the sibling icons
+        // use (via `.menuStyle(.button)`), so it's pixel-identical in size and
+        // shares their neutral→accent active treatment. `isActive` keys off the
+        // hidden set alone: all services shown ⇒ neutral grey, like the others.
+        return Menu {
+            serviceMenuContent
+        } label: {
+            Image(systemName: "message")
+        }
+        .menuStyle(.button)
+        .buttonStyle(RiceIconButtonStyle(isActive: active))
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(active ? "Service filter on — some services hidden" : "Filter by service")
+    }
+
+    /// The per-service toggles plus a reset, shared by the inline menu and the
+    /// overflow menu so both stay in lockstep. Native `Toggle`s render as
+    /// checkmark rows, so a checked service = shown; toggling the same row again
+    /// flips it back. "Show All Services" is the explicit off switch — disabled
+    /// (and thus a state indicator) whenever nothing is hidden.
+    @ViewBuilder
+    private var serviceMenuContent: some View {
+        Section("Show Services") {
+            ForEach(MessageServiceKind.togglable, id: \.self) { service in
+                Toggle(service.displayLabel, isOn: Binding(
+                    get: { model.showsService(service) },
+                    set: { _ in model.toggleService(service) }
+                ))
+            }
+        }
+        Divider()
+        Button("Show All Services") { model.showAllServices() }
+            .disabled(model.hiddenServices.isEmpty)
     }
 
     private var reloadButton: some View {
@@ -488,6 +536,12 @@ private struct SidebarView: View {
                       systemImage: model.showsNeedsReplyOnly
                       ? "arrowshape.turn.up.left.circle.fill"
                       : "arrowshape.turn.up.left.circle")
+            }
+            Menu {
+                serviceMenuContent
+            } label: {
+                Label(model.hiddenServices.isEmpty ? "Filter by Service" : "Filter by Service — Some Hidden",
+                      systemImage: "message")
             }
             Button {
                 model.load()
@@ -576,49 +630,21 @@ private struct SidebarView: View {
     private var conversationList: some View {
         ScrollView {
             LazyVStack(spacing: 1) {
-                ForEach(model.visibleConversations) { conversation in
-                    ConversationRowButton(
-                        conversation: conversation,
-                        isPinned: model.pinnedIDs.contains(conversation.id),
-                        isMuted: model.isMuted(conversation.id),
-                        isSelected: model.selectedConversationID == conversation.id,
-                        showsUnread: model.hasVisibleUnread(conversation),
-                        density: density
-                    ) {
-                        model.select(conversation.id)
+                // VIPs get their own titled section above the rest, but only in
+                // the unscoped "All Messages" view — inside a folder the list is
+                // already a single scoped slice (see `model.showsVIPSection`).
+                if model.showsVIPSection {
+                    listSectionHeader("VIP", systemImage: "star.fill")
+                    ForEach(model.visibleVIPConversations) { conversation in
+                        conversationRow(conversation)
                     }
-                    .contextMenu {
-                        Button(model.pinnedIDs.contains(conversation.id) ? "Unpin" : "Pin") {
-                            model.togglePin(conversation.id)
-                        }
-                        Menu("Folders") {
-                            let containing = model.folders(containing: conversation.id)
-                            ForEach(model.folders) { folder in
-                                Button {
-                                    model.toggleMembership(conversation.id, inFolder: folder.id)
-                                } label: {
-                                    // SwiftUI renders the checkmark only when the
-                                    // Label's image is a checkmark; plain Text for
-                                    // non-members keeps the rows aligned.
-                                    if containing.contains(folder.id) {
-                                        Label(folder.name, systemImage: "checkmark")
-                                    } else {
-                                        Text(folder.name)
-                                    }
-                                }
-                            }
-                            if !model.folders.isEmpty { Divider() }
-                            Button("New Folder…") { model.folderEditor = .create(seed: conversation.id) }
-                        }
-                        Divider()
-                        snoozeMenu(for: conversation.id)
-                        Button(model.isMuted(conversation.id) ? "Unmute" : "Mute") {
-                            model.toggleMuted(conversation.id)
-                        }
-                        Button(model.isArchived(conversation.id) ? "Unarchive" : "Archive") {
-                            model.toggleArchived(conversation.id)
-                        }
+                    // Skip the "All" divider when every visible thread is a VIP.
+                    if !model.visibleNonVIPConversations.isEmpty {
+                        listSectionHeader("All", systemImage: "tray.full")
                     }
+                }
+                ForEach(model.visibleNonVIPConversations) { conversation in
+                    conversationRow(conversation)
                 }
             }
             .padding(.horizontal, 8)
@@ -641,6 +667,70 @@ private struct SidebarView: View {
             if model.isSnoozed(id) {
                 Divider()
                 Button("Unsnooze") { model.unsnooze(id) }
+            }
+        }
+    }
+
+    /// A subtle small-caps divider between the VIP and All groups.
+    private func listSectionHeader(_ title: String, systemImage: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: systemImage)
+                .riceFont(8)
+            Text(title)
+                .riceSectionHeader()
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(Rice.subtext0)
+        .padding(.horizontal, 6)
+        .padding(.top, 6)
+        .padding(.bottom, 1)
+    }
+
+    private func conversationRow(_ conversation: Conversation) -> some View {
+        ConversationRowButton(
+            conversation: conversation,
+            isPinned: model.pinnedIDs.contains(conversation.id),
+            isVIP: model.isVIP(conversation.id),
+            isMuted: model.isMuted(conversation.id),
+            isSelected: model.selectedConversationID == conversation.id,
+            showsUnread: model.hasVisibleUnread(conversation),
+            density: density
+        ) {
+            model.select(conversation.id)
+        }
+        .contextMenu {
+            Button(model.isVIP(conversation.id) ? "Remove from VIP" : "Add to VIP") {
+                model.toggleVIP(conversation.id)
+            }
+            Button(model.pinnedIDs.contains(conversation.id) ? "Unpin" : "Pin") {
+                model.togglePin(conversation.id)
+            }
+            Menu("Folders") {
+                let containing = model.folders(containing: conversation.id)
+                ForEach(model.folders) { folder in
+                    Button {
+                        model.toggleMembership(conversation.id, inFolder: folder.id)
+                    } label: {
+                        // SwiftUI renders the checkmark only when the
+                        // Label's image is a checkmark; plain Text for
+                        // non-members keeps the rows aligned.
+                        if containing.contains(folder.id) {
+                            Label(folder.name, systemImage: "checkmark")
+                        } else {
+                            Text(folder.name)
+                        }
+                    }
+                }
+                if !model.folders.isEmpty { Divider() }
+                Button("New Folder…") { model.folderEditor = .create(seed: conversation.id) }
+            }
+            Divider()
+            snoozeMenu(for: conversation.id)
+            Button(model.isMuted(conversation.id) ? "Unmute" : "Mute") {
+                model.toggleMuted(conversation.id)
+            }
+            Button(model.isArchived(conversation.id) ? "Unarchive" : "Archive") {
+                model.toggleArchived(conversation.id)
             }
         }
     }
@@ -700,6 +790,7 @@ private struct SidebarView: View {
 private struct ConversationRowButton: View {
     let conversation: Conversation
     let isPinned: Bool
+    var isVIP: Bool = false
     let isMuted: Bool
     let isSelected: Bool
     let showsUnread: Bool
@@ -716,7 +807,14 @@ private struct ConversationRowButton: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 5) {
-                        if isPinned {
+                        // A VIP is implicitly pinned, so its star stands in for
+                        // the pin badge rather than doubling up.
+                        if isVIP {
+                            Image(systemName: "star.fill")
+                                .riceFont(8)
+                                .foregroundStyle(Rice.yellow)
+                                .accessibilityLabel("VIP")
+                        } else if isPinned {
                             Image(systemName: "pin.fill")
                                 .riceFont(8)
                                 .foregroundStyle(Rice.overlay0)

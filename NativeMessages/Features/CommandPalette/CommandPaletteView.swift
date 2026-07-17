@@ -133,6 +133,17 @@ struct CommandPaletteView: View {
         ]
 
         if let selected = model.selectedConversationID {
+            let isVIP = model.isVIP(selected)
+            catalog.append(
+                PaletteAction(
+                    id: "vip",
+                    title: isVIP ? "Remove from VIP" : "Add to VIP",
+                    systemImage: isVIP ? "star.slash" : "star",
+                    shortcut: "⌃⌘V"
+                ) {
+                    model.toggleSelectedVIP()
+                }
+            )
             let pinned = model.pinnedIDs.contains(selected)
             catalog.append(
                 PaletteAction(

@@ -5,6 +5,11 @@ enum MessageServiceKind: String, Codable, Sendable {
     case sms
     case rcs
     case unknown
+
+    /// Services the user can show/hide via the sidebar's service filter, in menu
+    /// order. `.unknown` is intentionally excluded — it's a catch-all we never
+    /// hide, so a stray thread can't vanish behind a filter the user can't see.
+    static let togglable: [MessageServiceKind] = [.iMessage, .sms, .rcs]
 }
 
 enum ConversationKind: String, Codable, Sendable {
