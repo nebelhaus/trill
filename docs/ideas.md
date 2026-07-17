@@ -1,6 +1,6 @@
 # Ideas & feature backlog
 
-A living idea pool for NativeMessages, regenerated 2026-07-15. This is a
+A living idea pool for Trill, regenerated 2026-07-15. This is a
 brainstorm, not a commitment — it exists so good ideas don't evaporate between
 sessions. It extends the [PRD](../PRD.md) vision (local-first, keyboard-first,
 user-owned organization) with concrete, prioritized, feasibility-tagged items.

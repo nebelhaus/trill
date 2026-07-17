@@ -69,9 +69,9 @@ Every dependency must be pinned to a reviewed release or exact revision. Record 
 Recommended source layout:
 
 ```text
-NativeMessages/
+Trill/
   App/
-    NativeMessagesApp.swift
+    TrillApp.swift
     AppEnvironment.swift
     AppCommands.swift
     WindowCoordinator.swift

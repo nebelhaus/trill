@@ -8,7 +8,7 @@ The app uses the Messages account already signed in on the Mac. It does not crea
 
 The first release is completely local. A later release may use BlueBubbles as an optional self-hosted relay for REST access, webhooks and push notifications. The future notification system must allow custom immediate notifications, summaries and scheduled digests.
 
-Working title: **Native Messages Client**. The shipping name and visual identity are intentionally undecided.
+Working title: **Trill Client**. The shipping name and visual identity are intentionally undecided.
 
 ## 2. Problem
 

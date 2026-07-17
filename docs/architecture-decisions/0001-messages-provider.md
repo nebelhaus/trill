@@ -41,7 +41,7 @@ Synthetic fixture mode remains the default and complete implementation for this 
 | Long-lived GUI event stream? | Callback/event machinery exists, but the same construction issue blocks safe integration; lifecycle behavior remains unverified in a signed host app. |
 | Safe sending? | Methods exist, but sending requires Accessibility/Automation behavior and a signed-host test. It is disabled; automated tests never send. |
 | Structured health errors? | The package throws errors, but permission/schema/automation mapping has not been validated safely. The app exposes its own explicit health dimensions meanwhile. |
-| TCC identity? | For direct in-process integration, Full Disk Access, Accessibility, Contacts, and Automation prompts apply to the signed NativeMessages app bundle identity. |
+| TCC identity? | For direct in-process integration, Full Disk Access, Accessibility, Contacts, and Automation prompts apply to the signed Trill app bundle identity. |
 
 ## Safe enablement criteria
 

@@ -2,7 +2,7 @@
 
 ## Core invariant
 
-Native Messages never modifies `~/Library/Messages/chat.db` or another Apple-owned Messages database. System Integrity Protection stays enabled.
+Trill never modifies `~/Library/Messages/chat.db` or another Apple-owned Messages database. System Integrity Protection stays enabled.
 
 The app's permission checker opens the database only with:
 

@@ -1,11 +1,43 @@
-# Native Messages
+<div align="center">
 
-Native Messages is a provider-neutral macOS Messages client in SwiftUI. The live provider reads your real conversations straight from Apple's `chat.db` (always read-only) and sends by driving Messages.app over Apple Events; a deterministic synthetic provider remains available for development.
+# trill
+
+**your Messages, native**
+
+a fast, flat, provider-neutral Messages client for macOS — iMessage, SMS, and RCS
+in a real native window, reading straight from `chat.db` (always read-only).
+
+![part of nebelhaus](https://img.shields.io/badge/part_of-nebelhaus-f2c4e5?labelColor=202020)
+![themed by nebelung](https://img.shields.io/badge/themed_by-nebelung-c9a8f1?labelColor=202020)
+![brew](https://img.shields.io/badge/brew-nebelhaus%2Ftap-f5b58e?labelColor=202020)
+![license](https://img.shields.io/badge/license-MIT-d7d7d7?labelColor=202020)
+
+</div>
+
+---
+
+Trill is a provider-neutral macOS Messages client in SwiftUI. The live provider reads
+your real conversations straight from Apple's `chat.db` (always read-only) and sends by
+driving Messages.app over Apple Events; a deterministic synthetic provider remains
+available for development.
+
+## Install
+
+```sh
+# Homebrew (nebelhaus tap)
+brew install --cask nebelhaus/tap/trill
+
+# or run it straight from the flake
+nix run github:nebelhaus/trill
+```
+
+Trill is part of the [nebelhaus](https://github.com/nebelhaus) family and ships by
+default in the rice, but it stands alone — install it however you like above.
 
 ## What works
 
 - Native macOS 14+ split-view app with conversation sidebar, paged timeline, ⌘K search palette, pins, draft persistence, health UI, keyboard commands, and accessibility labels.
-- Flat dark UI on the Nebelung palette (desaturated Catppuccin) with a selectable accent, display density, and ⌘+/⌘−/⌘0 zoom — see `NativeMessages/DesignSystem/`.
+- Flat dark UI on the Nebelung palette (desaturated Catppuccin) with a selectable accent, display density, and ⌘+/⌘−/⌘0 zoom — see `Trill/DesignSystem/`.
 - **Live Messages provider** (`Providers/LiveIMessage/`): read-only SQL over `chat.db` for iMessage/SMS/RCS conversations, messages, reactions, replies, attachments, and search (including typedstream `attributedBody` decoding); sending via AppleScript to Messages.app; new-message polling for live updates; contact-name resolution via the Contacts framework.
 - Read receipts and delivery status on outgoing messages, inline image thumbnails, Quick Look previews on attachments, clickable links, edited markers, hidden unsent messages, sender avatars in group timelines, and a Dock badge with the total unread count.
 - Quoted reply bubbles with jump-to-original, reply-count links, and tapbacks grouped by emoji with counts and own-reaction tinting (display only — Messages.app has no automation surface for sending tapbacks or threaded replies).
@@ -22,7 +54,6 @@ The live provider never writes to `chat.db` — every connection is `SQLITE_OPEN
 - **Full Disk Access** — required to read `~/Library/Messages/chat.db`. Grant it to the built app bundle (not Terminal) in System Settings → Privacy & Security.
 - **Automation ("control Messages")** — prompted on first send.
 - **Contacts** — optional; grants names *and* contact photos via the Contacts framework. Without it, names still resolve by reading the local AddressBook store directly (covered by Full Disk Access); only photos are missing.
-
 - **Notifications** — optional; prompted on first launch with the live provider.
 
 Marking conversations as read upstream is not possible (that would require writing to `chat.db`); opening a thread clears its badge locally and the mark persists in the app's own database.
@@ -37,10 +68,10 @@ Fixture mode does not need Full Disk Access, Contacts, Accessibility, Automation
 
 ## Build and run in Xcode
 
-1. Open `NativeMessages.xcodeproj`.
+1. Open `Trill.xcodeproj`.
 2. Wait for Swift Package Manager to resolve dependencies.
 3. If Xcode asks whether to trust the `PlatformSDKMacros` build macro from the pinned package, review and approve it.
-4. Select the **NativeMessages** scheme and **My Mac** destination.
+4. Select the **Trill** scheme and **My Mac** destination.
 5. Press **⌘R**. The app opens in **Synthetic Fixture** mode.
 
 Try selecting conversations, **Load Earlier Messages**, **⌘K** search, pinning from a sidebar context menu, editing a draft, zooming with **⌘+/⌘−/⌘0**, picking an accent in Settings, and opening the health popover from the sidebar footer. The composer is deliberately disabled and never fakes a send.
@@ -49,8 +80,8 @@ Run tests with **⌘U**, or use Terminal:
 
 ```sh
 xcodebuild -skipMacroValidation \
-  -project NativeMessages.xcodeproj \
-  -scheme NativeMessages \
+  -project Trill.xcodeproj \
+  -scheme Trill \
   -configuration Debug \
   -destination 'platform=macOS' \
   -derivedDataPath DerivedData \

@@ -8,14 +8,14 @@ Automated tests must never enable a send capability or invoke a real send. An un
 
 ## Automated tests
 
-In Xcode, select the **NativeMessages** scheme and press **⌘U**. Review and approve the pinned package's `PlatformSDKMacros` prompt if Xcode presents it.
+In Xcode, select the **Trill** scheme and press **⌘U**. Review and approve the pinned package's `PlatformSDKMacros` prompt if Xcode presents it.
 
 For an unattended Terminal run from the repository root:
 
 ```sh
 xcodebuild -skipMacroValidation \
-  -project NativeMessages.xcodeproj \
-  -scheme NativeMessages \
+  -project Trill.xcodeproj \
+  -scheme Trill \
   -configuration Debug \
   -destination 'platform=macOS' \
   -derivedDataPath DerivedData \
@@ -49,7 +49,7 @@ The suite verifies:
 This is a diagnostic checklist, not authorization to enable live reads or sends.
 
 1. Select **Messages (Safety-gated)** without Full Disk Access. Confirm the permission-specific recovery screen appears rather than an empty inbox.
-2. Use **Open Full Disk Access**, grant access to the exact built NativeMessages app if desired, relaunch, and recheck.
+2. Use **Open Full Disk Access**, grant access to the exact built Trill app if desired, relaunch, and recheck.
 3. Confirm the screen changes to **Live Provider Safety-gated** and still lists no real conversations.
 4. Confirm no Accessibility, Automation, Contacts, or notification prompt appears merely from selecting the provider.
 5. Confirm the composer cannot send and no message appears in Messages.app.
