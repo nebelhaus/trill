@@ -18,9 +18,12 @@ struct SnippetSettingsView: View {
                 }
                 .buttonStyle(RiceSubtleButtonStyle())
             }
-            Text("Type / in the composer, then a keyword, to insert one. ↑↓ pick · ↵ insert.")
-                .riceFont(10)
-                .foregroundStyle(Rice.overlay0)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Type / in the composer, then a keyword, to insert one. ↑↓ pick · ↵ insert.")
+                Text("Add {blanks} to make a fill-in template — ⇥ jumps between blanks as you type.")
+            }
+            .riceFont(10)
+            .foregroundStyle(Rice.overlay0)
 
             if store.snippets.isEmpty {
                 Text("No snippets yet — add one to reuse a reply.")

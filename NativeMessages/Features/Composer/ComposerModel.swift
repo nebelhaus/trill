@@ -17,6 +17,24 @@ final class ComposerModel: ObservableObject {
     @Published private(set) var snippetMatches: [Snippet] = []
     @Published var snippetSelection = 0
 
+    /// Template fill state. When a snippet carrying `{blank}` markers is inserted
+    /// the composer enters a fill session: `isFillSessionActive` routes ⇥ / ⇧⇥
+    /// to blank-to-blank navigation, and `pendingSelection` asks the text view
+    /// to select the current blank. The session ends once the caret passes the
+    /// last blank (or on send / conversation switch).
+    @Published private(set) var isFillSessionActive = false
+    @Published private(set) var pendingSelection: PendingSelection?
+
+    /// A one-shot request for the `NSTextView` to select `range`. `token` bumps
+    /// on every request so an identical range re-applies (e.g. re-selecting the
+    /// same blank), and the view ignores a request it has already consumed.
+    struct PendingSelection: Equatable {
+        let range: NSRange
+        let token: Int
+    }
+
+    private var selectionToken = 0
+
     private let database: AppDatabase
     private let snippets: SnippetStore
     private var sendAction: ((String, [URL]) async throws -> SendOutcome)?
@@ -47,6 +65,7 @@ final class ComposerModel: ObservableObject {
         saveTask?.cancel()
         restoreTask?.cancel()
         clearSnippetPicker()
+        endFillSession()
         self.conversationID = conversationID
         self.sendAction = sendAction
         sendFeedback = nil
@@ -105,6 +124,7 @@ final class ComposerModel: ObservableObject {
                 text = ""
                 pendingAttachments = []
                 clearSnippetPicker()
+                endFillSession()
                 sendFeedback = nil
                 saveTask?.cancel()
                 try? await database.saveDraft("", conversationID: conversationID)
@@ -116,6 +136,7 @@ final class ComposerModel: ObservableObject {
                 text = ""
                 pendingAttachments = []
                 clearSnippetPicker()
+                endFillSession()
                 saveTask?.cancel()
                 try? await database.saveDraft("", conversationID: conversationID)
                 sendFeedback = "Some of the message may not have sent — check Messages.app."
@@ -176,8 +197,12 @@ final class ComposerModel: ObservableObject {
         guard snippetMatches.indices.contains(snippetSelection),
               let range = snippetTriggerRange else { return false }
         let body = snippetMatches[snippetSelection].body
+        // UTF-16 offset where the body lands, so we can find its blanks by
+        // NSRange once it's spliced into the full draft.
+        let insertion = text[..<range.lowerBound].utf16.count
         text.replaceSubrange(range, with: body)
         clearSnippetPicker()
+        beginFillSession(from: insertion)
         return true
     }
 
@@ -185,6 +210,55 @@ final class ComposerModel: ObservableObject {
         if !snippetMatches.isEmpty { snippetMatches = [] }
         snippetSelection = 0
         snippetTriggerRange = nil
+    }
+
+    // MARK: - Template fill
+
+    /// Select the first blank of a just-inserted template; if the snippet has no
+    /// blanks, this is a no-op and the caret stays where the text view parks it.
+    private func beginFillSession(from location: Int) {
+        guard let first = MessageTemplate.nextPlaceholder(in: text, from: location) else {
+            endFillSession()
+            return
+        }
+        isFillSessionActive = true
+        requestSelection(first)
+    }
+
+    /// ⇥ while filling: select the next blank at or after `caret`, or end the
+    /// session (caret to the end) once there are none left. `caret` is the live
+    /// selection's trailing edge, so a blank the user just typed over is skipped.
+    /// Returns whether the key was consumed.
+    @discardableResult
+    func advanceFill(from caret: Int) -> Bool {
+        guard isFillSessionActive else { return false }
+        if let next = MessageTemplate.nextPlaceholder(in: text, from: caret) {
+            requestSelection(next)
+        } else {
+            endFillSession()
+            requestSelection(NSRange(location: (text as NSString).length, length: 0))
+        }
+        return true
+    }
+
+    /// ⇧⇥ while filling: select the previous blank before `caret`; stays on the
+    /// first when there's nothing earlier. Returns whether the key was consumed.
+    @discardableResult
+    func retreatFill(from caret: Int) -> Bool {
+        guard isFillSessionActive else { return false }
+        if let previous = MessageTemplate.previousPlaceholder(in: text, before: caret) {
+            requestSelection(previous)
+        }
+        return true
+    }
+
+    private func endFillSession() {
+        if isFillSessionActive { isFillSessionActive = false }
+    }
+
+    private func requestSelection(_ range: NSRange) {
+        selectionToken += 1
+        pendingSelection = PendingSelection(range: range, token: selectionToken)
     }
 
     private static func feedback(for reason: UserFacingSendError) -> String {

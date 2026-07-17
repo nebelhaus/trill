@@ -25,6 +25,16 @@ struct GrowingTextView: NSViewRepresentable {
     /// Returns `true` when a snippet was inserted, so the key is consumed.
     var onSnippetCommit: () -> Bool = { false }
     var onSnippetCancel: () -> Void = {}
+    /// A one-shot request to select a range (a template blank). Applied once per
+    /// distinct `token`, after any text sync, so the highlight survives the
+    /// caret-park that follows a programmatic string change.
+    var pendingSelection: ComposerModel.PendingSelection?
+    /// While filling a template, ⇥ / ⇧⇥ jump between blanks instead of inserting
+    /// a tab or moving focus. Each callback gets the caret's current location and
+    /// returns whether it consumed the key.
+    var isFillSessionActive = false
+    var onFillAdvance: (Int) -> Bool = { _ in false }
+    var onFillRetreat: (Int) -> Bool = { _ in false }
     var onSend: () -> Void
 
     /// Small gutter so text clears the caret and rounded corners without
@@ -86,12 +96,32 @@ struct GrowingTextView: NSViewRepresentable {
         textView.font = .systemFont(ofSize: fontSize, weight: .regular)
         scrollView.hasVerticalScroller = isScrollable
         scrollView.verticalScrollElasticity = isScrollable ? .allowed : .none
+        applyPendingSelection(to: textView, context: context)
         context.coordinator.recomputeHeight()
+    }
+
+    /// Select the requested template blank once per `token`, after the text sync
+    /// above so it wins over the end-of-string caret park. Clamped defensively in
+    /// case the live text is shorter than the range implies.
+    private func applyPendingSelection(to textView: NSTextView, context: Context) {
+        guard let pending = pendingSelection,
+              pending.token != context.coordinator.appliedSelectionToken else { return }
+        context.coordinator.appliedSelectionToken = pending.token
+        let length = (textView.string as NSString).length
+        let location = min(pending.range.location, length)
+        let span = min(pending.range.length, length - location)
+        let range = NSRange(location: location, length: span)
+        textView.setSelectedRange(range)
+        textView.scrollRangeToVisible(range)
+        textView.window?.makeFirstResponder(textView)
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: GrowingTextView
         weak var textView: NSTextView?
+        /// The last `PendingSelection.token` applied, so a re-render doesn't
+        /// re-select (and steal the caret) on every `updateNSView`.
+        var appliedSelectionToken = 0
 
         init(_ parent: GrowingTextView) { self.parent = parent }
 
@@ -121,6 +151,20 @@ struct GrowingTextView: NSViewRepresentable {
                     return true
                 case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertTab(_:)):
                     if parent.onSnippetCommit() { return true }
+                default:
+                    break
+                }
+            }
+            // Filling a template: ⇥ / ⇧⇥ step between blanks. The selection's
+            // trailing edge is "next from here"; its leading edge is "previous
+            // before here", so a blank you just typed over isn't re-selected.
+            if parent.isFillSessionActive {
+                let selection = textView.selectedRange()
+                switch selector {
+                case #selector(NSResponder.insertTab(_:)):
+                    if parent.onFillAdvance(selection.location + selection.length) { return true }
+                case #selector(NSResponder.insertBacktab(_:)):
+                    if parent.onFillRetreat(selection.location) { return true }
                 default:
                     break
                 }

@@ -126,6 +126,10 @@ struct ComposerView: View {
             onSnippetMove: { model.moveSnippetSelection($0) },
             onSnippetCommit: { model.commitSelectedSnippet() },
             onSnippetCancel: { model.clearSnippetPicker() },
+            pendingSelection: model.pendingSelection,
+            isFillSessionActive: model.isFillSessionActive,
+            onFillAdvance: { model.advanceFill(from: $0) },
+            onFillRetreat: { model.retreatFill(from: $0) },
             onSend: { Task { await model.send() } }
         )
         .frame(height: editorHeight)
