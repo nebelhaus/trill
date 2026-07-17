@@ -26,13 +26,13 @@ available for development.
 ```sh
 # Homebrew (nebelhaus tap)
 brew install --cask nebelhaus/tap/trill
-
-# or run it straight from the flake
-nix run github:nebelhaus/trill
 ```
 
+The app is ad-hoc signed, so on first launch right-click → **Open** (or
+`xattr -dr com.apple.quarantine /Applications/Trill.app`) to clear Gatekeeper.
+
 Trill is part of the [nebelhaus](https://github.com/nebelhaus) family and ships by
-default in the rice, but it stands alone — install it however you like above.
+default in the rice, but it stands alone — install the cask above on any Mac.
 
 ## What works
 
