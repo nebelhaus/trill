@@ -87,5 +87,6 @@ final class SnippetStore: ObservableObject {
         Snippet(title: "brb", body: "Be right back."),
         Snippet(title: "ty", body: "Thank you!"),
         Snippet(title: "callback", body: "Can I call you back in a bit?"),
+        Snippet(title: "meet", body: "Let's meet at {time} on {day}. Does that work?"),
     ]
 }
