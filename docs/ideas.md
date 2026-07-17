@@ -57,7 +57,7 @@ Everything below respects these.
 | **Relationship timeline** | Per contact: first message ever, total volume, media count, longest silence, cadence over time | M–L | ✅ | Great "wow" surface for the primary persona. |
 | **Needs-reply detector** | Smart filter/section: threads whose last message is *from them* and unanswered for N hours | S–M | ✅ 🚢 | Shipped (`999debf`). ⇧⌘R toggles the triage filter; `lastMessageFromMe` + `reactedToLatestInbound` (both from chat.db — a tapback I left counts as a reply) feed a pure `NeedsReply` helper (3h default). |
 | **Year in review** | An annual "wrapped" recap: top contacts, message counts, busiest day, top emoji/tapback | L | ✅ 🚫 | Declined — feasible but not worth the L-sized effort for a seasonal gimmick. |
-| **Response-time insights** | How fast you reply to whom, and who leaves you on read | M | ✅ | Sensitive framing; keep it private/local and non-judgy. |
+| **Response-time insights** | How fast you reply to whom, and who leaves you on read | M | ✅ ⚠️ | **Partially shipped.** The core metric exists per-thread in the stats panel (`ConversationStatsBuilder` → "You reply in" / "They reply in", turn-switch-aware medians). Still missing the *cross-contact* surface the idea is really about: an all-conversations ranking of who you answer fastest and "who leaves you on read." That aggregate (run the median-reply builder over every thread, sort, present) is the net-new work. Sensitive framing; keep it private/local and non-judgy. |
 
 ## Organization & triage
 
