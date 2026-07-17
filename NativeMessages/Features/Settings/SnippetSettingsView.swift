@@ -21,6 +21,7 @@ struct SnippetSettingsView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Type / in the composer, then a keyword, to insert one. ↑↓ pick · ↵ insert.")
                 Text("Add {blanks} to make a fill-in template — ⇥ jumps between blanks as you type.")
+                Text("Built-in commands live in the same picker: /shrug, /flip, /unflip, /lenny, /date, /time.")
             }
             .riceFont(10)
             .foregroundStyle(Rice.overlay0)

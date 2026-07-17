@@ -1,10 +1,11 @@
 import SwiftUI
 
 /// The `/`-trigger autocomplete popover that floats above the composer box.
-/// Keyboard navigation lives in `GrowingTextView` (which keeps first responder);
-/// this view just renders the ranked matches and supports click-to-insert.
-struct SnippetPickerView: View {
-    let matches: [Snippet]
+/// Renders the ranked completions — built-in slash commands and the user's
+/// snippets, blended — and supports click-to-insert. Keyboard navigation lives
+/// in `GrowingTextView` (which keeps first responder); this view just draws.
+struct CompletionPickerView: View {
+    let matches: [CompletionItem]
     let selection: Int
     let onSelect: (Int) -> Void
 
@@ -25,13 +26,13 @@ struct SnippetPickerView: View {
                 .strokeBorder(Rice.surface1, lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
-        .accessibilityLabel("Snippet suggestions")
+        .accessibilityLabel("Completion suggestions")
     }
 
     private var list: some View {
         VStack(spacing: 1) {
-            ForEach(Array(matches.enumerated()), id: \.element.id) { index, snippet in
-                SnippetRow(snippet: snippet, isSelected: index == selection)
+            ForEach(Array(matches.enumerated()), id: \.element.id) { index, item in
+                CompletionRow(item: item, isSelected: index == selection)
                     .contentShape(Rectangle())
                     .onTapGesture { onSelect(index) }
             }
@@ -60,32 +61,31 @@ struct SnippetPickerView: View {
     }
 }
 
-private struct SnippetRow: View {
-    let snippet: Snippet
+private struct CompletionRow: View {
+    let item: CompletionItem
     let isSelected: Bool
 
     @Environment(\.riceAccent) private var accent
 
     var body: some View {
         HStack(spacing: 9) {
-            Text("/\(snippet.title)")
+            Text("/\(item.title)")
                 .riceFont(12, .semibold)
                 .foregroundStyle(accent)
                 .lineLimit(1)
                 .layoutPriority(1)
-            Text(snippet.body)
+            Text(item.preview)
                 .riceFont(11)
                 .foregroundStyle(Rice.subtext0)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)
-            if MessageTemplate.hasPlaceholders(snippet.body) {
-                // Marks a fill-in template; ⇥ steps through the blanks on insert.
-                Image(systemName: "rectangle.and.pencil.and.ellipsis")
+            if let badge {
+                Image(systemName: badge.symbol)
                     .riceFont(9)
                     .foregroundStyle(Rice.overlay0)
                     .layoutPriority(1)
-                    .accessibilityLabel("Fill-in template")
+                    .accessibilityLabel(badge.label)
             }
         }
         .padding(.horizontal, 9)
@@ -96,6 +96,19 @@ private struct SnippetRow: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(snippet.title): \(snippet.body)")
+        .accessibilityLabel("\(item.title): \(item.preview)")
+    }
+
+    /// A trailing glyph that marks what kind of row this is: a built-in command,
+    /// or a fill-in template (⇥ steps through its blanks on insert). Plain
+    /// snippets get none.
+    private var badge: (symbol: String, label: String)? {
+        if item.isCommand {
+            ("slash.circle", "Slash command")
+        } else if item.isTemplate {
+            ("rectangle.and.pencil.and.ellipsis", "Fill-in template")
+        } else {
+            nil
+        }
     }
 }
