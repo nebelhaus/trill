@@ -111,6 +111,27 @@ actor LiveIMessageProvider: MessagesProvider {
         )
     }
 
+    func messages(ids: [MessageID]) async throws -> [Message] {
+        // Only resolve identifiers that belong to us; foreign-provider IDs are
+        // silently dropped (the saved overlay could outlive a provider switch).
+        let guids = ids.filter { $0.provider == id }.map(\.externalGUID)
+        guard !guids.isEmpty else { return [] }
+        let rows = try reader.messages(guids: guids)
+        // Group by owning chat so each message maps under its own conversation —
+        // the same per-chat resolution `search` uses for cross-thread results.
+        let chats = try reader.chats(rowIDs: Array(Set(rows.map(\.chatRowID))))
+        var results: [Message] = []
+        results.reserveCapacity(rows.count)
+        for row in rows {
+            guard let chat = chats[row.chatRowID] else { continue }
+            let conversationID = ConversationID(provider: id, externalGUID: chat.guid)
+            if let message = try await map(rows: [row], conversationID: conversationID, chatRowID: nil).first {
+                results.append(message)
+            }
+        }
+        return results
+    }
+
     func search(_ query: MessageSearchQuery) async throws -> MessageSearchPage {
         guard query.hasCriteria else { return MessageSearchPage(messages: [], nextCursor: nil) }
         // Free text narrows the scan via SQL LIKE. An operator-only query (e.g.
@@ -374,6 +395,11 @@ actor LiveIMessageProvider: MessagesProvider {
                 }
             }
             return items
+        case .saved:
+            // Saved bookmarks live in the app-owned overlay, not chat.db, so the
+            // repository builds this tab from `messages(ids:)`. The provider has
+            // no bookmark state of its own.
+            return []
         }
     }
 

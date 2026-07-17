@@ -16,7 +16,7 @@ enum AppDatabaseError: LocalizedError, Sendable {
 }
 
 actor AppDatabase {
-    static let currentSchemaVersion = 12
+    static let currentSchemaVersion = 13
 
     private final class Connection: @unchecked Sendable {
         let raw: OpaquePointer
@@ -114,6 +114,33 @@ actor AppDatabase {
         var result = Set<ConversationID>()
         for key in keys {
             guard let id = ConversationID(persistenceKey: key) else { throw AppDatabaseError.invalidStoredIdentifier }
+            result.insert(id)
+        }
+        return result
+    }
+
+    /// Saved-message bookmarks are a flat overlay set keyed by the message's
+    /// `persistenceKey` — same shape as pinned/VIP conversations, one row per
+    /// bookmark with a "when added" timestamp for newest-first ordering.
+    func setSaved(_ saved: Bool, messageID: MessageID) throws {
+        if saved {
+            try execute(
+                "INSERT OR REPLACE INTO saved_messages (message_key, saved_at) VALUES (?, ?)",
+                bindings: [.text(messageID.persistenceKey), .double(Date().timeIntervalSince1970)]
+            )
+        } else {
+            try execute(
+                "DELETE FROM saved_messages WHERE message_key = ?",
+                bindings: [.text(messageID.persistenceKey)]
+            )
+        }
+    }
+
+    func savedMessageIDs() throws -> Set<MessageID> {
+        let keys = try textRows("SELECT message_key FROM saved_messages ORDER BY saved_at DESC")
+        var result = Set<MessageID>()
+        for key in keys {
+            guard let id = MessageID(persistenceKey: key) else { throw AppDatabaseError.invalidStoredIdentifier }
             result.insert(id)
         }
         return result
@@ -513,6 +540,12 @@ actor AppDatabase {
             (10, "CREATE TABLE IF NOT EXISTS archived_conversations (conversation_key TEXT PRIMARY KEY NOT NULL, archived_at REAL NOT NULL)"),
             (11, "CREATE TABLE IF NOT EXISTS muted_conversations (conversation_key TEXT PRIMARY KEY NOT NULL, muted_at REAL NOT NULL)"),
             (12, "CREATE TABLE IF NOT EXISTS snoozed_conversations (conversation_key TEXT PRIMARY KEY NOT NULL, wake_at REAL NOT NULL)"),
+            // Saved / starred messages: local bookmarks on any message, keyed by
+            // MessageID.persistenceKey. No chat.db write. Numbered 13 (this branch
+            // was cut from v9, so it skips master's 10–12) — that keeps it clean
+            // against the shared app-support overlay DB other branches had already
+            // advanced to v12. `IF NOT EXISTS` keeps it idempotent across that DB.
+            (13, "CREATE TABLE IF NOT EXISTS saved_messages (message_key TEXT PRIMARY KEY NOT NULL, saved_at REAL NOT NULL)"),
         ]
         for (nextVersion, sql) in migrations where nextVersion > version {
             try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION")

@@ -11,6 +11,10 @@ protocol MessagesProvider: Sendable {
     /// scrubber, resolving the date to a paging position server-side so a leap
     /// into deep history is one query, not dozens of backward pages.
     func messages(in conversation: ConversationID, around date: Date, limit: Int) async throws -> DatedMessagePage
+    /// Resolves specific messages by identity, across any conversation. Backs the
+    /// saved-messages library tab, which stores only `MessageID`s and needs their
+    /// content on demand. Missing IDs are simply absent from the result.
+    func messages(ids: [MessageID]) async throws -> [Message]
     func search(_ query: MessageSearchQuery) async throws -> MessageSearchPage
     func events(after cursor: EventCursor?) async -> AsyncThrowingStream<ProviderEvent, Error>
     func send(_ request: SendRequest) async throws -> SendOutcome
@@ -39,6 +43,8 @@ extension MessagesProvider {
     func media(in conversation: ConversationID, limit: Int) async throws -> [MediaItem] { [] }
 
     func libraryItems(kind: LibraryKind, limit: Int) async throws -> [LibraryItem] { [] }
+
+    func messages(ids: [MessageID]) async throws -> [Message] { [] }
 
     func statSamples(in conversation: ConversationID) async throws -> [MessageStatSample] { [] }
 }
