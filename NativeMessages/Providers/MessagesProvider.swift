@@ -16,6 +16,7 @@ protocol MessagesProvider: Sendable {
     func media(in conversation: ConversationID, limit: Int) async throws -> [MediaItem]
     func libraryItems(kind: LibraryKind, limit: Int) async throws -> [LibraryItem]
     func statSamples(in conversation: ConversationID) async throws -> [MessageStatSample]
+    func exportMessages(in conversation: ConversationID) async throws -> [Message]
 }
 
 extension MessagesProvider {
@@ -30,6 +31,25 @@ extension MessagesProvider {
     func libraryItems(kind: LibraryKind, limit: Int) async throws -> [LibraryItem] { [] }
 
     func statSamples(in conversation: ConversationID) async throws -> [MessageStatSample] { [] }
+
+    /// Full-thread read for conversation export. The default pages through
+    /// `messages(in:page:)` until the history is exhausted — correct for any
+    /// provider. Providers with a cheaper one-shot read (the live chat.db
+    /// reader) override this to avoid the per-page round-trips.
+    func exportMessages(in conversation: ConversationID) async throws -> [Message] {
+        var collected: [MessageID: Message] = [:]
+        var before: String?
+        var pagesRemaining = 1_000
+        repeat {
+            let page = try await messages(in: conversation, page: MessagePageRequest(limit: 200, before: before))
+            for message in page.messages { collected[message.id] = message }
+            before = page.nextBefore
+            pagesRemaining -= 1
+        } while before != nil && pagesRemaining > 0
+        return collected.values.sorted { left, right in
+            left.createdAt == right.createdAt ? left.id.id < right.id.id : left.createdAt < right.createdAt
+        }
+    }
 }
 
 enum MessagesProviderError: LocalizedError, Sendable {

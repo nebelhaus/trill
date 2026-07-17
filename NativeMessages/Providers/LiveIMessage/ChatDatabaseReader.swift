@@ -214,6 +214,26 @@ struct ChatDatabaseReader: Sendable {
         }
     }
 
+    /// Every message in a chat, oldest → newest and unbounded — the one-shot
+    /// read behind conversation export. Same columns and filters as the paged
+    /// `messages(...)`, minus the cursor/limit, so a 5-year thread comes back in
+    /// a single scan instead of dozens of round-trips.
+    func allMessages(chatRowID: Int64) throws -> [MessageRow] {
+        try withConnection { db in
+            try query(db, """
+                SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.is_from_me, m.date,
+                       m.date_delivered, m.is_delivered, m.is_sent, m.error, m.handle_id,
+                       m.cache_has_attachments, m.thread_originator_guid, j.chat_id,
+                       IFNULL(m.date_read, 0), IFNULL(m.date_edited, 0)
+                FROM message m
+                JOIN chat_message_join j ON j.message_id = m.ROWID
+                WHERE j.chat_id = ? AND m.associated_message_type = 0 AND m.item_type = 0
+                  AND IFNULL(m.date_retracted, 0) = 0
+                ORDER BY m.ROWID ASC
+                """, bind: [.int(chatRowID)], map: messageRow)
+        }
+    }
+
     /// All messages newer than a ROWID across every chat (event polling).
     func messagesAfter(rowID: Int64, limit: Int) throws -> [MessageRow] {
         try withConnection { db in
@@ -283,25 +303,34 @@ struct ChatDatabaseReader: Sendable {
 
     func attachments(messageRowIDs: [Int64]) throws -> [AttachmentRow] {
         guard !messageRowIDs.isEmpty else { return [] }
-        return try withConnection { db in
-            let placeholders = Array(repeating: "?", count: messageRowIDs.count).joined(separator: ",")
-            return try query(db, """
-                SELECT j.message_id, a.guid, a.filename, a.mime_type, a.uti, a.transfer_name, IFNULL(a.total_bytes, 0)
-                FROM attachment a
-                JOIN message_attachment_join j ON j.attachment_id = a.ROWID
-                WHERE j.message_id IN (\(placeholders))
-                """, bind: messageRowIDs.map { .int($0) }) { stmt in
-                AttachmentRow(
-                    messageRowID: sqlite3_column_int64(stmt, 0),
-                    guid: text(stmt, 1) ?? "",
-                    filename: text(stmt, 2),
-                    mimeType: text(stmt, 3),
-                    uti: text(stmt, 4),
-                    transferName: text(stmt, 5),
-                    totalBytes: sqlite3_column_int64(stmt, 6)
-                )
+        // SQLite caps bound variables per statement (SQLITE_MAX_VARIABLE_NUMBER,
+        // historically 999). A full-thread export can pass tens of thousands of
+        // message IDs, so batch the IN-list to stay under the ceiling.
+        var result: [AttachmentRow] = []
+        let batchSize = 900
+        for start in stride(from: 0, to: messageRowIDs.count, by: batchSize) {
+            let batch = Array(messageRowIDs[start..<min(start + batchSize, messageRowIDs.count)])
+            try withConnection { db in
+                let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ",")
+                result += try query(db, """
+                    SELECT j.message_id, a.guid, a.filename, a.mime_type, a.uti, a.transfer_name, IFNULL(a.total_bytes, 0)
+                    FROM attachment a
+                    JOIN message_attachment_join j ON j.attachment_id = a.ROWID
+                    WHERE j.message_id IN (\(placeholders))
+                    """, bind: batch.map { .int($0) }) { stmt in
+                    AttachmentRow(
+                        messageRowID: sqlite3_column_int64(stmt, 0),
+                        guid: text(stmt, 1) ?? "",
+                        filename: text(stmt, 2),
+                        mimeType: text(stmt, 3),
+                        uti: text(stmt, 4),
+                        transferName: text(stmt, 5),
+                        totalBytes: sqlite3_column_int64(stmt, 6)
+                    )
+                }
             }
         }
+        return result
     }
 
     /// Every attachment in a chat, newest-first, with the owning message's

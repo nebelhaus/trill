@@ -78,6 +78,19 @@ actor LiveIMessageProvider: MessagesProvider {
         return MessagePage(messages: messages, nextBefore: nextBefore)
     }
 
+    /// One-shot full-thread read for export: a single unbounded row scan, then
+    /// one `map` — so reactions and handles are resolved once for the whole
+    /// history instead of re-scanned on every page. Turns a multi-second,
+    /// dozens-of-round-trips paging loop into one query + one hydration pass.
+    func exportMessages(in conversation: ConversationID) async throws -> [Message] {
+        guard conversation.provider == id else { throw MessagesProviderError.wrongProvider }
+        guard let chat = try reader.chat(guid: conversation.externalGUID) else {
+            throw MessagesProviderError.unavailable("Conversation no longer exists in chat.db")
+        }
+        let rows = try reader.allMessages(chatRowID: chat.rowID)
+        return try await map(rows: rows, conversationID: conversation, chatRowID: chat.rowID)
+    }
+
     func search(_ query: MessageSearchQuery) async throws -> MessageSearchPage {
         guard query.hasCriteria else { return MessageSearchPage(messages: [], nextCursor: nil) }
         // Free text narrows the scan via SQL LIKE. An operator-only query (e.g.

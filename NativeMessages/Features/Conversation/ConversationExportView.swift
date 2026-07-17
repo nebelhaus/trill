@@ -19,6 +19,7 @@ struct ConversationExportView: View {
     @State private var startDate = Date()
     @State private var endDate = Date()
     @State private var confirmation: String?
+    @State private var elapsed = 0
 
     /// Cap the on-screen preview so a huge thread doesn't stall the sheet; the
     /// actual export (save / copy) always uses the full document.
@@ -33,6 +34,7 @@ struct ConversationExportView: View {
         .frame(width: 480, height: 560)
         .background(Rice.mantle)
         .task { await load() }
+        .task { await tick() }
     }
 
     private var header: some View {
@@ -67,8 +69,24 @@ struct ConversationExportView: View {
                 .padding(16)
             }
         } else {
-            LoadingStateView(label: "Gathering messages…")
+            VStack(spacing: 12) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(loadingLabel)
+                    .riceFont(12)
+                    .foregroundStyle(Rice.subtext0)
+                    .monospacedDigit()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityElement(children: .combine)
         }
+    }
+
+    /// Static for a quick load (or a cache hit); after a second it starts
+    /// counting so a long full-history read shows visible progress instead of a
+    /// frozen spinner.
+    private var loadingLabel: String {
+        elapsed < 2 ? "Gathering messages…" : "Gathering full history… \(elapsed)s"
     }
 
     // MARK: - Controls
@@ -205,6 +223,16 @@ struct ConversationExportView: View {
         if let first = messages.first?.createdAt, let last = messages.last?.createdAt {
             startDate = first
             endDate = last
+        }
+    }
+
+    /// Advances the elapsed-seconds counter once per second until the history
+    /// arrives. A cache hit resolves `allMessages` before the first tick, so
+    /// this loop exits without ever showing a number.
+    private func tick() async {
+        while allMessages == nil {
+            try? await Task.sleep(for: .seconds(1))
+            if allMessages == nil { elapsed += 1 }
         }
     }
 

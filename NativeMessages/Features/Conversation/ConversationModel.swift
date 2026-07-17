@@ -45,6 +45,11 @@ final class ConversationModel: ObservableObject {
     private var repository: MessagesRepository
     private var loadTask: Task<Void, Never>?
     private var isRefreshing = false
+    /// Memoized full history for export, keyed to the conversation it was read
+    /// from. Reopening the export sheet (or re-exporting after changing format /
+    /// range) reuses it instead of re-reading a multi-thousand-message thread.
+    /// Invalidated when the thread changes or new messages land.
+    private var exportCache: (id: ConversationID, messages: [Message])?
 
     init(repository: MessagesRepository) {
         self.repository = repository
@@ -68,6 +73,7 @@ final class ConversationModel: ObservableObject {
         state = .idle
         revealTarget = nil
         highlightedMessageID = nil
+        exportCache = nil
         resetFind()
     }
 
@@ -133,6 +139,7 @@ final class ConversationModel: ObservableObject {
             changed = true
         }
         guard changed else { return }
+        exportCache = nil
         messages = byID.values.sorted(by: Self.chronological)
         if state == .empty, !messages.isEmpty { state = .loaded }
         if nextBefore == nil { nextBefore = page.nextBefore }
@@ -144,6 +151,7 @@ final class ConversationModel: ObservableObject {
         guard conversation?.id == message.conversationID else { return }
         guard state == .loaded || state == .empty else { return }
         guard !messages.contains(where: { $0.id == message.id }) else { return }
+        exportCache = nil
         messages = (messages + [message]).sorted(by: Self.chronological)
         state = .loaded
         if isFindPresented { recomputeFindMatches() }
@@ -265,27 +273,19 @@ final class ConversationModel: ObservableObject {
         return ConversationStatsBuilder.build(from: samples, now: Date())
     }
 
-    /// Pages the entire open thread for export, oldest → newest. Runs an
-    /// independent paging loop off the shared timeline state so exporting a long
-    /// history never disturbs what's scrolled into view. Bounded by `maxMessages`
-    /// and a page-count guard so a runaway thread can't spin forever.
-    func loadAllForExport(maxMessages: Int = 50_000) async -> [Message] {
+    /// The whole open thread for export, oldest → newest. Delegates to the
+    /// provider's one-shot bulk read (a single chat.db scan on the live path)
+    /// rather than paging, and memoizes the result per conversation so
+    /// reopening the sheet or re-exporting is instant. Reads off the shared
+    /// timeline state, so a long export never disturbs what's scrolled into view.
+    func loadAllForExport() async -> [Message] {
         guard let conversation else { return [] }
+        if let cache = exportCache, cache.id == conversation.id { return cache.messages }
         let repository = repository
-        var collected: [MessageID: Message] = [:]
-        var before: String?
-        var pagesRemaining = 400
-        repeat {
-            guard let page = try? await repository.messages(
-                in: conversation.id,
-                page: MessagePageRequest(limit: 200, before: before)
-            ) else { break }
-            guard self.conversation?.id == conversation.id else { break }
-            for message in page.messages { collected[message.id] = message }
-            before = page.nextBefore
-            pagesRemaining -= 1
-        } while before != nil && collected.count < maxMessages && pagesRemaining > 0
-        return collected.values.sorted(by: Self.chronological)
+        guard let messages = try? await repository.exportMessages(in: conversation.id) else { return [] }
+        guard self.conversation?.id == conversation.id else { return [] }
+        exportCache = (conversation.id, messages)
+        return messages
     }
 
     func loadOlder() async {

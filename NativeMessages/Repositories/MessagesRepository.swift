@@ -79,6 +79,15 @@ actor MessagesRepository {
         try await provider.statSamples(in: conversation)
     }
 
+    func exportMessages(in conversation: ConversationID) async throws -> [Message] {
+        let clock = ContinuousClock()
+        let start = clock.now
+        let messages = try await provider.exportMessages(in: conversation)
+        let duration = start.duration(to: clock.now)
+        AppLog.repository.info("Exported thread count=\(messages.count, privacy: .public) duration=\(String(describing: duration), privacy: .public)")
+        return messages
+    }
+
     func search(_ query: MessageSearchQuery) async throws -> MessageSearchPage {
         let result = try await provider.search(query)
         AppLog.repository.info("Search completed count=\(result.messages.count, privacy: .public)")

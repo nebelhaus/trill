@@ -37,6 +37,23 @@ final class FixtureProviderTests: XCTestCase {
         XCTAssertEqual(Set(loaded.map(\.text)).count, 96)
     }
 
+    func testExportMessagesGathersFullHistoryChronologically() async throws {
+        let provider = FixtureProvider()
+        let conversation = ConversationID(
+            provider: ProviderID(rawValue: "fixture"),
+            externalGUID: "fixture-direct-imessage"
+        )
+
+        let exported = try await provider.exportMessages(in: conversation)
+
+        // Same 96-message history the paging test sees, deduped and sorted
+        // oldest → newest by the default `exportMessages` implementation.
+        XCTAssertEqual(exported.count, 96)
+        XCTAssertEqual(Set(exported.map(\.id)).count, 96)
+        let dates = exported.map(\.createdAt)
+        XCTAssertEqual(dates, dates.sorted())
+    }
+
     func testSearchIsCaseInsensitiveAndDeterministic() async throws {
         let provider = FixtureProvider()
         let first = try await provider.search(MessageSearchQuery(text: "SYNTHETIC", limit: 3))
