@@ -149,6 +149,8 @@ final class InboxModel: ObservableObject {
 
     let conversationModel: ConversationModel
     let composerModel: ComposerModel
+    /// Shared, cached Open Graph fetcher for the Universal Library's Links tab.
+    let linkPreviewLoader: LinkPreviewLoader
 
     private let database: AppDatabase
     private let notifications = NotificationCoordinator()
@@ -178,6 +180,7 @@ final class InboxModel: ObservableObject {
 
     init(database: AppDatabase, snippets: SnippetStore) {
         self.database = database
+        linkPreviewLoader = LinkPreviewLoader(database: database)
         let mode = UserDefaults.standard.string(forKey: Self.providerModeKey)
             .flatMap(ProviderMode.init(rawValue:)) ?? .messages
         providerMode = mode

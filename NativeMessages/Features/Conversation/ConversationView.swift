@@ -542,6 +542,10 @@ private struct MessageRow: View {
                 }
                 .padding(.top, message.reactions.isEmpty ? 0 : 11)
 
+                if let previewURL {
+                    InlineLinkPreview(url: previewURL)
+                }
+
                 if !replyIDs.isEmpty {
                     Button {
                         if let latest = replyIDs.last { onJump(latest) }
@@ -596,6 +600,12 @@ private struct MessageRow: View {
 
     private var bubbleColor: Color {
         message.isOutgoing ? accent.opacity(0.22) : Rice.surface0
+    }
+
+    /// The first link in the message body, previewed as an OG card under the
+    /// bubble. Just the first — one card keeps a link-heavy message readable.
+    private var previewURL: URL? {
+        message.text.isEmpty ? nil : LinkExtractor.urls(in: message.text).first
     }
 
     /// A reveal flash or the current find match gets a full-strength accent

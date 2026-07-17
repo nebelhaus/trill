@@ -227,6 +227,7 @@ struct InboxView: View {
                     isCompact: isCompact,
                     onBack: { model.select(nil) }
                 )
+                .environment(\.linkPreviewLoader, model.linkPreviewLoader)
             }
         }
     }

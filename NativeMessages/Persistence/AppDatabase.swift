@@ -16,7 +16,7 @@ enum AppDatabaseError: LocalizedError, Sendable {
 }
 
 actor AppDatabase {
-    static let currentSchemaVersion = 8
+    static let currentSchemaVersion = 9
 
     private final class Connection: @unchecked Sendable {
         let raw: OpaquePointer
@@ -308,9 +308,53 @@ actor AppDatabase {
         try execute("DELETE FROM snippets WHERE id = ?", bindings: [.text(id)])
     }
 
+    /// The cached Open Graph preview for `url`, or nil when it's never been
+    /// fetched. A row with all-null fields is a real result — a page we scanned
+    /// that exposed no usable metadata — and returns a non-nil empty preview so
+    /// the loader doesn't reach for the network again.
+    func linkPreview(forURL url: String) throws -> LinkPreview? {
+        let handle = connection.raw
+        var statement: OpaquePointer?
+        let sql = "SELECT title, summary, image_url, site_name FROM link_previews WHERE url = ?"
+        guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK else { throw Self.error(handle) }
+        defer { sqlite3_finalize(statement) }
+        try Self.bind([.text(url)], to: statement, database: handle)
+        let step = sqlite3_step(statement)
+        if step == SQLITE_DONE { return nil }
+        guard step == SQLITE_ROW else { throw Self.error(handle) }
+        func column(_ index: Int32) -> String? {
+            guard let value = sqlite3_column_text(statement, index) else { return nil }
+            return String(cString: value)
+        }
+        return LinkPreview(
+            title: column(0),
+            summary: column(1),
+            imageURL: column(2).flatMap(URL.init(string:)),
+            siteName: column(3)
+        )
+    }
+
+    func saveLinkPreview(_ preview: LinkPreview, forURL url: String) throws {
+        try execute(
+            """
+            INSERT OR REPLACE INTO link_previews
+            (url, title, summary, image_url, site_name, fetched_at) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            bindings: [
+                .text(url),
+                preview.title.map(Binding.text) ?? .null,
+                preview.summary.map(Binding.text) ?? .null,
+                preview.imageURL.map { .text($0.absoluteString) } ?? .null,
+                preview.siteName.map(Binding.text) ?? .null,
+                .double(Date().timeIntervalSince1970),
+            ]
+        )
+    }
+
     private enum Binding {
         case text(String)
         case double(Double)
+        case null
     }
 
     private func execute(_ sql: String, bindings: [Binding] = []) throws {
@@ -369,6 +413,7 @@ actor AppDatabase {
             (6, "CREATE TABLE folder_members (folder_id TEXT NOT NULL, conversation_key TEXT NOT NULL, added_at REAL NOT NULL, PRIMARY KEY (folder_id, conversation_key))"),
             (7, "CREATE TABLE snippets (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, updated_at REAL NOT NULL)"),
             (8, "CREATE TABLE vip_conversations (conversation_key TEXT PRIMARY KEY NOT NULL, added_at REAL NOT NULL)"),
+            (9, "CREATE TABLE link_previews (url TEXT PRIMARY KEY NOT NULL, title TEXT, summary TEXT, image_url TEXT, site_name TEXT, fetched_at REAL NOT NULL)"),
         ]
         for (nextVersion, sql) in migrations where nextVersion > version {
             try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION")
@@ -413,6 +458,8 @@ actor AppDatabase {
                 status = value.withCString { sqlite3_bind_text(statement, index, $0, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self)) }
             case let .double(value):
                 status = sqlite3_bind_double(statement, index, value)
+            case .null:
+                status = sqlite3_bind_null(statement, index)
             }
             guard status == SQLITE_OK else { throw error(database) }
         }

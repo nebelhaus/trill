@@ -82,7 +82,7 @@ final class AppDatabaseTests: XCTestCase {
 
         let version = try await database.schemaVersion()
         XCTAssertEqual(version, AppDatabase.currentSchemaVersion)
-        XCTAssertEqual(AppDatabase.currentSchemaVersion, 8)
+        XCTAssertEqual(AppDatabase.currentSchemaVersion, 9)
 
         let provider = ProviderID(rawValue: "fixture")
         let alice = ConversationID(provider: provider, externalGUID: "alice")
@@ -124,5 +124,34 @@ final class AppDatabaseTests: XCTestCase {
         members = try await database.folderMembers()
         XCTAssertNil(members[work.id])
         XCTAssertEqual(members[family.id], [alice])
+    }
+
+    func testLinkPreviewCacheRoundTrips() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("NativeMessagesTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try AppDatabase(url: root.appendingPathComponent("app.sqlite3"))
+
+        // Unknown URL → nil, signalling "never fetched" so the loader hits the network.
+        let missing = try await database.linkPreview(forURL: "https://none.example")
+        XCTAssertNil(missing)
+
+        // A full preview survives the round-trip.
+        let rich = LinkPreview(
+            title: "Title",
+            summary: "Summary",
+            imageURL: URL(string: "https://cdn.example/a.jpg"),
+            siteName: "Example"
+        )
+        try await database.saveLinkPreview(rich, forURL: "https://example.com/a")
+        let loaded = try await database.linkPreview(forURL: "https://example.com/a")
+        XCTAssertEqual(loaded, rich)
+
+        // An empty preview persists as a real (non-nil) row so we don't refetch a
+        // page that has no metadata — but it reads back as empty.
+        try await database.saveLinkPreview(.empty, forURL: "https://bare.example")
+        let empty = try await database.linkPreview(forURL: "https://bare.example")
+        XCTAssertNotNil(empty)
+        XCTAssertEqual(empty?.isEmpty, true)
     }
 }
