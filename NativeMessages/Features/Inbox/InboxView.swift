@@ -56,6 +56,12 @@ struct InboxView: View {
                 }
             }
             .animation(.easeOut(duration: 0.12), value: model.isLibraryPresented)
+            .overlay {
+                if model.isShortcutsPresented {
+                    ShortcutCheatSheetView(model: model)
+                }
+            }
+            .animation(.easeOut(duration: 0.12), value: model.isShortcutsPresented)
             .sheet(isPresented: $model.isComposePresented) {
                 ComposeSheet(model: model)
             }

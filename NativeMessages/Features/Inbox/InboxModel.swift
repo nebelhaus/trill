@@ -105,6 +105,8 @@ final class InboxModel: ObservableObject {
     @Published var isComposePresented = false
     /// The Universal Library (⌘⇧L) overlay — all-conversations media browser.
     @Published var isLibraryPresented = false
+    /// The keyboard cheat-sheet (⌘/) overlay — every keybinding at a glance.
+    @Published var isShortcutsPresented = false
     /// Drives the create/edit folder sheet. Set from the sidebar's folder rows,
     /// a conversation's Folders menu, or the command palette. `nil` = closed.
     @Published var folderEditor: FolderEditorMode?

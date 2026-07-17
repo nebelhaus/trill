@@ -32,6 +32,7 @@ struct NativeMessagesApp: App {
                 showPalette: { inboxModel.isPalettePresented = true },
                 showSearch: { inboxModel.isSearchPresented = true },
                 showLibrary: { inboxModel.isLibraryPresented = true },
+                showShortcuts: { inboxModel.isShortcutsPresented.toggle() },
                 findInConversation: { inboxModel.conversationModel.beginFind() },
                 jumpToDate: { inboxModel.conversationModel.beginJumpToDate() },
                 findNext: { inboxModel.conversationModel.findNext() },

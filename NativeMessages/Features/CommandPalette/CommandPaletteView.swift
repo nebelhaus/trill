@@ -218,6 +218,9 @@ struct CommandPaletteView: View {
             PaletteAction(id: "zoomReset", title: "Actual Size", systemImage: "1.magnifyingglass", shortcut: "⌘0") {
                 uiScale = 1.0
             },
+            PaletteAction(id: "shortcuts", title: "Keyboard Shortcuts", systemImage: "keyboard", shortcut: "⌘/") {
+                model.isShortcutsPresented = true
+            },
             PaletteAction(id: "settings", title: "Settings…", systemImage: "gearshape", shortcut: "⌘,") {
                 openSettings()
             },

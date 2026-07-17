@@ -5,6 +5,7 @@ struct AppCommands: Commands {
     let showPalette: () -> Void
     let showSearch: () -> Void
     let showLibrary: () -> Void
+    let showShortcuts: () -> Void
     let findInConversation: () -> Void
     let jumpToDate: () -> Void
     let findNext: () -> Void
@@ -45,6 +46,8 @@ struct AppCommands: Commands {
                 .keyboardShortcut("g", modifiers: [.command, .shift])
             Button("Reload", action: reload)
                 .keyboardShortcut("r", modifiers: .command)
+            Button("Keyboard Shortcuts", action: showShortcuts)
+                .keyboardShortcut("/", modifiers: .command)
             Divider()
             Button("Add/Remove VIP", action: toggleVIP)
                 .keyboardShortcut("v", modifiers: [.command, .control])
