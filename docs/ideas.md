@@ -64,10 +64,10 @@ Everything below respects these.
 | Idea | What | Effort | Feas. | Notes |
 |------|------|--------|-------|-------|
 | **Command palette (⌘K)** | Fuzzy jump to any conversation, action, or setting; the keyboard spine of the app | M | ✅ 🚢 | Shipped (`0474b5c`). ⌘K opens it; full-text message search moved to ⇧⌘F. Subsumes the Quick switcher. |
-| **Snooze a thread** | Hide a conversation until a chosen time, then resurface it | M | ✅ | Local scheduler + overlay flag. PRD-aligned. |
+| **Snooze a thread** | Hide a conversation until a chosen time, then resurface it | M | ✅ 🚢 | Shipped. `snoozed_conversations` overlay table (migration 10) maps a thread → wake time; `snoozedUntil` hides it from every normal scope while `wake > now`. A pure, tested `SnoozeOption` (1h/3h/this-evening/tomorrow/next-week, all guaranteed future) computes the wake date; an InboxModel timer (`rescheduleSnoozeWake`) fires exactly when the next thread is due and prunes it, so resurfacing is event-driven, not polled. Snooze/Unsnooze via the row context menu. |
 | **Folders / tags** | User-defined labels and folders for conversations, local-only | M–L | ✅ 🚢 | Shipped. `folders` + `folder_members` overlay tables (many-to-many, so folders double as tags); each folder carries a name + Rice accent color. A sidebar scope list ("All Messages" + folders + New Folder) narrows `visibleConversations` *before* the unread/needs-reply filter, so the two axes compose. Assign via a conversation's Folders context submenu; manage via folder-row context menu + a reusable `FolderEditorView`. Also reachable from ⌘K. **⚠️ Merge note:** this uses `AppDatabase` migrations 5 & 6 — the in-flight *Canned responses / snippets* branch also claims migration 5. Both are correct against `master` (1–4) in isolation, but whichever merges **second** must renumber its migrations (in both the `migrations` array and `currentSchemaVersion`) so they don't collide. |
-| **Archive** | Remove a thread from the main list without losing it | S | ✅ | Overlay flag; filter in `visibleConversations`. |
-| **Mute a conversation** | Suppress that thread's notifications locally | S | ✅ | Overlay flag checked in `maybeNotify`. |
+| **Archive** | Remove a thread from the main list without losing it | S | ✅ 🚢 | Shipped. `archived_conversations` overlay set (migration 8); archived threads drop out of every normal scope in `visibleConversations` and are reachable via a sidebar **Archived** scope chip (shown only once non-empty, mutually exclusive with folder scope). Archive/Unarchive via the row context menu or ⌘K. |
+| **Mute a conversation** | Suppress that thread's notifications locally | S | ✅ 🚢 | Shipped. `muted_conversations` overlay set (migration 9), checked in `maybeNotify`. Muted threads stay in the list with a `bell.slash` glyph; toggle via the row context menu or ⌘K. |
 | **VIP contacts** | Always-notify + always-pin a chosen set, in their own section | S–M | ✅ | Overlay set; complements existing pins. |
 | **Filter by service** | Toggle iMessage / SMS / RCS visibility | S | ✅ | Service is already on every conversation. |
 
@@ -183,3 +183,17 @@ Coordination note: 3 and 4 both add tables to `AppDatabase`; give their
 migrations distinct, ordered version numbers so they merge cleanly. Second
 wave once these land: Snooze / Archive / VIP (sidebar lane) and Link inbox /
 Attachment search (media lane).
+
+## Triage overlays landed (2026-07-16)
+
+**Snooze + Archive + Mute** shipped together as one sidebar-lane branch — they
+share the per-conversation overlay + `visibleConversations` + `maybeNotify`
+machinery, so building them apart would have meant three-way conflicts on the
+same functions. Three new `AppDatabase` tables, **migrations 8 (archive), 9
+(mute), 10 (snooze)**, bumping `currentSchemaVersion` to 10.
+
+**⚠️ Merge note:** these claim migrations 8–10 against a `master` at 7. Any other
+in-flight branch that also adds an `AppDatabase` migration will collide — whoever
+merges **second** must renumber (in both the `migrations` array *and*
+`currentSchemaVersion`, plus the `AppDatabaseTests` version assertion). Same rule
+the Folders ↔ Snippets pair followed. Remaining sidebar-lane idea: **VIP contacts**.

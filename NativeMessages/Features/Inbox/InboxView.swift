@@ -304,8 +304,20 @@ private struct SidebarView: View {
                 title: "All Messages",
                 colorName: nil,
                 count: model.conversations.count,
-                isSelected: model.selectedFolderID == nil
+                isSelected: model.selectedFolderID == nil && !model.showingArchived
             ) { model.selectFolder(nil) }
+
+            // Only surfaced once something's been archived — no empty scope to
+            // wander into otherwise.
+            if !model.archivedIDs.isEmpty {
+                FolderChipRow(
+                    title: "Archived",
+                    colorName: nil,
+                    systemImage: "archivebox",
+                    count: model.archivedIDs.count,
+                    isSelected: model.showingArchived
+                ) { model.showArchived(true) }
+            }
 
             ForEach(model.folders) { folder in
                 FolderChipRow(
@@ -512,7 +524,8 @@ private struct SidebarView: View {
                 message: "This provider returned no conversations."
             )
         case .loaded:
-            if model.visibleConversations.isEmpty, model.filter != .all || model.selectedFolderID != nil {
+            if model.visibleConversations.isEmpty,
+               model.filter != .all || model.selectedFolderID != nil || model.showingArchived {
                 emptyScopeState
             } else {
                 conversationList
@@ -552,6 +565,7 @@ private struct SidebarView: View {
     }
 
     private var emptyScopeMessage: String {
+        if model.showingArchived { return "No archived conversations" }
         switch model.filter {
         case .needsReply: return "Nothing awaiting a reply"
         case .unread: return "No unread conversations"
@@ -566,6 +580,7 @@ private struct SidebarView: View {
                     ConversationRowButton(
                         conversation: conversation,
                         isPinned: model.pinnedIDs.contains(conversation.id),
+                        isMuted: model.isMuted(conversation.id),
                         isSelected: model.selectedConversationID == conversation.id,
                         showsUnread: model.hasVisibleUnread(conversation),
                         density: density
@@ -595,6 +610,14 @@ private struct SidebarView: View {
                             if !model.folders.isEmpty { Divider() }
                             Button("New Folder…") { model.folderEditor = .create(seed: conversation.id) }
                         }
+                        Divider()
+                        snoozeMenu(for: conversation.id)
+                        Button(model.isMuted(conversation.id) ? "Unmute" : "Mute") {
+                            model.toggleMuted(conversation.id)
+                        }
+                        Button(model.isArchived(conversation.id) ? "Unarchive" : "Archive") {
+                            model.toggleArchived(conversation.id)
+                        }
                     }
                 }
             }
@@ -602,6 +625,24 @@ private struct SidebarView: View {
             .padding(.vertical, 4)
         }
         .accessibilityLabel("Conversations")
+    }
+
+    /// Snooze presets for a thread, plus an Unsnooze row when one is active.
+    @ViewBuilder
+    private func snoozeMenu(for id: ConversationID) -> some View {
+        Menu("Snooze") {
+            ForEach(SnoozeOption.allCases) { option in
+                Button {
+                    model.snooze(id, option: option)
+                } label: {
+                    Label(option.title, systemImage: option.systemImage)
+                }
+            }
+            if model.isSnoozed(id) {
+                Divider()
+                Button("Unsnooze") { model.unsnooze(id) }
+            }
+        }
     }
 
     private var footer: some View {
@@ -659,6 +700,7 @@ private struct SidebarView: View {
 private struct ConversationRowButton: View {
     let conversation: Conversation
     let isPinned: Bool
+    let isMuted: Bool
     let isSelected: Bool
     let showsUnread: Bool
     let density: DisplayDensity
@@ -679,6 +721,12 @@ private struct ConversationRowButton: View {
                                 .riceFont(8)
                                 .foregroundStyle(Rice.overlay0)
                                 .accessibilityLabel("Pinned")
+                        }
+                        if isMuted {
+                            Image(systemName: "bell.slash.fill")
+                                .riceFont(8)
+                                .foregroundStyle(Rice.overlay0)
+                                .accessibilityLabel("Muted")
                         }
                         Text(conversation.displayName)
                             .riceFont(13, hasUnread ? .semibold : .medium)
@@ -741,6 +789,9 @@ private struct ConversationRowButton: View {
 private struct FolderChipRow: View {
     let title: String
     let colorName: String?
+    /// Glyph shown when `colorName == nil` (the non-folder scope rows). Folders
+    /// use their color dot instead.
+    var systemImage: String = "tray.full"
     let count: Int
     let isSelected: Bool
     let action: () -> Void
@@ -779,7 +830,7 @@ private struct FolderChipRow: View {
                 .fill(Rice.accent(named: colorName))
                 .frame(width: 8, height: 8)
         } else {
-            Image(systemName: "tray.full")
+            Image(systemName: systemImage)
                 .riceFont(9)
                 .foregroundStyle(Rice.subtext0)
                 .frame(width: 8)

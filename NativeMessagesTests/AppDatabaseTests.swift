@@ -54,7 +54,7 @@ final class AppDatabaseTests: XCTestCase {
 
         let version = try await database.schemaVersion()
         XCTAssertEqual(version, AppDatabase.currentSchemaVersion)
-        XCTAssertEqual(AppDatabase.currentSchemaVersion, 7)
+        XCTAssertEqual(AppDatabase.currentSchemaVersion, 10)
 
         let provider = ProviderID(rawValue: "fixture")
         let alice = ConversationID(provider: provider, externalGUID: "alice")
@@ -96,5 +96,43 @@ final class AppDatabaseTests: XCTestCase {
         members = try await database.folderMembers()
         XCTAssertNil(members[work.id])
         XCTAssertEqual(members[family.id], [alice])
+    }
+
+    func testArchiveMuteAndSnoozeRoundTrip() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("NativeMessagesTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try AppDatabase(url: root.appendingPathComponent("app.sqlite3"))
+
+        let provider = ProviderID(rawValue: "fixture")
+        let alice = ConversationID(provider: provider, externalGUID: "alice")
+        let bob = ConversationID(provider: provider, externalGUID: "bob")
+
+        // Archive is a membership set — presence is the flag, removal clears it.
+        try await database.setArchived(true, conversationID: alice)
+        try await database.setArchived(true, conversationID: bob)
+        XCTAssertEqual(try await database.archivedConversationIDs(), [alice, bob])
+        try await database.setArchived(false, conversationID: bob)
+        XCTAssertEqual(try await database.archivedConversationIDs(), [alice])
+
+        // Mute is an independent set from archive.
+        try await database.setMuted(true, conversationID: bob)
+        XCTAssertEqual(try await database.mutedConversationIDs(), [bob])
+        XCTAssertEqual(try await database.archivedConversationIDs(), [alice])
+        try await database.setMuted(false, conversationID: bob)
+        XCTAssertTrue(try await database.mutedConversationIDs().isEmpty)
+
+        // Snooze stores a wake time; re-snoozing replaces it; nil clears it.
+        let wake = Date(timeIntervalSince1970: 1_800_000_000)
+        try await database.setSnooze(until: wake, conversationID: alice)
+        var snoozed = try await database.snoozedConversations()
+        XCTAssertEqual(snoozed[alice]?.timeIntervalSince1970 ?? 0, wake.timeIntervalSince1970, accuracy: 0.001)
+        let laterWake = wake.addingTimeInterval(3600)
+        try await database.setSnooze(until: laterWake, conversationID: alice)
+        snoozed = try await database.snoozedConversations()
+        XCTAssertEqual(snoozed.count, 1)
+        XCTAssertEqual(snoozed[alice]?.timeIntervalSince1970 ?? 0, laterWake.timeIntervalSince1970, accuracy: 0.001)
+        try await database.setSnooze(until: nil, conversationID: alice)
+        XCTAssertTrue(try await database.snoozedConversations().isEmpty)
     }
 }

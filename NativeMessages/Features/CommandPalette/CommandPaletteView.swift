@@ -132,8 +132,8 @@ struct CommandPaletteView: View {
             },
         ]
 
-        if model.selectedConversationID != nil {
-            let pinned = model.selectedConversationID.map { model.pinnedIDs.contains($0) } ?? false
+        if let selected = model.selectedConversationID {
+            let pinned = model.pinnedIDs.contains(selected)
             catalog.append(
                 PaletteAction(
                     id: "pin",
@@ -142,6 +142,28 @@ struct CommandPaletteView: View {
                     shortcut: "⇧⌘P"
                 ) {
                     model.toggleSelectedPin()
+                }
+            )
+            let muted = model.isMuted(selected)
+            catalog.append(
+                PaletteAction(
+                    id: "mute",
+                    title: muted ? "Unmute Conversation" : "Mute Conversation",
+                    systemImage: muted ? "bell" : "bell.slash",
+                    shortcut: nil
+                ) {
+                    model.toggleMuted(selected)
+                }
+            )
+            let archived = model.isArchived(selected)
+            catalog.append(
+                PaletteAction(
+                    id: "archive",
+                    title: archived ? "Unarchive Conversation" : "Archive Conversation",
+                    systemImage: archived ? "tray.and.arrow.up" : "archivebox",
+                    shortcut: nil
+                ) {
+                    model.toggleArchived(selected)
                 }
             )
         }

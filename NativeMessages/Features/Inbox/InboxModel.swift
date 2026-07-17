@@ -59,6 +59,19 @@ final class InboxModel: ObservableObject {
             UserDefaults.standard.set(selectedFolderID, forKey: InboxModel.selectedFolderKey)
         }
     }
+    /// Conversations the user has archived — hidden from every normal scope and
+    /// reachable only through the sidebar's Archived scope. Overlay-only.
+    @Published private(set) var archivedIDs: Set<ConversationID> = []
+    /// Conversations whose notifications are suppressed locally. Checked in
+    /// `maybeNotify`; they otherwise stay in the list (with a muted glyph).
+    @Published private(set) var mutedIDs: Set<ConversationID> = []
+    /// Snoozed threads → the time they resurface. Currently-snoozed conversations
+    /// (`wake > now`) are hidden from the list; a scheduler prunes each entry when
+    /// its wake time arrives, which republishes this map and brings the thread back.
+    @Published private(set) var snoozedUntil: [ConversationID: Date] = [:]
+    /// When set, the sidebar shows the Archived scope instead of the normal list.
+    /// Mutually exclusive with a folder scope (picking either clears the other).
+    @Published var showingArchived = false
     /// chat.db is read-only, so opening a thread can't mark it read upstream.
     /// This overlay hides a thread's badge locally once viewed, until a
     /// message newer than the viewing time arrives (or Messages.app syncs).
@@ -117,6 +130,9 @@ final class InboxModel: ObservableObject {
     private var repository: MessagesRepository
     private var loadTask: Task<Void, Never>?
     private var eventTask: Task<Void, Never>?
+    /// Fires when the next-to-wake snoozed thread is due, so it resurfaces
+    /// without a poll. Rescheduled whenever the snooze set changes.
+    private var snoozeWakeTask: Task<Void, Never>?
     private static let providerModeKey = "providerMode"
     private static let filterKey = "inboxFilter"
     private static let selectedFolderKey = "selectedFolderID"
@@ -150,6 +166,7 @@ final class InboxModel: ObservableObject {
     deinit {
         loadTask?.cancel()
         eventTask?.cancel()
+        snoozeWakeTask?.cancel()
     }
 
     private static func makeProvider(_ mode: ProviderMode) -> any MessagesProvider {
@@ -188,12 +205,22 @@ final class InboxModel: ObservableObject {
                 async let marks = database.readMarks()
                 async let loadedFolders = database.folders()
                 async let loadedMembers = database.folderMembers()
+                async let loadedArchived = database.archivedConversationIDs()
+                async let loadedMuted = database.mutedConversationIDs()
+                async let loadedSnoozed = database.snoozedConversations()
                 let (loadedPage, loadedPins, loadedMarks, folderList, memberMap) =
                     try await (page, pins, marks, loadedFolders, loadedMembers)
+                let (archived, muted, snoozed) = try await (loadedArchived, loadedMuted, loadedSnoozed)
                 pinnedIDs = loadedPins
                 clearedUnreadAt = loadedMarks
                 folders = folderList
                 folderMembers = memberMap
+                archivedIDs = archived
+                mutedIDs = muted
+                snoozedUntil = snoozed
+                // Prune snoozes that lapsed while away, then arm the wake timer.
+                pruneAndScheduleSnoozes()
+                if archived.isEmpty { showingArchived = false }
                 // Drop a stale folder scope whose folder was deleted while away.
                 if let selected = selectedFolderID, !folderList.contains(where: { $0.id == selected }) {
                     selectedFolderID = nil
@@ -233,7 +260,19 @@ final class InboxModel: ObservableObject {
     /// Sidebar list after the unread-only filter. The selected conversation
     /// stays visible so toggling the filter never yanks the open thread.
     var visibleConversations: [Conversation] {
-        // Folder scope narrows the pool first; the filter axis then applies to
+        // The Archived scope is its own world: it shows exactly the archived
+        // threads (plus the open one) and ignores the folder/filter axes.
+        if showingArchived {
+            return conversations.filter { archivedIDs.contains($0.id) || $0.id == selectedConversationID }
+        }
+        // Archived and currently-snoozed threads drop out of every normal scope.
+        // The open thread always survives so acting on it never yanks it away.
+        let now = Date.now
+        let active = conversations.filter { conversation in
+            conversation.id == selectedConversationID
+                || (!archivedIDs.contains(conversation.id) && !isSnoozed(conversation.id, now: now))
+        }
+        // Folder scope narrows the pool next; the filter axis then applies to
         // that slice, so the two compose (e.g. "unread within Work"). The open
         // thread always stays visible so switching scopes never yanks it.
         let scoped: [Conversation]
@@ -241,9 +280,9 @@ final class InboxModel: ObservableObject {
             // Scope to members even when the folder is empty — an empty folder
             // shows nothing, not everything. The open thread stays visible.
             let members = folderMembers[folderID] ?? []
-            scoped = conversations.filter { members.contains($0.id) || $0.id == selectedConversationID }
+            scoped = active.filter { members.contains($0.id) || $0.id == selectedConversationID }
         } else {
-            scoped = conversations
+            scoped = active
         }
         switch filter {
         case .all:
@@ -253,7 +292,6 @@ final class InboxModel: ObservableObject {
                 hasVisibleUnread($0) || $0.id == selectedConversationID
             }
         case .needsReply:
-            let now = Date.now
             return scoped.filter {
                 NeedsReply.needsReply($0, now: now) || $0.id == selectedConversationID
             }
@@ -377,6 +415,8 @@ final class InboxModel: ObservableObject {
 
     private func maybeNotify(_ message: Message) {
         guard providerMode == .messages, !message.isOutgoing else { return }
+        // Muted threads never alert, even when unfocused.
+        guard !mutedIDs.contains(message.conversationID) else { return }
         let isViewing = message.conversationID == selectedConversationID && NSApp.isActive
         guard !isViewing else { return }
         let name = conversations.first(where: { $0.id == message.conversationID })?.displayName
@@ -503,6 +543,15 @@ final class InboxModel: ObservableObject {
 
     func selectFolder(_ id: String?) {
         selectedFolderID = id
+        // Folder scope and the Archived scope are mutually exclusive views.
+        showingArchived = false
+    }
+
+    /// Switch the sidebar into (or out of) the Archived scope. Entering it drops
+    /// any folder scope so the two never overlap.
+    func showArchived(_ show: Bool) {
+        showingArchived = show
+        if show { selectedFolderID = nil }
     }
 
     /// Creates a folder, optionally filing `seedConversation` into it (from the
@@ -571,6 +620,95 @@ final class InboxModel: ObservableObject {
             } catch {
                 AppLog.database.error("Folder membership failed error=\(String(describing: type(of: error)), privacy: .public)")
             }
+        }
+    }
+
+    // MARK: - Archive / Mute / Snooze
+
+    func isArchived(_ id: ConversationID) -> Bool { archivedIDs.contains(id) }
+
+    func isMuted(_ id: ConversationID) -> Bool { mutedIDs.contains(id) }
+
+    /// A thread counts as snoozed only while its wake time is still in the future.
+    func isSnoozed(_ id: ConversationID, now: Date = .now) -> Bool {
+        guard let wake = snoozedUntil[id] else { return false }
+        return wake > now
+    }
+
+    func setArchived(_ id: ConversationID, archived: Bool) {
+        if archived { archivedIDs.insert(id) } else { archivedIDs.remove(id) }
+        // Leaving the Archived scope empty would strand the user on a blank list.
+        if archivedIDs.isEmpty { showingArchived = false }
+        Task {
+            do {
+                try await database.setArchived(archived, conversationID: id)
+            } catch {
+                AppLog.database.error("Archive persistence failed error=\(String(describing: type(of: error)), privacy: .public)")
+            }
+        }
+    }
+
+    func toggleArchived(_ id: ConversationID) { setArchived(id, archived: !archivedIDs.contains(id)) }
+
+    func setMuted(_ id: ConversationID, muted: Bool) {
+        if muted { mutedIDs.insert(id) } else { mutedIDs.remove(id) }
+        Task {
+            do {
+                try await database.setMuted(muted, conversationID: id)
+            } catch {
+                AppLog.database.error("Mute persistence failed error=\(String(describing: type(of: error)), privacy: .public)")
+            }
+        }
+    }
+
+    func toggleMuted(_ id: ConversationID) { setMuted(id, muted: !mutedIDs.contains(id)) }
+
+    /// Snooze a thread until `option`'s wake time, hiding it until then.
+    func snooze(_ id: ConversationID, option: SnoozeOption) {
+        let wake = option.wakeDate(from: .now)
+        snoozedUntil[id] = wake
+        persistSnooze(id, wake: wake)
+        rescheduleSnoozeWake()
+    }
+
+    /// Cancel a snooze, returning the thread to the list immediately.
+    func unsnooze(_ id: ConversationID) {
+        snoozedUntil.removeValue(forKey: id)
+        persistSnooze(id, wake: nil)
+        rescheduleSnoozeWake()
+    }
+
+    private func persistSnooze(_ id: ConversationID, wake: Date?) {
+        Task {
+            do {
+                try await database.setSnooze(until: wake, conversationID: id)
+            } catch {
+                AppLog.database.error("Snooze persistence failed error=\(String(describing: type(of: error)), privacy: .public)")
+            }
+        }
+    }
+
+    /// Drop any snoozes whose wake time has already arrived (persisting the
+    /// removals) and arm a timer for the next one due. Called on load and after
+    /// every snooze change so resurfacing is exact, not polled.
+    private func pruneAndScheduleSnoozes() {
+        let now = Date.now
+        let expired = snoozedUntil.filter { $0.value <= now }
+        for id in expired.keys {
+            snoozedUntil.removeValue(forKey: id)
+            persistSnooze(id, wake: nil)
+        }
+        rescheduleSnoozeWake()
+    }
+
+    private func rescheduleSnoozeWake() {
+        snoozeWakeTask?.cancel()
+        guard let next = snoozedUntil.values.min() else { return }
+        let interval = max(next.timeIntervalSinceNow, 0)
+        snoozeWakeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(interval))
+            guard let self, !Task.isCancelled else { return }
+            self.pruneAndScheduleSnoozes()
         }
     }
 
