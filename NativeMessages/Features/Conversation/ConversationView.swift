@@ -11,6 +11,8 @@ struct ConversationView: View {
     var isSidebarCollapsed = false
     var isPinned = false
     var onTogglePin: () -> Void = {}
+    var isVIP = false
+    var onToggleVIP: () -> Void = {}
     /// Single-column layout: the header grows a leading back button that pops
     /// to the conversation list, mobile-nav-bar style.
     var isCompact = false
@@ -150,6 +152,11 @@ struct ConversationView: View {
 
     private func headerActions(showsChip: Bool) -> some View {
         HStack(spacing: 10) {
+            Button(action: onToggleVIP) {
+                Image(systemName: isVIP ? "star.fill" : "star")
+            }
+            .buttonStyle(RiceIconButtonStyle(isActive: isVIP))
+            .help(isVIP ? "Remove from VIP (⌃⌘V)" : "Add to VIP (⌃⌘V)")
             Button(action: onTogglePin) {
                 Image(systemName: isPinned ? "pin.fill" : "pin")
             }
@@ -195,6 +202,11 @@ struct ConversationView: View {
 
                 Spacer(minLength: 6)
 
+                Button(action: onToggleVIP) {
+                    Image(systemName: isVIP ? "star.fill" : "star")
+                }
+                .buttonStyle(RiceIconButtonStyle(isActive: isVIP))
+                .help(isVIP ? "Remove from VIP (⌃⌘V)" : "Add to VIP (⌃⌘V)")
                 Button(action: onTogglePin) {
                     Image(systemName: isPinned ? "pin.fill" : "pin")
                 }

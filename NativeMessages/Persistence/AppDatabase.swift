@@ -16,7 +16,7 @@ enum AppDatabaseError: LocalizedError, Sendable {
 }
 
 actor AppDatabase {
-    static let currentSchemaVersion = 7
+    static let currentSchemaVersion = 8
 
     private final class Connection: @unchecked Sendable {
         let raw: OpaquePointer
@@ -84,6 +84,33 @@ actor AppDatabase {
 
     func pinnedConversationIDs() throws -> Set<ConversationID> {
         let keys = try textRows("SELECT conversation_key FROM pinned_conversations ORDER BY pinned_at DESC")
+        var result = Set<ConversationID>()
+        for key in keys {
+            guard let id = ConversationID(persistenceKey: key) else { throw AppDatabaseError.invalidStoredIdentifier }
+            result.insert(id)
+        }
+        return result
+    }
+
+    /// VIP membership is a flat overlay set — no metadata beyond "when added" —
+    /// so it mirrors the pinned-conversations shape rather than the folders'
+    /// many-to-many tables. Always-pin + always-notify are derived from it.
+    func setVIP(_ vip: Bool, conversationID: ConversationID) throws {
+        if vip {
+            try execute(
+                "INSERT OR REPLACE INTO vip_conversations (conversation_key, added_at) VALUES (?, ?)",
+                bindings: [.text(conversationID.persistenceKey), .double(Date().timeIntervalSince1970)]
+            )
+        } else {
+            try execute(
+                "DELETE FROM vip_conversations WHERE conversation_key = ?",
+                bindings: [.text(conversationID.persistenceKey)]
+            )
+        }
+    }
+
+    func vipConversationIDs() throws -> Set<ConversationID> {
+        let keys = try textRows("SELECT conversation_key FROM vip_conversations ORDER BY added_at DESC")
         var result = Set<ConversationID>()
         for key in keys {
             guard let id = ConversationID(persistenceKey: key) else { throw AppDatabaseError.invalidStoredIdentifier }
@@ -341,6 +368,7 @@ actor AppDatabase {
             (5, "CREATE TABLE folders (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, color TEXT NOT NULL, sort_order REAL NOT NULL, created_at REAL NOT NULL)"),
             (6, "CREATE TABLE folder_members (folder_id TEXT NOT NULL, conversation_key TEXT NOT NULL, added_at REAL NOT NULL, PRIMARY KEY (folder_id, conversation_key))"),
             (7, "CREATE TABLE snippets (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, updated_at REAL NOT NULL)"),
+            (8, "CREATE TABLE vip_conversations (conversation_key TEXT PRIMARY KEY NOT NULL, added_at REAL NOT NULL)"),
         ]
         for (nextVersion, sql) in migrations where nextVersion > version {
             try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION")

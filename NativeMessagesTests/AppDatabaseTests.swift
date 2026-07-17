@@ -46,6 +46,34 @@ final class AppDatabaseTests: XCTestCase {
         XCTAssertEqual(updatedMarks[conversation]?.timeIntervalSince1970 ?? 0, laterMark.timeIntervalSince1970, accuracy: 0.001)
     }
 
+    func testVIPMembership() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("NativeMessagesTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try AppDatabase(url: root.appendingPathComponent("app.sqlite3"))
+
+        let provider = ProviderID(rawValue: "fixture")
+        let alice = ConversationID(provider: provider, externalGUID: "alice")
+        let bob = ConversationID(provider: provider, externalGUID: "bob")
+
+        var vips = try await database.vipConversationIDs()
+        XCTAssertTrue(vips.isEmpty)
+
+        try await database.setVIP(true, conversationID: alice)
+        try await database.setVIP(true, conversationID: bob)
+        vips = try await database.vipConversationIDs()
+        XCTAssertEqual(vips, [alice, bob])
+
+        // Setting VIP twice is idempotent (INSERT OR REPLACE).
+        try await database.setVIP(true, conversationID: alice)
+        vips = try await database.vipConversationIDs()
+        XCTAssertEqual(vips, [alice, bob])
+
+        try await database.setVIP(false, conversationID: alice)
+        vips = try await database.vipConversationIDs()
+        XCTAssertEqual(vips, [bob])
+    }
+
     func testFoldersAndMembership() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("NativeMessagesTests-\(UUID().uuidString)", isDirectory: true)
@@ -54,7 +82,7 @@ final class AppDatabaseTests: XCTestCase {
 
         let version = try await database.schemaVersion()
         XCTAssertEqual(version, AppDatabase.currentSchemaVersion)
-        XCTAssertEqual(AppDatabase.currentSchemaVersion, 7)
+        XCTAssertEqual(AppDatabase.currentSchemaVersion, 8)
 
         let provider = ProviderID(rawValue: "fixture")
         let alice = ConversationID(provider: provider, externalGUID: "alice")

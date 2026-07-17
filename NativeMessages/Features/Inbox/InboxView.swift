@@ -222,6 +222,8 @@ struct InboxView: View {
                     isSidebarCollapsed: isCompact || !model.isSidebarVisible,
                     isPinned: model.selectedConversationID.map { model.pinnedIDs.contains($0) } ?? false,
                     onTogglePin: model.toggleSelectedPin,
+                    isVIP: model.selectedConversationID.map { model.isVIP($0) } ?? false,
+                    onToggleVIP: model.toggleSelectedVIP,
                     isCompact: isCompact,
                     onBack: { model.select(nil) }
                 )
@@ -562,46 +564,82 @@ private struct SidebarView: View {
     private var conversationList: some View {
         ScrollView {
             LazyVStack(spacing: 1) {
-                ForEach(model.visibleConversations) { conversation in
-                    ConversationRowButton(
-                        conversation: conversation,
-                        isPinned: model.pinnedIDs.contains(conversation.id),
-                        isSelected: model.selectedConversationID == conversation.id,
-                        showsUnread: model.hasVisibleUnread(conversation),
-                        density: density
-                    ) {
-                        model.select(conversation.id)
+                // VIPs get their own titled section above the rest, but only in
+                // the unscoped "All Messages" view — inside a folder the list is
+                // already a single scoped slice (see `model.showsVIPSection`).
+                if model.showsVIPSection {
+                    listSectionHeader("VIP", systemImage: "star.fill")
+                    ForEach(model.visibleVIPConversations) { conversation in
+                        conversationRow(conversation)
                     }
-                    .contextMenu {
-                        Button(model.pinnedIDs.contains(conversation.id) ? "Unpin" : "Pin") {
-                            model.togglePin(conversation.id)
-                        }
-                        Menu("Folders") {
-                            let containing = model.folders(containing: conversation.id)
-                            ForEach(model.folders) { folder in
-                                Button {
-                                    model.toggleMembership(conversation.id, inFolder: folder.id)
-                                } label: {
-                                    // SwiftUI renders the checkmark only when the
-                                    // Label's image is a checkmark; plain Text for
-                                    // non-members keeps the rows aligned.
-                                    if containing.contains(folder.id) {
-                                        Label(folder.name, systemImage: "checkmark")
-                                    } else {
-                                        Text(folder.name)
-                                    }
-                                }
-                            }
-                            if !model.folders.isEmpty { Divider() }
-                            Button("New Folder…") { model.folderEditor = .create(seed: conversation.id) }
-                        }
+                    // Skip the "All" divider when every visible thread is a VIP.
+                    if !model.visibleNonVIPConversations.isEmpty {
+                        listSectionHeader("All", systemImage: "tray.full")
                     }
+                }
+                ForEach(model.visibleNonVIPConversations) { conversation in
+                    conversationRow(conversation)
                 }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
         }
         .accessibilityLabel("Conversations")
+    }
+
+    /// A subtle small-caps divider between the VIP and All groups.
+    private func listSectionHeader(_ title: String, systemImage: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: systemImage)
+                .riceFont(8)
+            Text(title)
+                .riceSectionHeader()
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(Rice.subtext0)
+        .padding(.horizontal, 6)
+        .padding(.top, 6)
+        .padding(.bottom, 1)
+    }
+
+    private func conversationRow(_ conversation: Conversation) -> some View {
+        ConversationRowButton(
+            conversation: conversation,
+            isPinned: model.pinnedIDs.contains(conversation.id),
+            isVIP: model.isVIP(conversation.id),
+            isSelected: model.selectedConversationID == conversation.id,
+            showsUnread: model.hasVisibleUnread(conversation),
+            density: density
+        ) {
+            model.select(conversation.id)
+        }
+        .contextMenu {
+            Button(model.isVIP(conversation.id) ? "Remove from VIP" : "Add to VIP") {
+                model.toggleVIP(conversation.id)
+            }
+            Button(model.pinnedIDs.contains(conversation.id) ? "Unpin" : "Pin") {
+                model.togglePin(conversation.id)
+            }
+            Menu("Folders") {
+                let containing = model.folders(containing: conversation.id)
+                ForEach(model.folders) { folder in
+                    Button {
+                        model.toggleMembership(conversation.id, inFolder: folder.id)
+                    } label: {
+                        // SwiftUI renders the checkmark only when the
+                        // Label's image is a checkmark; plain Text for
+                        // non-members keeps the rows aligned.
+                        if containing.contains(folder.id) {
+                            Label(folder.name, systemImage: "checkmark")
+                        } else {
+                            Text(folder.name)
+                        }
+                    }
+                }
+                if !model.folders.isEmpty { Divider() }
+                Button("New Folder…") { model.folderEditor = .create(seed: conversation.id) }
+            }
+        }
     }
 
     private var footer: some View {
@@ -659,6 +697,7 @@ private struct SidebarView: View {
 private struct ConversationRowButton: View {
     let conversation: Conversation
     let isPinned: Bool
+    var isVIP: Bool = false
     let isSelected: Bool
     let showsUnread: Bool
     let density: DisplayDensity
@@ -674,7 +713,14 @@ private struct ConversationRowButton: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 5) {
-                        if isPinned {
+                        // A VIP is implicitly pinned, so its star stands in for
+                        // the pin badge rather than doubling up.
+                        if isVIP {
+                            Image(systemName: "star.fill")
+                                .riceFont(8)
+                                .foregroundStyle(Rice.yellow)
+                                .accessibilityLabel("VIP")
+                        } else if isPinned {
                             Image(systemName: "pin.fill")
                                 .riceFont(8)
                                 .foregroundStyle(Rice.overlay0)

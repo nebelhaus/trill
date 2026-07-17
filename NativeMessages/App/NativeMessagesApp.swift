@@ -38,6 +38,7 @@ struct NativeMessagesApp: App {
                 reload: { inboxModel.load() },
                 toggleSidebar: { inboxModel.toggleSidebar() },
                 togglePin: { inboxModel.toggleSelectedPin() },
+                toggleVIP: { inboxModel.toggleSelectedVIP() },
                 toggleUnreadFilter: { inboxModel.showsUnreadOnly.toggle() },
                 toggleNeedsReplyFilter: { inboxModel.showsNeedsReplyOnly.toggle() },
                 selectPinned: { inboxModel.selectPinned(at: $0) },

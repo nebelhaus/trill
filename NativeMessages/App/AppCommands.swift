@@ -11,6 +11,7 @@ struct AppCommands: Commands {
     let reload: () -> Void
     let toggleSidebar: () -> Void
     let togglePin: () -> Void
+    let toggleVIP: () -> Void
     let toggleUnreadFilter: () -> Void
     let toggleNeedsReplyFilter: () -> Void
     let selectPinned: (Int) -> Void
@@ -42,6 +43,8 @@ struct AppCommands: Commands {
             Button("Reload", action: reload)
                 .keyboardShortcut("r", modifiers: .command)
             Divider()
+            Button("Add/Remove VIP", action: toggleVIP)
+                .keyboardShortcut("v", modifiers: [.command, .control])
             Button("Pin/Unpin Conversation", action: togglePin)
                 .keyboardShortcut("p", modifiers: [.command, .shift])
             Button("Unread Only", action: toggleUnreadFilter)
