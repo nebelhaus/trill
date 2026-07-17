@@ -119,7 +119,7 @@ struct ComposerView: View {
             text: $model.text,
             measuredHeight: $measuredHeight,
             fontSize: 13 * scale,
-            isEnabled: model.conversationID != nil,
+            isEnabled: model.conversationID != nil && model.undoSecondsRemaining == nil,
             sendOnReturn: sendOnReturn,
             isScrollable: measuredHeight >= ceiling - 0.5,
             isSnippetPickerActive: model.isSnippetPickerActive,
@@ -158,8 +158,24 @@ struct ComposerView: View {
                 .riceFont(14)
         }
         .buttonStyle(RiceIconButtonStyle())
-        .disabled(!model.canSendAttachments)
+        .disabled(!model.canSendAttachments || model.undoSecondsRemaining != nil)
         .help("Attach files")
+    }
+
+    private var undoButton: some View {
+        Button {
+            model.undoPendingSend()
+        } label: {
+            Image(systemName: "arrow.uturn.backward")
+                .riceFont(13, .bold)
+                .foregroundStyle(Rice.crust)
+                .frame(width: controlDiameter, height: controlDiameter)
+                .background(accent, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.cancelAction)
+        .help("Undo send")
+        .accessibilityLabel("Undo send")
     }
 
     private var sendButton: some View {
@@ -192,19 +208,32 @@ struct ComposerView: View {
         if stacksControls {
             VStack(spacing: 7) {
                 attachButton
-                sendButton
+                primaryControl
             }
         } else {
             HStack(spacing: 8) {
                 attachButton
-                sendButton
+                primaryControl
             }
+        }
+    }
+
+    /// The round button below the editor: a send arrow normally, an undo arrow
+    /// while a just-sent message is held in its cancel window.
+    @ViewBuilder private var primaryControl: some View {
+        if model.undoSecondsRemaining != nil {
+            undoButton
+        } else {
+            sendButton
         }
     }
 
     private var footnote: some View {
         Group {
-            if let feedback = model.sendFeedback {
+            if let remaining = model.undoSecondsRemaining {
+                Text("Sending in \(remaining)s — press Esc to undo")
+                    .foregroundStyle(accent)
+            } else if let feedback = model.sendFeedback {
                 Text(feedback)
                     .foregroundStyle(Rice.red)
             } else if !model.disabledExplanation.isEmpty {
