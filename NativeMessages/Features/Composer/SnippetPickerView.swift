@@ -79,6 +79,14 @@ private struct SnippetRow: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)
+            if MessageTemplate.hasPlaceholders(snippet.body) {
+                // Marks a fill-in template; ⇥ steps through the blanks on insert.
+                Image(systemName: "rectangle.and.pencil.and.ellipsis")
+                    .riceFont(9)
+                    .foregroundStyle(Rice.overlay0)
+                    .layoutPriority(1)
+                    .accessibilityLabel("Fill-in template")
+            }
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)

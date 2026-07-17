@@ -284,6 +284,93 @@ actor AppDatabase {
         return result
     }
 
+    // MARK: - Archive / Mute / Snooze
+    //
+    // Three per-conversation triage overlays, each a thin table keyed on the
+    // conversation. Archive and mute are membership sets (a row's presence *is*
+    // the flag); snooze also stores the wake time so a thread can resurface on
+    // its own. All local-only — chat.db is never touched.
+
+    func setArchived(_ archived: Bool, conversationID: ConversationID) throws {
+        if archived {
+            try execute(
+                "INSERT OR REPLACE INTO archived_conversations (conversation_key, archived_at) VALUES (?, ?)",
+                bindings: [.text(conversationID.persistenceKey), .double(Date().timeIntervalSince1970)]
+            )
+        } else {
+            try execute(
+                "DELETE FROM archived_conversations WHERE conversation_key = ?",
+                bindings: [.text(conversationID.persistenceKey)]
+            )
+        }
+    }
+
+    func archivedConversationIDs() throws -> Set<ConversationID> {
+        try conversationIDSet("SELECT conversation_key FROM archived_conversations")
+    }
+
+    func setMuted(_ muted: Bool, conversationID: ConversationID) throws {
+        if muted {
+            try execute(
+                "INSERT OR REPLACE INTO muted_conversations (conversation_key, muted_at) VALUES (?, ?)",
+                bindings: [.text(conversationID.persistenceKey), .double(Date().timeIntervalSince1970)]
+            )
+        } else {
+            try execute(
+                "DELETE FROM muted_conversations WHERE conversation_key = ?",
+                bindings: [.text(conversationID.persistenceKey)]
+            )
+        }
+    }
+
+    func mutedConversationIDs() throws -> Set<ConversationID> {
+        try conversationIDSet("SELECT conversation_key FROM muted_conversations")
+    }
+
+    /// `until == nil` clears the snooze (the thread returns to the list now).
+    func setSnooze(until wake: Date?, conversationID: ConversationID) throws {
+        if let wake {
+            try execute(
+                "INSERT OR REPLACE INTO snoozed_conversations (conversation_key, wake_at) VALUES (?, ?)",
+                bindings: [.text(conversationID.persistenceKey), .double(wake.timeIntervalSince1970)]
+            )
+        } else {
+            try execute(
+                "DELETE FROM snoozed_conversations WHERE conversation_key = ?",
+                bindings: [.text(conversationID.persistenceKey)]
+            )
+        }
+    }
+
+    func snoozedConversations() throws -> [ConversationID: Date] {
+        let handle = connection.raw
+        var statement: OpaquePointer?
+        let sql = "SELECT conversation_key, wake_at FROM snoozed_conversations"
+        guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK else { throw Self.error(handle) }
+        defer { sqlite3_finalize(statement) }
+        var result: [ConversationID: Date] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let key = sqlite3_column_text(statement, 0) else { continue }
+            guard let id = ConversationID(persistenceKey: String(cString: key)) else {
+                throw AppDatabaseError.invalidStoredIdentifier
+            }
+            result[id] = Date(timeIntervalSince1970: sqlite3_column_double(statement, 1))
+        }
+        return result
+    }
+
+    /// Reads a single-column conversation-key query into a typed ID set —
+    /// shared by the archive and mute membership tables.
+    private func conversationIDSet(_ sql: String) throws -> Set<ConversationID> {
+        let keys = try textRows(sql)
+        var result = Set<ConversationID>()
+        for key in keys {
+            guard let id = ConversationID(persistenceKey: key) else { throw AppDatabaseError.invalidStoredIdentifier }
+            result.insert(id)
+        }
+        return result
+    }
+
     func saveCursor(_ cursor: EventCursor, providerID: ProviderID) throws {
         try execute(
             "INSERT OR REPLACE INTO provider_cursors (provider_id, cursor, updated_at) VALUES (?, ?, ?)",
@@ -431,26 +518,33 @@ actor AppDatabase {
             sql: "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY NOT NULL, applied_at REAL NOT NULL)"
         )
         let version = try currentVersion(database)
+        // `IF NOT EXISTS` on every table: my worktree sessions share one overlay
+        // DB under Application Support, so two branches can claim the same
+        // migration number with different SQL. Without this, whichever build runs
+        // second throws "table already exists" mid-migration, `init` fails, and the
+        // app silently drops to a throwaway temp store (losing all overlay state).
+        // Idempotent creates let a collided DB still advance to the current version.
         let migrations: [(Int, String)] = [
-            (1, "CREATE TABLE pinned_conversations (conversation_key TEXT PRIMARY KEY NOT NULL, pinned_at REAL NOT NULL)"),
-            (2, "CREATE TABLE drafts (conversation_key TEXT PRIMARY KEY NOT NULL, body TEXT NOT NULL, updated_at REAL NOT NULL)"),
-            (3, "CREATE TABLE provider_cursors (provider_id TEXT PRIMARY KEY NOT NULL, cursor TEXT NOT NULL, updated_at REAL NOT NULL)"),
-            (4, "CREATE TABLE read_marks (conversation_key TEXT PRIMARY KEY NOT NULL, marked_at REAL NOT NULL)"),
-            (5, "CREATE TABLE folders (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, color TEXT NOT NULL, sort_order REAL NOT NULL, created_at REAL NOT NULL)"),
-            (6, "CREATE TABLE folder_members (folder_id TEXT NOT NULL, conversation_key TEXT NOT NULL, added_at REAL NOT NULL, PRIMARY KEY (folder_id, conversation_key))"),
-            (7, "CREATE TABLE snippets (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, updated_at REAL NOT NULL)"),
-            (8, "CREATE TABLE vip_conversations (conversation_key TEXT PRIMARY KEY NOT NULL, added_at REAL NOT NULL)"),
-            (9, "CREATE TABLE link_previews (url TEXT PRIMARY KEY NOT NULL, title TEXT, summary TEXT, image_url TEXT, site_name TEXT, fetched_at REAL NOT NULL)"),
+            (1, "CREATE TABLE IF NOT EXISTS pinned_conversations (conversation_key TEXT PRIMARY KEY NOT NULL, pinned_at REAL NOT NULL)"),
+            (2, "CREATE TABLE IF NOT EXISTS drafts (conversation_key TEXT PRIMARY KEY NOT NULL, body TEXT NOT NULL, updated_at REAL NOT NULL)"),
+            (3, "CREATE TABLE IF NOT EXISTS provider_cursors (provider_id TEXT PRIMARY KEY NOT NULL, cursor TEXT NOT NULL, updated_at REAL NOT NULL)"),
+            (4, "CREATE TABLE IF NOT EXISTS read_marks (conversation_key TEXT PRIMARY KEY NOT NULL, marked_at REAL NOT NULL)"),
+            (5, "CREATE TABLE IF NOT EXISTS folders (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, color TEXT NOT NULL, sort_order REAL NOT NULL, created_at REAL NOT NULL)"),
+            (6, "CREATE TABLE IF NOT EXISTS folder_members (folder_id TEXT NOT NULL, conversation_key TEXT NOT NULL, added_at REAL NOT NULL, PRIMARY KEY (folder_id, conversation_key))"),
+            (7, "CREATE TABLE IF NOT EXISTS snippets (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, updated_at REAL NOT NULL)"),
+            (8, "CREATE TABLE IF NOT EXISTS vip_conversations (conversation_key TEXT PRIMARY KEY NOT NULL, added_at REAL NOT NULL)"),
+            (9, "CREATE TABLE IF NOT EXISTS link_previews (url TEXT PRIMARY KEY NOT NULL, title TEXT, summary TEXT, image_url TEXT, site_name TEXT, fetched_at REAL NOT NULL)"),
+            // Renumbered from 8/9/10 → 10/11/12 on merge: master's VIP + link
+            // previews took 8/9 first, so this triage-overlay branch (merging
+            // second) advances past them per the "second-to-merge renumbers" rule.
+            (10, "CREATE TABLE IF NOT EXISTS archived_conversations (conversation_key TEXT PRIMARY KEY NOT NULL, archived_at REAL NOT NULL)"),
+            (11, "CREATE TABLE IF NOT EXISTS muted_conversations (conversation_key TEXT PRIMARY KEY NOT NULL, muted_at REAL NOT NULL)"),
+            (12, "CREATE TABLE IF NOT EXISTS snoozed_conversations (conversation_key TEXT PRIMARY KEY NOT NULL, wake_at REAL NOT NULL)"),
             // Saved / starred messages: local bookmarks on any message, keyed by
-            // MessageID.persistenceKey. No chat.db write.
-            //
-            // ⚠️ Merge note: this branch was cut from schema v9, but `master` has
-            // since claimed 10–12 (archived / muted / snoozed conversations). We
-            // deliberately number this 13 rather than 10 so it (a) merges into
-            // master with no renumber and (b) actually applies against the shared
-            // app-support overlay DB, which other branches have already advanced
-            // to v12 — a migration numbered ≤ 12 would be silently skipped there.
-            // `IF NOT EXISTS` keeps it idempotent across that shared DB.
+            // MessageID.persistenceKey. No chat.db write. Numbered 13 (this branch
+            // was cut from v9, so it skips master's 10–12) — that keeps it clean
+            // against the shared app-support overlay DB other branches had already
+            // advanced to v12. `IF NOT EXISTS` keeps it idempotent across that DB.
             (13, "CREATE TABLE IF NOT EXISTS saved_messages (message_key TEXT PRIMARY KEY NOT NULL, saved_at REAL NOT NULL)"),
         ]
         for (nextVersion, sql) in migrations where nextVersion > version {

@@ -155,6 +155,28 @@ struct CommandPaletteView: View {
                     model.toggleSelectedPin()
                 }
             )
+            let muted = model.isMuted(selected)
+            catalog.append(
+                PaletteAction(
+                    id: "mute",
+                    title: muted ? "Unmute Conversation" : "Mute Conversation",
+                    systemImage: muted ? "bell" : "bell.slash",
+                    shortcut: nil
+                ) {
+                    model.toggleMuted(selected)
+                }
+            )
+            let archived = model.isArchived(selected)
+            catalog.append(
+                PaletteAction(
+                    id: "archive",
+                    title: archived ? "Unarchive Conversation" : "Archive Conversation",
+                    systemImage: archived ? "tray.and.arrow.up" : "archivebox",
+                    shortcut: nil
+                ) {
+                    model.toggleArchived(selected)
+                }
+            )
         }
 
         // Folder scope: clear (when active) + one filter action per folder, plus

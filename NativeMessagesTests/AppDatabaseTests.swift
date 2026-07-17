@@ -154,6 +154,51 @@ final class AppDatabaseTests: XCTestCase {
         XCTAssertEqual(saved, [second])
     }
 
+    func testArchiveMuteAndSnoozeRoundTrip() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("NativeMessagesTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try AppDatabase(url: root.appendingPathComponent("app.sqlite3"))
+
+        let provider = ProviderID(rawValue: "fixture")
+        let alice = ConversationID(provider: provider, externalGUID: "alice")
+        let bob = ConversationID(provider: provider, externalGUID: "bob")
+
+        // Archive is a membership set — presence is the flag, removal clears it.
+        // Hoist each awaited read to a local; XCTAssert autoclosures can't await.
+        try await database.setArchived(true, conversationID: alice)
+        try await database.setArchived(true, conversationID: bob)
+        var archived = try await database.archivedConversationIDs()
+        XCTAssertEqual(archived, [alice, bob])
+        try await database.setArchived(false, conversationID: bob)
+        archived = try await database.archivedConversationIDs()
+        XCTAssertEqual(archived, [alice])
+
+        // Mute is an independent set from archive.
+        try await database.setMuted(true, conversationID: bob)
+        let muted = try await database.mutedConversationIDs()
+        XCTAssertEqual(muted, [bob])
+        archived = try await database.archivedConversationIDs()
+        XCTAssertEqual(archived, [alice])
+        try await database.setMuted(false, conversationID: bob)
+        let mutedAfterClear = try await database.mutedConversationIDs()
+        XCTAssertTrue(mutedAfterClear.isEmpty)
+
+        // Snooze stores a wake time; re-snoozing replaces it; nil clears it.
+        let wake = Date(timeIntervalSince1970: 1_800_000_000)
+        try await database.setSnooze(until: wake, conversationID: alice)
+        var snoozed = try await database.snoozedConversations()
+        XCTAssertEqual(snoozed[alice]?.timeIntervalSince1970 ?? 0, wake.timeIntervalSince1970, accuracy: 0.001)
+        let laterWake = wake.addingTimeInterval(3600)
+        try await database.setSnooze(until: laterWake, conversationID: alice)
+        snoozed = try await database.snoozedConversations()
+        XCTAssertEqual(snoozed.count, 1)
+        XCTAssertEqual(snoozed[alice]?.timeIntervalSince1970 ?? 0, laterWake.timeIntervalSince1970, accuracy: 0.001)
+        try await database.setSnooze(until: nil, conversationID: alice)
+        snoozed = try await database.snoozedConversations()
+        XCTAssertTrue(snoozed.isEmpty)
+    }
+
     func testLinkPreviewCacheRoundTrips() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("NativeMessagesTests-\(UUID().uuidString)", isDirectory: true)

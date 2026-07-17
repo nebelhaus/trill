@@ -64,11 +64,11 @@ Everything below respects these.
 | Idea | What | Effort | Feas. | Notes |
 |------|------|--------|-------|-------|
 | **Command palette (⌘K)** | Fuzzy jump to any conversation, action, or setting; the keyboard spine of the app | M | ✅ 🚢 | Shipped (`0474b5c`). ⌘K opens it; full-text message search moved to ⇧⌘F. Subsumes the Quick switcher. |
-| **Snooze a thread** | Hide a conversation until a chosen time, then resurface it | M | ✅ | Local scheduler + overlay flag. PRD-aligned. |
+| **Snooze a thread** | Hide a conversation until a chosen time, then resurface it | M | ✅ 🚢 | Shipped. `snoozed_conversations` overlay table (migration 12, renumbered from 10) maps a thread → wake time; `snoozedUntil` hides it from every normal scope while `wake > now`. A pure, tested `SnoozeOption` (1h/3h/this-evening/tomorrow/next-week, all guaranteed future) computes the wake date; an InboxModel timer (`rescheduleSnoozeWake`) fires exactly when the next thread is due and prunes it, so resurfacing is event-driven, not polled. Snooze/Unsnooze via the row context menu. |
 | **Folders / tags** | User-defined labels and folders for conversations, local-only | M–L | ✅ 🚢 | Shipped. `folders` + `folder_members` overlay tables (many-to-many, so folders double as tags); each folder carries a name + Rice accent color. A sidebar scope list ("All Messages" + folders + New Folder) narrows `visibleConversations` *before* the unread/needs-reply filter, so the two axes compose. Assign via a conversation's Folders context submenu; manage via folder-row context menu + a reusable `FolderEditorView`. Also reachable from ⌘K. **⚠️ Merge note:** this uses `AppDatabase` migrations 5 & 6 — the in-flight *Canned responses / snippets* branch also claims migration 5. Both are correct against `master` (1–4) in isolation, but whichever merges **second** must renumber its migrations (in both the `migrations` array and `currentSchemaVersion`) so they don't collide. |
-| **Archive** | Remove a thread from the main list without losing it | S | ✅ | Overlay flag; filter in `visibleConversations`. |
-| **Mute a conversation** | Suppress that thread's notifications locally | S | ✅ | Overlay flag checked in `maybeNotify`. |
-| **VIP contacts** | Always-notify + always-pin a chosen set, in their own section | S–M | ✅ 🚢 | Shipped. `vip_conversations` overlay table (migration 8) → `vipIDs` set on `InboxModel`, mirroring pins. VIP forms a sort tier *above* pinned (always-pin), gets its own titled "VIP" section atop the unscoped list (`showsVIPSection` / `visibleVIPConversations`), and threads an `isVIP` flag into `maybeNotify` → `NotificationCoordinator.post` for a ⭐-marked banner (the always-notify seam a future Mute/Focus feature must exempt). Toggle via row/thread context menu, the ⭐ toolbar button, ⌘K, or ⌃⌘V. **⚠️ Merge note:** claims `AppDatabase` migration 8 — the next overlay-table branch to merge after this must renumber if it also grabbed 8. |
+| **Archive** | Remove a thread from the main list without losing it | S | ✅ 🚢 | Shipped. `archived_conversations` overlay set (migration 10, renumbered from 8 to clear the VIP collision); archived threads drop out of every normal scope in `visibleConversations` and are reachable via a sidebar **Archived** scope chip (shown only once non-empty, mutually exclusive with folder scope). Archive/Unarchive via the row context menu or ⌘K. |
+| **Mute a conversation** | Suppress that thread's notifications locally | S | ✅ 🚢 | Shipped. `muted_conversations` overlay set (migration 11, renumbered from 9), checked in `maybeNotify`. Muted threads stay in the list with a `bell.slash` glyph; toggle via the row context menu or ⌘K. Mute is the strongest gate — it silences even a VIP (muting is a deliberate override that wins over VIP always-notify). |
+| **VIP contacts** | Always-notify + always-pin a chosen set, in their own section | S–M | ✅ 🚢 | Shipped. `vip_conversations` overlay table (migration 8) → `vipIDs` set on `InboxModel`, mirroring pins. VIP forms a sort tier *above* pinned (always-pin), gets its own titled "VIP" section atop the unscoped list (`showsVIPSection` / `visibleVIPConversations`), and threads an `isVIP` flag into `maybeNotify` → `NotificationCoordinator.post` for a ⭐-marked banner. (An unmuted VIP always-notifies; an explicitly muted VIP stays silent — Mute wins.) Toggle via row/thread context menu, the ⭐ toolbar button, ⌘K, or ⌃⌘V. |
 | **Filter by service** | Toggle iMessage / SMS / RCS visibility | S | ✅ 🚢 | Shipped. A composable axis (not the mutually-exclusive `filter`): `hiddenServices: Set<MessageServiceKind>` in `InboxModel`, persisted to UserDefaults, applied in `visibleConversations` *after* folder scope and *before* the unread/needs-reply filter, so all three compose. `.unknown` is never hidden (`MessageServiceKind.togglable` = iMessage/SMS/RCS). UI is a `Toggle`-row menu in the sidebar header driven through the shared `RiceIconButtonStyle` (`.menuStyle(.button)`) so it matches its neighbours and tints only when a service is hidden; a "Show All Services" reset doubles as the off switch. Mirrored into the overflow menu; the open thread always stays visible. |
 
 ## Power-user velocity
@@ -86,9 +86,9 @@ Everything below respects these.
 | Idea | What | Effort | Feas. | Notes |
 |------|------|--------|-------|-------|
 | **Scheduled send** | Queue a message to dispatch at a chosen time via the existing AppleScript path | M | ⛔ | **Deferred until we have a server.** Technically buildable, but the send path drives Messages.app locally over Apple Events — there is no server anywhere. So a scheduled message can only fire while this Mac is awake (or wakeable from sleep); if the laptop is off/closed at the chosen time it silently can't send. The only true fix is a cloud relay that sends on our behalf, which would mean uploading message text off-device — a hard no against the local-first/privacy premise. Revisit if the app ever gains a server component. |
-| **Undo send window** | Buffer the dispatch a few seconds so an accidental send can be cancelled | S | ✅ | Delay the AppleScript call; cancel before it fires. |
+| **Undo send window** | Buffer the dispatch a few seconds so an accidental send can be cancelled | S | ✅ 🚢 | Shipped. `ComposerModel.send()` holds the message for a 5s window (opt-out via the `undoSend` setting, default on) instead of dispatching straight away: the box locks with the draft intact and the round send button becomes an Undo arrow (Esc / `.cancelAction`) that cancels and hands the text back. The window fires the real `sendAction` when it elapses; switching conversations mid-window flushes the held send in the background (draft restored on failure) so a send is never dropped. Setting lives in Settings → Undo send. |
 | **Tapback handoff** | Since we can't send tapbacks, one click focuses the target message in Messages.app so the user reacts there | S | ⚠️ | AppleScript can reveal/activate; the react itself is manual. Honest bridge over a hard limit. |
-| **Message templates** | Structured, fill-in-the-blank outgoing messages | S–M | ✅ | Composer-side only. |
+| **Message templates** | Structured, fill-in-the-blank outgoing messages | S–M | ✅ 🚢 | Shipped. Folded straight into snippets — a *template* is just a snippet whose body carries `{blank}` markers, so no new store, table, or migration. Picking one (`/`-trigger or click) inserts the body and enters a **fill session**: the first blank is selected, ⇥ / ⇧⇥ step between the rest, typing over each replaces the whole `{…}` marker. Pure `MessageTemplate` (brace scan → `NSRange`s, live-searched each ⇥ so edits never invalidate later offsets) drives a `ComposerModel` session that publishes a `PendingSelection` the `GrowingTextView` applies after its text sync. Template rows badge in the picker; Settings gained a hint; a starter `meet` template seeds on first launch. |
 | **Multi-send / broadcast** | Send one message to several chats | M | ⚠️ | Feasible but needs careful, non-spammy UX and clear confirmation. |
 
 ## Ambient presence
@@ -183,3 +183,22 @@ Coordination note: 3 and 4 both add tables to `AppDatabase`; give their
 migrations distinct, ordered version numbers so they merge cleanly. Second
 wave once these land: Snooze / Archive / VIP (sidebar lane) and Link inbox /
 Attachment search (media lane).
+
+## Triage overlays landed (2026-07-16)
+
+**Snooze + Archive + Mute** shipped together as one sidebar-lane branch — they
+share the per-conversation overlay + `visibleConversations` + `maybeNotify`
+machinery, so building them apart would have meant three-way conflicts on the
+same functions. Three new `AppDatabase` tables, **migrations 10 (archive), 11
+(mute), 12 (snooze)**, bumping `currentSchemaVersion` to 12.
+
+**Merge resolution:** this branch was authored against migrations 8–10 but merged
+*after* VIP contacts (migration 8) and Open Graph link previews (migration 9)
+landed on `master`, so — per the second-to-merge-renumbers rule — its migrations
+were renumbered to 10/11/12 (in the `migrations` array, `currentSchemaVersion`,
+and the `AppDatabaseTests` assertion). The merge also reconciled Mute with the VIP
+`maybeNotify` seam: **Mute wins** — an explicitly muted thread stays silent even
+if it's a VIP (muting is a deliberate override; VIP "always-notify" only outranks
+the default). All migrations are now `CREATE TABLE IF NOT EXISTS` so a shared
+overlay DB collided across worktrees can still advance instead of failing `init`
+and silently dropping to a throwaway temp store.

@@ -5,6 +5,7 @@ struct SettingsView: View {
     @AppStorage("accentName") private var accentName = "mauve"
     @AppStorage("uiScale") private var uiScale = 1.0
     @AppStorage("sendOnReturn") private var sendOnReturn = true
+    @AppStorage("undoSend") private var undoSend = true
     @AppStorage("privacyBlur") private var privacyBlur = false
     @AppStorage("showMenuBarItem") private var showMenuBarItem = true
     @AppStorage("linkPreviews") private var linkPreviews = false
@@ -93,6 +94,22 @@ struct SettingsView: View {
                 Text(sendOnReturn
                     ? "Return sends · Shift+Return adds a line"
                     : "⌘Return sends · Return adds a line")
+                    .riceFont(10)
+                    .foregroundStyle(Rice.overlay0)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Undo send")
+                    .riceSectionHeader()
+                HStack(spacing: 6) {
+                    Button("On") { undoSend = true }
+                        .buttonStyle(DensityChoiceStyle(isSelected: undoSend))
+                    Button("Off") { undoSend = false }
+                        .buttonStyle(DensityChoiceStyle(isSelected: !undoSend))
+                }
+                Text(undoSend
+                    ? "Holds an outgoing message for a few seconds so an accidental send can be cancelled — press Esc or tap ⤺ before it dispatches."
+                    : "Messages send immediately.")
                     .riceFont(10)
                     .foregroundStyle(Rice.overlay0)
             }

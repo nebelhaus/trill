@@ -8,6 +8,10 @@ final class ComposerModel: ObservableObject {
     @Published private(set) var isSendEnabled = false
     @Published private(set) var canSendAttachments = false
     @Published private(set) var isSending = false
+    /// Non-nil while a just-sent message is held in the undo window, counting
+    /// down the seconds before it actually dispatches. Drives the composer's
+    /// locked state and the Undo affordance.
+    @Published private(set) var undoSecondsRemaining: Int?
     @Published private(set) var sendFeedback: String?
     @Published private(set) var disabledExplanation = "Select a conversation to write a draft."
 
@@ -17,11 +21,51 @@ final class ComposerModel: ObservableObject {
     @Published private(set) var snippetMatches: [Snippet] = []
     @Published var snippetSelection = 0
 
+    /// Template fill state. When a snippet carrying `{blank}` markers is inserted
+    /// the composer enters a fill session: `isFillSessionActive` routes ⇥ / ⇧⇥
+    /// to blank-to-blank navigation, and `pendingSelection` asks the text view
+    /// to select the current blank. The session ends once the caret passes the
+    /// last blank (or on send / conversation switch).
+    @Published private(set) var isFillSessionActive = false
+    @Published private(set) var pendingSelection: PendingSelection?
+
+    /// A one-shot request for the `NSTextView` to select `range`. `token` bumps
+    /// on every request so an identical range re-applies (e.g. re-selecting the
+    /// same blank), and the view ignores a request it has already consumed.
+    struct PendingSelection: Equatable {
+        let range: NSRange
+        let token: Int
+    }
+
+    private var selectionToken = 0
+
     private let database: AppDatabase
     private let snippets: SnippetStore
     private var sendAction: ((String, [URL]) async throws -> SendOutcome)?
     private var saveTask: Task<Void, Never>?
     private var restoreTask: Task<Void, Never>?
+    private var pendingSend: PendingSend?
+    private var undoTimerTask: Task<Void, Never>?
+
+    /// How long an outgoing message is held before it actually dispatches,
+    /// giving a window to undo an accidental send. Off unless the `undoSend`
+    /// setting is enabled (the default).
+    private static let undoWindowSeconds = 5
+
+    /// A held send, captured whole so it can dispatch to its original
+    /// conversation even after the composer has moved on to another thread.
+    private struct PendingSend {
+        let body: String
+        let files: [URL]
+        let conversationID: ConversationID
+        let send: (String, [URL]) async throws -> SendOutcome
+    }
+
+    private static var undoSendEnabled: Bool {
+        UserDefaults.standard.object(forKey: "undoSend") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "undoSend")
+    }
     private var isRestoring = false
     /// Range of the live `/token` in `text`, replaced when a snippet is picked.
     private var snippetTriggerRange: Range<String.Index>?
@@ -36,6 +80,7 @@ final class ComposerModel: ObservableObject {
     deinit {
         saveTask?.cancel()
         restoreTask?.cancel()
+        undoTimerTask?.cancel()
     }
 
     func select(
@@ -44,9 +89,19 @@ final class ComposerModel: ObservableObject {
         health: ProviderHealth,
         sendAction: ((String, [URL]) async throws -> SendOutcome)?
     ) {
+        // Leaving the thread that has a message in its undo window: dispatch it
+        // now, in the background, so switching conversations never drops a send.
+        if let pending = pendingSend {
+            undoTimerTask?.cancel()
+            undoTimerTask = nil
+            pendingSend = nil
+            undoSecondsRemaining = nil
+            dispatchDetached(pending)
+        }
         saveTask?.cancel()
         restoreTask?.cancel()
         clearSnippetPicker()
+        endFillSession()
         self.conversationID = conversationID
         self.sendAction = sendAction
         sendFeedback = nil
@@ -93,10 +148,102 @@ final class ComposerModel: ObservableObject {
     }
 
     func send() async {
+        // A second send while one is already held simply dispatches it now.
+        if pendingSend != nil {
+            await flushPendingSend()
+            return
+        }
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let files = pendingAttachments
         guard isSendEnabled, !isSending, !body.isEmpty || !files.isEmpty,
               let sendAction, let conversationID else { return }
+        guard Self.undoSendEnabled else {
+            await performSend(body: body, files: files, conversationID: conversationID, sendAction: sendAction)
+            return
+        }
+        beginUndoWindow(body: body, files: files, conversationID: conversationID, sendAction: sendAction)
+    }
+
+    /// Cancel a held send and hand the message back to the composer, untouched,
+    /// so the user can edit it or drop it.
+    func undoPendingSend() {
+        undoTimerTask?.cancel()
+        undoTimerTask = nil
+        pendingSend = nil
+        undoSecondsRemaining = nil
+    }
+
+    /// Dispatch a held send immediately, skipping the rest of the window.
+    func flushPendingSend() async {
+        undoTimerTask?.cancel()
+        undoTimerTask = nil
+        await firePendingSend()
+    }
+
+    private func beginUndoWindow(
+        body: String,
+        files: [URL],
+        conversationID: ConversationID,
+        sendAction: @escaping (String, [URL]) async throws -> SendOutcome
+    ) {
+        pendingSend = PendingSend(body: body, files: files, conversationID: conversationID, send: sendAction)
+        undoSecondsRemaining = Self.undoWindowSeconds
+        sendFeedback = nil
+        clearSnippetPicker()
+        undoTimerTask = Task { [weak self] in
+            for remaining in stride(from: Self.undoWindowSeconds - 1, through: 0, by: -1) {
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    return // cancelled by undo/flush, which owns the state
+                }
+                guard let self, !Task.isCancelled else { return }
+                if remaining == 0 {
+                    await self.firePendingSend()
+                } else {
+                    self.undoSecondsRemaining = remaining
+                }
+            }
+        }
+    }
+
+    private func firePendingSend() async {
+        guard let pending = pendingSend else { return }
+        pendingSend = nil
+        undoSecondsRemaining = nil
+        undoTimerTask = nil
+        await performSend(
+            body: pending.body,
+            files: pending.files,
+            conversationID: pending.conversationID,
+            sendAction: pending.send
+        )
+    }
+
+    /// Fire a held send for a conversation the composer is navigating away from.
+    /// Runs without touching the visible composer (which is loading a different
+    /// thread); on failure the draft is restored so the message is never lost.
+    private func dispatchDetached(_ pending: PendingSend) {
+        Task { [database] in
+            do {
+                switch try await pending.send(pending.body, pending.files) {
+                case .accepted, .confirmed, .unknown:
+                    try? await database.saveDraft("", conversationID: pending.conversationID)
+                case .rejected:
+                    try? await database.saveDraft(pending.body, conversationID: pending.conversationID)
+                }
+            } catch {
+                try? await database.saveDraft(pending.body, conversationID: pending.conversationID)
+            }
+        }
+    }
+
+    private func performSend(
+        body: String,
+        files: [URL],
+        conversationID: ConversationID,
+        sendAction: (String, [URL]) async throws -> SendOutcome
+    ) async {
         isSending = true
         defer { isSending = false }
         do {
@@ -105,6 +252,7 @@ final class ComposerModel: ObservableObject {
                 text = ""
                 pendingAttachments = []
                 clearSnippetPicker()
+                endFillSession()
                 sendFeedback = nil
                 saveTask?.cancel()
                 try? await database.saveDraft("", conversationID: conversationID)
@@ -116,6 +264,7 @@ final class ComposerModel: ObservableObject {
                 text = ""
                 pendingAttachments = []
                 clearSnippetPicker()
+                endFillSession()
                 saveTask?.cancel()
                 try? await database.saveDraft("", conversationID: conversationID)
                 sendFeedback = "Some of the message may not have sent — check Messages.app."
@@ -176,8 +325,12 @@ final class ComposerModel: ObservableObject {
         guard snippetMatches.indices.contains(snippetSelection),
               let range = snippetTriggerRange else { return false }
         let body = snippetMatches[snippetSelection].body
+        // UTF-16 offset where the body lands, so we can find its blanks by
+        // NSRange once it's spliced into the full draft.
+        let insertion = text[..<range.lowerBound].utf16.count
         text.replaceSubrange(range, with: body)
         clearSnippetPicker()
+        beginFillSession(from: insertion)
         return true
     }
 
@@ -185,6 +338,55 @@ final class ComposerModel: ObservableObject {
         if !snippetMatches.isEmpty { snippetMatches = [] }
         snippetSelection = 0
         snippetTriggerRange = nil
+    }
+
+    // MARK: - Template fill
+
+    /// Select the first blank of a just-inserted template; if the snippet has no
+    /// blanks, this is a no-op and the caret stays where the text view parks it.
+    private func beginFillSession(from location: Int) {
+        guard let first = MessageTemplate.nextPlaceholder(in: text, from: location) else {
+            endFillSession()
+            return
+        }
+        isFillSessionActive = true
+        requestSelection(first)
+    }
+
+    /// ⇥ while filling: select the next blank at or after `caret`, or end the
+    /// session (caret to the end) once there are none left. `caret` is the live
+    /// selection's trailing edge, so a blank the user just typed over is skipped.
+    /// Returns whether the key was consumed.
+    @discardableResult
+    func advanceFill(from caret: Int) -> Bool {
+        guard isFillSessionActive else { return false }
+        if let next = MessageTemplate.nextPlaceholder(in: text, from: caret) {
+            requestSelection(next)
+        } else {
+            endFillSession()
+            requestSelection(NSRange(location: (text as NSString).length, length: 0))
+        }
+        return true
+    }
+
+    /// ⇧⇥ while filling: select the previous blank before `caret`; stays on the
+    /// first when there's nothing earlier. Returns whether the key was consumed.
+    @discardableResult
+    func retreatFill(from caret: Int) -> Bool {
+        guard isFillSessionActive else { return false }
+        if let previous = MessageTemplate.previousPlaceholder(in: text, before: caret) {
+            requestSelection(previous)
+        }
+        return true
+    }
+
+    private func endFillSession() {
+        if isFillSessionActive { isFillSessionActive = false }
+    }
+
+    private func requestSelection(_ range: NSRange) {
+        selectionToken += 1
+        pendingSelection = PendingSelection(range: range, token: selectionToken)
     }
 
     private static func feedback(for reason: UserFacingSendError) -> String {
