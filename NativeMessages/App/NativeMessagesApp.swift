@@ -33,6 +33,7 @@ struct NativeMessagesApp: App {
                 showSearch: { inboxModel.isSearchPresented = true },
                 showLibrary: { inboxModel.isLibraryPresented = true },
                 findInConversation: { inboxModel.conversationModel.beginFind() },
+                jumpToDate: { inboxModel.conversationModel.beginJumpToDate() },
                 findNext: { inboxModel.conversationModel.findNext() },
                 findPrevious: { inboxModel.conversationModel.findPrevious() },
                 reload: { inboxModel.load() },

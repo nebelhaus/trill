@@ -76,6 +76,20 @@ struct ConversationView: View {
     @ViewBuilder
     private var threadActionButtons: some View {
         Button {
+            model.beginJumpToDate()
+        } label: {
+            Image(systemName: "calendar")
+        }
+        .buttonStyle(RiceIconButtonStyle(isActive: model.isJumpToDatePresented))
+        .help("Jump to date (⌘J)")
+        .disabled(model.conversation == nil)
+        .popover(isPresented: $model.isJumpToDatePresented, arrowEdge: .bottom) {
+            JumpToDatePopover(
+                initialDate: model.messages.last?.createdAt ?? model.conversation?.lastActivity ?? Date(),
+                onJump: { model.jump(to: $0) }
+            )
+        }
+        Button {
             isStatsPresented = true
         } label: {
             Image(systemName: "chart.bar")
@@ -432,6 +446,167 @@ private struct FindBar: View {
         if trimmedQuery.isEmpty { return " " }
         if model.findMatches.isEmpty { return "No matches" }
         return "\(model.findCurrentIndex + 1) of \(model.findMatches.count)"
+    }
+}
+
+/// "Jump to date" popover (⌘J / the calendar button). Quick presets plus a
+/// custom Rice-styled month grid — the stock graphical `DatePicker` fights the
+/// dark palette with its system-blue chrome, so this is hand-drawn to match.
+/// Tapping a day leaps the timeline to it; bounded to the past.
+private struct JumpToDatePopover: View {
+    let initialDate: Date
+    let onJump: (Date) -> Void
+
+    /// Day the thread is currently sitting on — highlighted as "you are here".
+    @State private var anchorDay = Date()
+    /// First-of-month the grid is showing.
+    @State private var visibleMonth = Date()
+
+    private let calendar = Calendar.current
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Jump to Date")
+                .riceFont(13, .semibold)
+                .foregroundStyle(Rice.text)
+
+            HStack(spacing: 6) {
+                ForEach(presets, id: \.label) { preset in
+                    Button(preset.label) { onJump(preset.date) }
+                        .buttonStyle(RiceSubtleButtonStyle())
+                }
+            }
+
+            monthHeader
+            weekdayHeader
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 2) {
+                ForEach(gridDays, id: \.self) { day in
+                    DayCell(
+                        day: day,
+                        inMonth: calendar.isDate(day, equalTo: visibleMonth, toGranularity: .month),
+                        isFuture: calendar.startOfDay(for: day) > calendar.startOfDay(for: Date()),
+                        isAnchor: calendar.isDate(day, inSameDayAs: anchorDay),
+                        onTap: { onJump(day) }
+                    )
+                }
+            }
+        }
+        .padding(16)
+        .frame(width: 264)
+        .background(Rice.base)
+        .onAppear {
+            anchorDay = min(initialDate, Date())
+            visibleMonth = monthStart(for: anchorDay)
+        }
+    }
+
+    private var monthHeader: some View {
+        HStack {
+            Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left") }
+                .buttonStyle(RiceIconButtonStyle())
+            Spacer()
+            Text(visibleMonth, format: .dateTime.month(.wide).year())
+                .riceFont(12, .semibold)
+                .foregroundStyle(Rice.text)
+            Spacer()
+            Button { shiftMonth(1) } label: { Image(systemName: "chevron.right") }
+                .buttonStyle(RiceIconButtonStyle())
+                .disabled(isShowingCurrentMonth)
+        }
+    }
+
+    private var weekdayHeader: some View {
+        HStack(spacing: 2) {
+            ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
+                Text(symbol)
+                    .riceFont(9, .semibold)
+                    .foregroundStyle(Rice.subtext0)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    // MARK: Calendar math
+
+    private var presets: [(label: String, date: Date)] {
+        let now = Date()
+        return [
+            ("1 week", calendar.date(byAdding: .weekOfYear, value: -1, to: now) ?? now),
+            ("1 month", calendar.date(byAdding: .month, value: -1, to: now) ?? now),
+            ("1 year", calendar.date(byAdding: .year, value: -1, to: now) ?? now),
+        ]
+    }
+
+    /// Weekday initials, rotated to the locale's first weekday.
+    private var weekdaySymbols: [String] {
+        let symbols = calendar.veryShortWeekdaySymbols
+        let first = calendar.firstWeekday - 1
+        return Array(symbols[first...] + symbols[..<first])
+    }
+
+    /// A fixed 6-week grid covering `visibleMonth`, padded with the tail of the
+    /// previous month and head of the next so weekdays line up.
+    private var gridDays: [Date] {
+        let start = monthStart(for: visibleMonth)
+        let weekday = calendar.component(.weekday, from: start)
+        let leading = (weekday - calendar.firstWeekday + 7) % 7
+        guard let gridStart = calendar.date(byAdding: .day, value: -leading, to: start) else { return [] }
+        return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: gridStart) }
+    }
+
+    private var isShowingCurrentMonth: Bool {
+        monthStart(for: visibleMonth) >= monthStart(for: Date())
+    }
+
+    private func monthStart(for date: Date) -> Date {
+        calendar.date(from: calendar.dateComponents([.year, .month], from: date)) ?? date
+    }
+
+    private func shiftMonth(_ delta: Int) {
+        guard let shifted = calendar.date(byAdding: .month, value: delta, to: visibleMonth) else { return }
+        // Never page past the current month — there's nothing in the future.
+        visibleMonth = min(monthStart(for: shifted), monthStart(for: Date()))
+    }
+}
+
+/// One day in the jump-to-date grid: dim outside the shown month, disabled in the
+/// future, accent-ringed on the day the thread is currently anchored to.
+private struct DayCell: View {
+    let day: Date
+    let inMonth: Bool
+    let isFuture: Bool
+    let isAnchor: Bool
+    let onTap: () -> Void
+
+    @Environment(\.riceAccent) private var accent
+    @State private var isHovering = false
+
+    private let calendar = Calendar.current
+
+    var body: some View {
+        Button(action: onTap) {
+            Text("\(calendar.component(.day, from: day))")
+                .riceFont(11, isAnchor ? .semibold : .regular)
+                .monospacedDigit()
+                .frame(maxWidth: .infinity, minHeight: 26)
+                .foregroundStyle(foreground)
+                .background(background, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(isFuture)
+        .onHover { isHovering = $0 && !isFuture }
+    }
+
+    private var foreground: Color {
+        if isFuture { return Rice.overlay0.opacity(0.5) }
+        if isAnchor { return accent }
+        return inMonth ? Rice.text : Rice.overlay0
+    }
+
+    private var background: Color {
+        if isHovering { return Rice.surface0 }
+        if isAnchor { return accent.opacity(0.16) }
+        return .clear
     }
 }
 

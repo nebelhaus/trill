@@ -51,6 +51,10 @@ actor MessagesRepository {
         return result
     }
 
+    func messages(in conversation: ConversationID, around date: Date, limit: Int) async throws -> DatedMessagePage {
+        try await provider.messages(in: conversation, around: date, limit: limit)
+    }
+
     func send(_ request: SendRequest) async throws -> SendOutcome {
         let outcome = try await provider.send(request)
         AppLog.repository.info("Send completed operation=\(request.operationID, privacy: .public)")

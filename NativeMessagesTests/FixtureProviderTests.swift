@@ -37,6 +37,49 @@ final class FixtureProviderTests: XCTestCase {
         XCTAssertEqual(Set(loaded.map(\.text)).count, 96)
     }
 
+    func testJumpToDateAnchorsOnFirstMessageOnOrAfterAndPagesOlder() async throws {
+        let provider = FixtureProvider()
+        let conversation = ConversationID(
+            provider: ProviderID(rawValue: "fixture"),
+            externalGUID: "fixture-direct-imessage"
+        )
+        // Fixture direct messages are dated base + index * 180s, indices 0..<96.
+        let base = Date(timeIntervalSince1970: 1_735_689_600)
+        let target = base.addingTimeInterval(50 * 180)
+
+        let result = try await provider.messages(in: conversation, around: target, limit: 36)
+
+        // Anchor is the first message dated on or after the target.
+        XCTAssertEqual(result.anchor?.externalGUID, "fixture-direct-50")
+        // The window contains the anchor, plus a slice of newer context above it.
+        let ids = result.page.messages.map(\.id.externalGUID)
+        XCTAssertTrue(ids.contains("fixture-direct-50"))
+        XCTAssertTrue(ids.contains("fixture-direct-62")) // newest in the window
+        XCTAssertFalse(ids.contains("fixture-direct-63"))
+        // Older history remains, reachable through the returned cursor.
+        XCTAssertNotNil(result.page.nextBefore)
+        let older = try await provider.messages(
+            in: conversation,
+            page: MessagePageRequest(limit: 36, before: result.page.nextBefore)
+        )
+        let overlap = Set(ids).intersection(older.messages.map(\.id.externalGUID))
+        XCTAssertTrue(overlap.isEmpty)
+    }
+
+    func testJumpToDatePastNewestFallsBackToNewestPage() async throws {
+        let provider = FixtureProvider()
+        let conversation = ConversationID(
+            provider: ProviderID(rawValue: "fixture"),
+            externalGUID: "fixture-direct-imessage"
+        )
+        let result = try await provider.messages(in: conversation, around: .distantFuture, limit: 36)
+
+        XCTAssertNil(result.anchor)
+        // Same as a plain first page: the newest 36 messages.
+        XCTAssertTrue(result.page.messages.map(\.id.externalGUID).contains("fixture-direct-95"))
+        XCTAssertEqual(result.page.messages.count, 36)
+    }
+
     func testSearchIsCaseInsensitiveAndDeterministic() async throws {
         let provider = FixtureProvider()
         let first = try await provider.search(MessageSearchQuery(text: "SYNTHETIC", limit: 3))

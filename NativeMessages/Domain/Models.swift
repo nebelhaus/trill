@@ -231,6 +231,16 @@ struct MessagePage: Sendable {
     let nextBefore: String?
 }
 
+/// A page loaded by the "jump to date" scrubber: a window of messages around a
+/// chosen wall-clock date, plus the `anchor` — the first message on or after that
+/// date — for the view to scroll to and flash. `page.nextBefore` continues the
+/// usual older-message paging from the top of the window. `anchor` is nil when the
+/// date falls past the newest message (the window is then just the newest page).
+struct DatedMessagePage: Sendable {
+    let page: MessagePage
+    let anchor: MessageID?
+}
+
 /// Structured filters parsed out of a raw search string by `SearchQueryParser`
 /// — the `from:`, `in:`, `has:`, `is:`, `before:` and `after:` operators. Each
 /// field is one operator; a nil/false/empty field means that operator wasn't

@@ -20,6 +20,11 @@ final class ConversationModel: ObservableObject {
     @Published private(set) var revealTarget: MessageID?
     @Published private(set) var highlightedMessageID: MessageID?
 
+    // MARK: Jump to date (⌘J)
+
+    /// Whether the "jump to date" picker popover is showing.
+    @Published var isJumpToDatePresented = false
+
     // MARK: Find in conversation (⌘F)
 
     /// Whether the in-thread find bar is showing.
@@ -68,6 +73,7 @@ final class ConversationModel: ObservableObject {
         state = .idle
         revealTarget = nil
         highlightedMessageID = nil
+        isJumpToDatePresented = false
         resetFind()
     }
 
@@ -79,6 +85,7 @@ final class ConversationModel: ObservableObject {
         state = .loading
         revealTarget = nil
         highlightedMessageID = nil
+        isJumpToDatePresented = false
         resetFind()
         let repository = repository
         loadTask = Task { [weak self] in
@@ -157,6 +164,54 @@ final class ConversationModel: ObservableObject {
 
     func consumeRevealTarget() {
         revealTarget = nil
+    }
+
+    // MARK: - Jump to date
+
+    /// Opens the "jump to date" picker over the current thread. No-op with no
+    /// conversation loaded.
+    func beginJumpToDate() {
+        guard conversation != nil else { return }
+        isJumpToDatePresented = true
+    }
+
+    /// Leaps the timeline to a window of messages around `date`, replacing the
+    /// loaded set, then scrolls to and flashes the first message on or after it.
+    /// A single query lands the reader anywhere in a long thread — no dozens of
+    /// backward pages. Continues older paging from the top of the new window.
+    func jump(to date: Date) {
+        guard let conversation else { return }
+        isJumpToDatePresented = false
+        loadTask?.cancel()
+        messages = []
+        nextBefore = nil
+        state = .loading
+        revealTarget = nil
+        highlightedMessageID = nil
+        resetFind()
+        let repository = repository
+        loadTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await repository.messages(in: conversation.id, around: date, limit: 36)
+                guard !Task.isCancelled, self.conversation?.id == conversation.id else { return }
+                messages = result.page.messages.sorted(by: Self.chronological)
+                nextBefore = result.page.nextBefore
+                state = messages.isEmpty ? .empty : .loaded
+                if let anchor = result.anchor {
+                    await revealMessage(anchor)
+                } else if let newest = messages.last {
+                    // Date fell past the newest message — surface the tail instead.
+                    revealTarget = newest.id
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard self.conversation?.id == conversation.id else { return }
+                state = .failed
+                AppLog.ui.error("Jump-to-date load failed error=\(String(describing: type(of: error)), privacy: .public)")
+            }
+        }
     }
 
     // MARK: - Find in conversation

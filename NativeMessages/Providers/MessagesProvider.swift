@@ -7,6 +7,10 @@ protocol MessagesProvider: Sendable {
     func capabilities() async -> ProviderCapabilities
     func conversations(page: ConversationPageRequest) async throws -> ConversationPage
     func messages(in conversation: ConversationID, page: MessagePageRequest) async throws -> MessagePage
+    /// Loads a window of messages centered on `date` for the "jump to date"
+    /// scrubber, resolving the date to a paging position server-side so a leap
+    /// into deep history is one query, not dozens of backward pages.
+    func messages(in conversation: ConversationID, around date: Date, limit: Int) async throws -> DatedMessagePage
     func search(_ query: MessageSearchQuery) async throws -> MessageSearchPage
     func events(after cursor: EventCursor?) async -> AsyncThrowingStream<ProviderEvent, Error>
     func send(_ request: SendRequest) async throws -> SendOutcome
@@ -19,6 +23,13 @@ protocol MessagesProvider: Sendable {
 }
 
 extension MessagesProvider {
+    /// Default: providers that can't resolve a date to a position fall back to the
+    /// newest page with no anchor, so "jump to date" degrades to a plain reload.
+    func messages(in conversation: ConversationID, around date: Date, limit: Int) async throws -> DatedMessagePage {
+        let page = try await messages(in: conversation, page: MessagePageRequest(limit: limit))
+        return DatedMessagePage(page: page, anchor: nil)
+    }
+
     func sendDirect(_ request: DirectSendRequest) async throws -> SendOutcome {
         .rejected(operationID: request.operationID, reason: .unsupported)
     }

@@ -78,6 +78,39 @@ actor LiveIMessageProvider: MessagesProvider {
         return MessagePage(messages: messages, nextBefore: nextBefore)
     }
 
+    func messages(in conversation: ConversationID, around date: Date, limit: Int) async throws -> DatedMessagePage {
+        guard conversation.provider == id else { throw MessagesProviderError.wrongProvider }
+        guard let chat = try reader.chat(guid: conversation.externalGUID) else {
+            throw MessagesProviderError.unavailable("Conversation no longer exists in chat.db")
+        }
+        // Resolve the wall-clock date to the ROWID of the first message that late.
+        // Nothing that recent → fall back to the newest page with no anchor.
+        guard let anchorRowID = try reader.anchorRowID(
+            chatRowID: chat.rowID,
+            onOrAfterAppleDate: Self.appleNanoseconds(from: date)
+        ) else {
+            return DatedMessagePage(
+                page: try await messages(in: conversation, page: MessagePageRequest(limit: limit)),
+                anchor: nil
+            )
+        }
+        // Load the anchor plus a slice of newer context above it, so the jumped-to
+        // day lands with room to scroll both ways rather than glued to the bottom.
+        let topRowID = try reader.messageRowID(chatRowID: chat.rowID, newerThan: anchorRowID, offset: limit / 3)
+        let rows = try reader.messages(
+            chatRowID: chat.rowID,
+            beforeRowID: topRowID.map { $0 + 1 },
+            limit: limit
+        )
+        let messages = try await map(rows: rows, conversationID: conversation, chatRowID: chat.rowID)
+        let nextBefore = rows.count == limit ? rows.map(\.rowID).min().map(String.init) : nil
+        let anchorGUID = rows.first { $0.rowID == anchorRowID }?.guid
+        return DatedMessagePage(
+            page: MessagePage(messages: messages, nextBefore: nextBefore),
+            anchor: anchorGUID.map { MessageID(provider: id, externalGUID: $0) }
+        )
+    }
+
     func search(_ query: MessageSearchQuery) async throws -> MessageSearchPage {
         guard query.hasCriteria else { return MessageSearchPage(messages: [], nextCursor: nil) }
         // Free text narrows the scan via SQL LIKE. An operator-only query (e.g.
@@ -594,6 +627,12 @@ actor LiveIMessageProvider: MessagesProvider {
     private static func date(fromAppleNanoseconds value: Int64) -> Date {
         // chat.db stores nanoseconds since 2001-01-01 on modern macOS.
         Date(timeIntervalSince1970: Double(value) / 1_000_000_000 + appleEpochOffset)
+    }
+
+    /// Inverse of `date(fromAppleNanoseconds:)` — a wall-clock date as Apple-epoch
+    /// nanoseconds, for date-bounded queries.
+    private static func appleNanoseconds(from date: Date) -> Int64 {
+        Int64((date.timeIntervalSince1970 - appleEpochOffset) * 1_000_000_000)
     }
 
     private static func service(from serviceName: String?, chatGUID: String? = nil) -> MessageServiceKind {
