@@ -500,20 +500,18 @@ final class InboxModel: ObservableObject {
 
     private func maybeNotify(_ message: Message) {
         guard providerMode == .messages, !message.isOutgoing else { return }
-        let isVIP = vipIDs.contains(message.conversationID)
-        // Muted threads never alert — except VIPs, which are "always-notify" and
-        // override mute per the VIP contract (see the banner note below).
-        guard isVIP || !mutedIDs.contains(message.conversationID) else { return }
+        // Mute is the strongest gate: an explicitly muted thread never alerts,
+        // even a VIP. (VIP is "always-notify" only relative to the default — the
+        // user muting it is a deliberate override that wins.)
+        guard !mutedIDs.contains(message.conversationID) else { return }
         let isViewing = message.conversationID == selectedConversationID && NSApp.isActive
         guard !isViewing else { return }
         let name = conversations.first(where: { $0.id == message.conversationID })?.displayName
             ?? message.sender?.displayName
             ?? message.sender?.handle
             ?? "New message"
-        // VIP threads are "always-notify": they bypass the Mute gate above and
-        // get a distinct ⭐ banner. Focus-awareness, when it lands, must exempt
-        // VIPs the same way — this is the single seam for that override.
-        notifications.post(message: message, conversationName: name, isVIP: isVIP)
+        // VIP (unmuted) threads get a distinct ⭐ banner.
+        notifications.post(message: message, conversationName: name, isVIP: vipIDs.contains(message.conversationID))
     }
 
     // MARK: - Compose
