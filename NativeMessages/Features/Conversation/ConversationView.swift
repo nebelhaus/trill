@@ -20,6 +20,7 @@ struct ConversationView: View {
 
     @State private var isGalleryPresented = false
     @State private var isStatsPresented = false
+    @State private var isExportPresented = false
     /// Live height of the whole thread pane; the composer caps its growth at half.
     @State private var paneHeight: CGFloat = 0
 
@@ -69,6 +70,9 @@ struct ConversationView: View {
         .sheet(isPresented: $isStatsPresented) {
             ConversationStatsView(model: model, onClose: { isStatsPresented = false })
         }
+        .sheet(isPresented: $isExportPresented) {
+            ConversationExportView(model: model, onClose: { isExportPresented = false })
+        }
     }
 
     /// Media + stats, shared by the regular and compact headers so both stay in
@@ -89,6 +93,13 @@ struct ConversationView: View {
         }
         .buttonStyle(RiceIconButtonStyle())
         .help("Media gallery")
+        Button {
+            isExportPresented = true
+        } label: {
+            Image(systemName: "square.and.arrow.up")
+        }
+        .buttonStyle(RiceIconButtonStyle())
+        .help("Export conversation")
     }
 
     private var header: some View {

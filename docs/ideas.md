@@ -47,7 +47,7 @@ Everything below respects these.
 | **Jump to date** | Date scrubber / "go to date" to leap anywhere in a long thread instantly | M | ✅ | Cursor paging already keyed on message date. |
 | **On this day** | Surface messages from today's date in prior years | M | ✅ 🚫 | Declined — not something I want to build for now. |
 | **Attachment search** | Find attachments by filename, type, or size across chats | S–M | ✅ 🚫 | Declined — the shipped Universal Library + advanced search operators (`has:image`, `from:`) cover this need well enough. |
-| **Conversation export** | Export a thread (or date range) to Markdown / plain text / HTML | M | ✅ | Read-only serialization of what's already loaded. |
+| **Conversation export** | Export a thread (or date range) to Markdown / plain text / HTML | M | ✅ 🚢 | Shipped. A pure, tested `ConversationExporter` (mirrors `ConversationStatsBuilder`) turns `Message` values into a Markdown / plain-text / HTML document — chronological, day-grouped, with sender labels, attachment/reaction lines, HTML escaping, and an optional inclusive date-range clip. `ConversationModel.loadAllForExport` pages the whole thread off the shared timeline state so exporting a long history never disturbs what's scrolled into view. The `square.and.arrow.up` header button opens `ConversationExportView`: format picker + date-range toggle + live preview, then Copy or Save… (`NSSavePanel`, format-typed with a sanitized filename stem). Read-only throughout; chat.db is never touched. |
 
 ## Insight & analytics — impossible in Apple Messages
 

@@ -265,6 +265,29 @@ final class ConversationModel: ObservableObject {
         return ConversationStatsBuilder.build(from: samples, now: Date())
     }
 
+    /// Pages the entire open thread for export, oldest → newest. Runs an
+    /// independent paging loop off the shared timeline state so exporting a long
+    /// history never disturbs what's scrolled into view. Bounded by `maxMessages`
+    /// and a page-count guard so a runaway thread can't spin forever.
+    func loadAllForExport(maxMessages: Int = 50_000) async -> [Message] {
+        guard let conversation else { return [] }
+        let repository = repository
+        var collected: [MessageID: Message] = [:]
+        var before: String?
+        var pagesRemaining = 400
+        repeat {
+            guard let page = try? await repository.messages(
+                in: conversation.id,
+                page: MessagePageRequest(limit: 200, before: before)
+            ) else { break }
+            guard self.conversation?.id == conversation.id else { break }
+            for message in page.messages { collected[message.id] = message }
+            before = page.nextBefore
+            pagesRemaining -= 1
+        } while before != nil && collected.count < maxMessages && pagesRemaining > 0
+        return collected.values.sorted(by: Self.chronological)
+    }
+
     func loadOlder() async {
         guard let conversation, let nextBefore, !isLoadingOlder else { return }
         isLoadingOlder = true
