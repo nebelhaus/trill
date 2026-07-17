@@ -17,14 +17,14 @@ struct GrowingTextView: NSViewRepresentable {
     /// Only true once the box is pinned at its max height — below that it grows
     /// to fit, so the scroller stays hidden and never flashes mid-growth.
     var isScrollable: Bool
-    /// When the snippet picker is open, ↑/↓ move its selection, Return/Tab commit
-    /// the highlighted snippet, and Escape dismisses it — all before the normal
-    /// Return-to-send policy runs.
-    var isSnippetPickerActive = false
-    var onSnippetMove: (Int) -> Void = { _ in }
-    /// Returns `true` when a snippet was inserted, so the key is consumed.
-    var onSnippetCommit: () -> Bool = { false }
-    var onSnippetCancel: () -> Void = {}
+    /// When the completion picker is open, ↑/↓ move its selection, Return/Tab
+    /// commit the highlighted command or snippet, and Escape dismisses it — all
+    /// before the normal Return-to-send policy runs.
+    var isCompletionPickerActive = false
+    var onCompletionMove: (Int) -> Void = { _ in }
+    /// Returns `true` when a completion was inserted, so the key is consumed.
+    var onCompletionCommit: () -> Bool = { false }
+    var onCompletionCancel: () -> Void = {}
     /// A one-shot request to select a range (a template blank). Applied once per
     /// distinct `token`, after any text sync, so the highlight survives the
     /// caret-park that follows a programmatic string change.
@@ -137,20 +137,20 @@ struct GrowingTextView: NSViewRepresentable {
         /// every flavor of Return; the live event tells us which modifiers rode
         /// along so we can send, or fall through to a real newline.
         func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
-            // Snippet picker owns the arrow/commit/cancel keys while it's open.
-            if parent.isSnippetPickerActive {
+            // Completion picker owns the arrow/commit/cancel keys while it's open.
+            if parent.isCompletionPickerActive {
                 switch selector {
                 case #selector(NSResponder.moveUp(_:)):
-                    parent.onSnippetMove(-1)
+                    parent.onCompletionMove(-1)
                     return true
                 case #selector(NSResponder.moveDown(_:)):
-                    parent.onSnippetMove(1)
+                    parent.onCompletionMove(1)
                     return true
                 case #selector(NSResponder.cancelOperation(_:)):
-                    parent.onSnippetCancel()
+                    parent.onCompletionCancel()
                     return true
                 case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertTab(_:)):
-                    if parent.onSnippetCommit() { return true }
+                    if parent.onCompletionCommit() { return true }
                 default:
                     break
                 }

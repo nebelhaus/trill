@@ -82,7 +82,7 @@ final class AppDatabaseTests: XCTestCase {
 
         let version = try await database.schemaVersion()
         XCTAssertEqual(version, AppDatabase.currentSchemaVersion)
-        XCTAssertEqual(AppDatabase.currentSchemaVersion, 12)
+        XCTAssertEqual(AppDatabase.currentSchemaVersion, 13)
 
         let provider = ProviderID(rawValue: "fixture")
         let alice = ConversationID(provider: provider, externalGUID: "alice")
@@ -124,6 +124,34 @@ final class AppDatabaseTests: XCTestCase {
         members = try await database.folderMembers()
         XCTAssertNil(members[work.id])
         XCTAssertEqual(members[family.id], [alice])
+    }
+
+    func testSavedMessagesRoundTrip() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("NativeMessagesTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try AppDatabase(url: root.appendingPathComponent("app.sqlite3"))
+
+        let provider = ProviderID(rawValue: "fixture")
+        let first = MessageID(provider: provider, externalGUID: "msg-1")
+        let second = MessageID(provider: provider, externalGUID: "msg-2")
+
+        var saved = try await database.savedMessageIDs()
+        XCTAssertTrue(saved.isEmpty)
+
+        try await database.setSaved(true, messageID: first)
+        try await database.setSaved(true, messageID: second)
+        saved = try await database.savedMessageIDs()
+        XCTAssertEqual(saved, [first, second])
+
+        // Bookmarking twice is idempotent (INSERT OR REPLACE).
+        try await database.setSaved(true, messageID: first)
+        saved = try await database.savedMessageIDs()
+        XCTAssertEqual(saved, [first, second])
+
+        try await database.setSaved(false, messageID: first)
+        saved = try await database.savedMessageIDs()
+        XCTAssertEqual(saved, [second])
     }
 
     func testArchiveMuteAndSnoozeRoundTrip() async throws {

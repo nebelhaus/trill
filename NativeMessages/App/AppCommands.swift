@@ -6,6 +6,7 @@ struct AppCommands: Commands {
     let showSearch: () -> Void
     let showLibrary: () -> Void
     let findInConversation: () -> Void
+    let jumpToDate: () -> Void
     let findNext: () -> Void
     let findPrevious: () -> Void
     let reload: () -> Void
@@ -36,6 +37,8 @@ struct AppCommands: Commands {
                 .keyboardShortcut("l", modifiers: [.command, .shift])
             Button("Find in Conversation…", action: findInConversation)
                 .keyboardShortcut("f", modifiers: .command)
+            Button("Jump to Date…", action: jumpToDate)
+                .keyboardShortcut("j", modifiers: .command)
             Button("Find Next", action: findNext)
                 .keyboardShortcut("g", modifiers: .command)
             Button("Find Previous", action: findPrevious)

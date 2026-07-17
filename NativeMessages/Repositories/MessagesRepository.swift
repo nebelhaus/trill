@@ -51,6 +51,10 @@ actor MessagesRepository {
         return result
     }
 
+    func messages(in conversation: ConversationID, around date: Date, limit: Int) async throws -> DatedMessagePage {
+        try await provider.messages(in: conversation, around: date, limit: limit)
+    }
+
     func send(_ request: SendRequest) async throws -> SendOutcome {
         let outcome = try await provider.send(request)
         AppLog.repository.info("Send completed operation=\(request.operationID, privacy: .public)")
@@ -72,7 +76,20 @@ actor MessagesRepository {
     }
 
     func libraryItems(kind: LibraryKind, limit: Int) async throws -> [LibraryItem] {
-        try await provider.libraryItems(kind: kind, limit: limit)
+        // The saved tab is assembled here rather than in the provider: bookmarks
+        // live in the app-owned overlay (only the repository holds `database`),
+        // and their content is resolved through the provider by identity. Newest
+        // message first, mirroring the other tabs' ordering.
+        guard kind == .saved else {
+            return try await provider.libraryItems(kind: kind, limit: limit)
+        }
+        let ids = try await database.savedMessageIDs()
+        guard !ids.isEmpty else { return [] }
+        let messages = try await provider.messages(ids: Array(ids))
+        return messages
+            .sorted { $0.createdAt > $1.createdAt }
+            .prefix(limit)
+            .map(LibraryItem.init(saved:))
     }
 
     func statSamples(in conversation: ConversationID) async throws -> [MessageStatSample] {

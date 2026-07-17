@@ -14,8 +14,55 @@ struct LibraryItem: Identifiable, Hashable, Sendable {
     let attachment: MessageAttachment?
     /// Set for `.link` items; nil otherwise.
     let url: URL?
-    /// The message text a link was found in, for context. Nil for attachments.
+    /// The message text a link was found in, for context — also the body of a
+    /// `.saved` bookmark. Nil for attachments.
     let messageText: String?
+    /// Who sent a `.saved` message: the contact's display name, or nil for one I
+    /// sent (rendered as "You"). Unused by the attachment/link kinds.
+    let senderName: String?
+
+    /// Preserves the memberwise call sites the attachment/link providers use;
+    /// `senderName` defaults to nil so only the saved-message path sets it.
+    init(
+        id: String,
+        kind: LibraryKind,
+        messageID: MessageID,
+        conversationID: ConversationID,
+        createdAt: Date,
+        attachment: MessageAttachment?,
+        url: URL?,
+        messageText: String?,
+        senderName: String? = nil
+    ) {
+        self.id = id
+        self.kind = kind
+        self.messageID = messageID
+        self.conversationID = conversationID
+        self.createdAt = createdAt
+        self.attachment = attachment
+        self.url = url
+        self.messageText = messageText
+        self.senderName = senderName
+    }
+
+    /// Builds a `.saved` library item from a bookmarked message, carrying its
+    /// body, sender, and first attachment (for a glyph) plus the identifiers
+    /// needed to jump back to it in the thread.
+    init(saved message: Message) {
+        self.init(
+            id: message.id.id,
+            kind: .saved,
+            messageID: message.id,
+            conversationID: message.conversationID,
+            createdAt: message.createdAt,
+            attachment: message.attachments.first,
+            url: nil,
+            messageText: message.text,
+            senderName: message.isOutgoing
+                ? nil
+                : (message.sender?.displayName ?? message.sender?.handle)
+        )
+    }
 }
 
 /// The Universal Library's type tabs. `image` covers photos *and* videos (both
@@ -25,6 +72,9 @@ enum LibraryKind: String, CaseIterable, Identifiable, Sendable {
     case image
     case link
     case file
+    /// Messages the user has bookmarked, resolved from the `saved_messages`
+    /// overlay rather than scanned out of attachments/links.
+    case saved
 
     var id: String { rawValue }
 
@@ -33,6 +83,7 @@ enum LibraryKind: String, CaseIterable, Identifiable, Sendable {
         case .image: "Images"
         case .link: "Links"
         case .file: "Files"
+        case .saved: "Saved"
         }
     }
 
@@ -41,6 +92,7 @@ enum LibraryKind: String, CaseIterable, Identifiable, Sendable {
         case .image: "photo"
         case .link: "link"
         case .file: "doc"
+        case .saved: "bookmark.fill"
         }
     }
 }

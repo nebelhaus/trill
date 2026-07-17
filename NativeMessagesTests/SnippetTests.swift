@@ -34,7 +34,7 @@ final class SnippetTriggerTests: XCTestCase {
     }
 }
 
-final class SnippetRankingTests: XCTestCase {
+final class CompletionRankingTests: XCTestCase {
     private let snippets = [
         Snippet(title: "omw", body: "On my way!"),
         Snippet(title: "brb", body: "Be right back."),
@@ -42,24 +42,68 @@ final class SnippetRankingTests: XCTestCase {
         Snippet(title: "blank", body: ""),
     ]
 
+    private func snippetMatches(query: String) -> [Snippet] {
+        CompletionRanking.matches(query: query, commands: [], snippets: snippets)
+            .compactMap { if case let .snippet(snippet) = $0 { snippet } else { nil } }
+    }
+
     func testEmptyQueryListsUsableSnippetsAlphabetically() {
-        let matches = SnippetRanking.matches(query: "", snippets: snippets)
+        let matches = snippetMatches(query: "")
         XCTAssertEqual(matches.map(\.title), ["brb", "omw", "ty"])
     }
 
     func testFuzzyRanksByKeyword() {
-        let matches = SnippetRanking.matches(query: "omw", snippets: snippets)
-        XCTAssertEqual(matches.first?.title, "omw")
+        XCTAssertEqual(snippetMatches(query: "omw").first?.title, "omw")
     }
 
     func testMatchesAgainstBody() {
-        let matches = SnippetRanking.matches(query: "thank", snippets: snippets)
-        XCTAssertEqual(matches.first?.title, "ty")
+        XCTAssertEqual(snippetMatches(query: "thank").first?.title, "ty")
     }
 
     func testSkipsSnippetsWithoutBody() {
-        let matches = SnippetRanking.matches(query: "blank", snippets: snippets)
-        XCTAssertTrue(matches.isEmpty)
+        XCTAssertTrue(snippetMatches(query: "blank").isEmpty)
+    }
+
+    func testEmptyQueryBlendsCommandsAndSnippetsAlphabetically() {
+        let matches = CompletionRanking.matches(
+            query: "",
+            commands: [SlashCommand(keyword: "date", expansion: .date)],
+            snippets: [Snippet(title: "omw", body: "On my way!")]
+        )
+        XCTAssertEqual(matches.map(\.title), ["date", "omw"])
+    }
+
+    func testQueryFindsBuiltInCommand() {
+        let matches = CompletionRanking.matches(
+            query: "shr",
+            commands: SlashCommand.all,
+            snippets: snippets
+        )
+        XCTAssertEqual(matches.first?.title, "shrug")
+        XCTAssertTrue(matches.first?.isCommand == true)
+    }
+}
+
+final class SlashCommandTests: XCTestCase {
+    func testLiteralExpandsToFixedText() {
+        let shrug = SlashCommand.all.first { $0.keyword == "shrug" }
+        XCTAssertEqual(shrug?.expand(), #"¯\_(ツ)_/¯"#)
+    }
+
+    func testDateExpandsAgainstProvidedClock() {
+        let command = SlashCommand(keyword: "date", expansion: .date)
+        let reference = Date(timeIntervalSince1970: 0)
+        let expected = DateFormatter.localizedString(from: reference, dateStyle: .long, timeStyle: .none)
+        XCTAssertEqual(command.expand(now: reference), expected)
+        XCTAssertFalse(expected.isEmpty)
+    }
+
+    func testCommandItemNeverFillsAndCarriesExpansion() {
+        let command = SlashCommand(keyword: "shrug", expansion: .literal("x"))
+        let item = CompletionItem.command(command)
+        XCTAssertTrue(item.isCommand)
+        XCTAssertFalse(item.isTemplate)
+        XCTAssertEqual(item.resolvedText(), "x")
     }
 }
 

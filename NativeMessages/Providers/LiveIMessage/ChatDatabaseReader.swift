@@ -234,6 +234,49 @@ struct ChatDatabaseReader: Sendable {
         }
     }
 
+    /// ROWID of the earliest non-retracted message in this chat dated on or after
+    /// `appleDate` (Apple-epoch nanoseconds) — the "jump to date" anchor. Nil when
+    /// the date is past the newest message, i.e. nothing is that recent.
+    func anchorRowID(chatRowID: Int64, onOrAfterAppleDate appleDate: Int64) throws -> Int64? {
+        try withConnection { db in
+            try query(db, """
+                SELECT m.ROWID
+                FROM message m
+                JOIN chat_message_join j ON j.message_id = m.ROWID
+                WHERE j.chat_id = ? AND m.associated_message_type = 0 AND m.item_type = 0
+                  AND IFNULL(m.date_retracted, 0) = 0
+                  AND m.date >= ?
+                ORDER BY m.date ASC, m.ROWID ASC
+                LIMIT 1
+                """, bind: [.int(chatRowID), .int(appleDate)]) { stmt in
+                sqlite3_column_int64(stmt, 0)
+            }.first
+        }
+    }
+
+    /// ROWID of the message exactly `offset` positions newer than `rowID` in this
+    /// chat — the top of a jump-to-date window, giving a little context after the
+    /// anchor. Nil when fewer than `offset` newer messages exist (the caller then
+    /// anchors at the newest page instead).
+    func messageRowID(chatRowID: Int64, newerThan rowID: Int64, offset: Int) throws -> Int64? {
+        guard offset > 0 else { return nil }
+        let rows = try withConnection { db in
+            try query(db, """
+                SELECT m.ROWID
+                FROM message m
+                JOIN chat_message_join j ON j.message_id = m.ROWID
+                WHERE j.chat_id = ? AND m.associated_message_type = 0 AND m.item_type = 0
+                  AND IFNULL(m.date_retracted, 0) = 0
+                  AND m.ROWID > ?
+                ORDER BY m.ROWID ASC
+                LIMIT ?
+                """, bind: [.int(chatRowID), .int(rowID), .int(Int64(offset))]) { stmt in
+                sqlite3_column_int64(stmt, 0)
+            }
+        }
+        return rows.count == offset ? rows.last : nil
+    }
+
     /// All messages newer than a ROWID across every chat (event polling).
     func messagesAfter(rowID: Int64, limit: Int) throws -> [MessageRow] {
         try withConnection { db in

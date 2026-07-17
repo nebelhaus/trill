@@ -54,30 +54,3 @@ enum SnippetTrigger {
         )
     }
 }
-
-/// Pure ranking for the snippet picker, kept out of the view so it's unit
-/// testable. Empty query lists every usable snippet alphabetically; a non-empty
-/// query fuzzy-ranks keyword and body together, best first.
-enum SnippetRanking {
-    static let limit = 8
-
-    static func matches(query: String, snippets: [Snippet]) -> [Snippet] {
-        let usable = snippets.filter(\.isUsable)
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return Array(
-                usable.sorted { $0.title.lowercased() < $1.title.lowercased() }.prefix(limit)
-            )
-        }
-        var scored: [(snippet: Snippet, score: Int)] = []
-        for snippet in usable {
-            if let score = FuzzyMatch.bestScore(trimmed, [snippet.title, snippet.body]) {
-                scored.append((snippet, score))
-            }
-        }
-        scored.sort { lhs, rhs in
-            lhs.score != rhs.score ? lhs.score > rhs.score : lhs.snippet.title < rhs.snippet.title
-        }
-        return scored.prefix(limit).map(\.snippet)
-    }
-}

@@ -44,6 +44,33 @@ actor FixtureProvider: MessagesProvider {
         return MessagePage(messages: items, nextBefore: start > 0 ? String(totalLoaded) : nil)
     }
 
+    func messages(in conversation: ConversationID, around date: Date, limit: Int) async throws -> DatedMessagePage {
+        guard conversation.provider == id else { throw MessagesProviderError.wrongProvider }
+        guard let history = fixture.messages[conversation] else { throw MessagesProviderError.conversationNotFound }
+        // History is oldest → newest; the anchor is the first message that late.
+        // Nothing that recent → fall back to the newest page with no anchor.
+        guard let anchorIndex = history.firstIndex(where: { $0.createdAt >= date }) else {
+            return DatedMessagePage(
+                page: try await messages(in: conversation, page: MessagePageRequest(limit: limit)),
+                anchor: nil
+            )
+        }
+        // Window ends a slice of context past the anchor, then reaches back `limit`.
+        let end = min(history.count, anchorIndex + limit / 3 + 1)
+        let start = max(0, end - limit)
+        let items = Array(history[start..<end])
+        let nextBefore = start > 0 ? String(history.count - start) : nil
+        return DatedMessagePage(
+            page: MessagePage(messages: items, nextBefore: nextBefore),
+            anchor: history[anchorIndex].id
+        )
+    }
+
+    func messages(ids: [MessageID]) async throws -> [Message] {
+        let wanted = Set(ids)
+        return fixture.messages.values.flatMap { $0 }.filter { wanted.contains($0.id) }
+    }
+
     func search(_ query: MessageSearchQuery) async throws -> MessageSearchPage {
         let offset = try Self.offset(from: query.cursor)
         guard query.hasCriteria else { return MessageSearchPage(messages: [], nextCursor: nil) }
@@ -144,6 +171,10 @@ actor FixtureProvider: MessagesProvider {
                 }
             }
             return items
+        case .saved:
+            // Bookmarks come from the app-owned overlay via the repository, not
+            // from the fixture message set.
+            return []
         }
     }
 

@@ -15,11 +15,12 @@ final class ComposerModel: ObservableObject {
     @Published private(set) var sendFeedback: String?
     @Published private(set) var disabledExplanation = "Select a conversation to write a draft."
 
-    /// Snippet picker state. Non-empty `snippetMatches` means the `/`-trigger
-    /// popover is showing; `snippetSelection` is the highlighted row. Both drive
-    /// the `ComposerView` overlay and the `GrowingTextView` key routing.
-    @Published private(set) var snippetMatches: [Snippet] = []
-    @Published var snippetSelection = 0
+    /// Completion picker state. Non-empty `completions` means the `/`-trigger
+    /// popover is showing; `completionSelection` is the highlighted row. The list
+    /// blends built-in slash commands with the user's snippets. Both drive the
+    /// `ComposerView` overlay and the `GrowingTextView` key routing.
+    @Published private(set) var completions: [CompletionItem] = []
+    @Published var completionSelection = 0
 
     /// Template fill state. When a snippet carrying `{blank}` markers is inserted
     /// the composer enters a fill session: `isFillSessionActive` routes ⇥ / ⇧⇥
@@ -67,15 +68,15 @@ final class ComposerModel: ObservableObject {
             : UserDefaults.standard.bool(forKey: "undoSend")
     }
     private var isRestoring = false
-    /// Range of the live `/token` in `text`, replaced when a snippet is picked.
-    private var snippetTriggerRange: Range<String.Index>?
+    /// Range of the live `/token` in `text`, replaced when a completion is picked.
+    private var completionTriggerRange: Range<String.Index>?
 
     init(database: AppDatabase, snippets: SnippetStore) {
         self.database = database
         self.snippets = snippets
     }
 
-    var isSnippetPickerActive: Bool { !snippetMatches.isEmpty }
+    var isCompletionPickerActive: Bool { !completions.isEmpty }
 
     deinit {
         saveTask?.cancel()
@@ -100,7 +101,7 @@ final class ComposerModel: ObservableObject {
         }
         saveTask?.cancel()
         restoreTask?.cancel()
-        clearSnippetPicker()
+        clearCompletions()
         endFillSession()
         self.conversationID = conversationID
         self.sendAction = sendAction
@@ -189,7 +190,7 @@ final class ComposerModel: ObservableObject {
         pendingSend = PendingSend(body: body, files: files, conversationID: conversationID, send: sendAction)
         undoSecondsRemaining = Self.undoWindowSeconds
         sendFeedback = nil
-        clearSnippetPicker()
+        clearCompletions()
         undoTimerTask = Task { [weak self] in
             for remaining in stride(from: Self.undoWindowSeconds - 1, through: 0, by: -1) {
                 do {
@@ -251,7 +252,7 @@ final class ComposerModel: ObservableObject {
             case .accepted, .confirmed:
                 text = ""
                 pendingAttachments = []
-                clearSnippetPicker()
+                clearCompletions()
                 endFillSession()
                 sendFeedback = nil
                 saveTask?.cancel()
@@ -263,7 +264,7 @@ final class ComposerModel: ObservableObject {
                 // a retry can't duplicate what already went out.
                 text = ""
                 pendingAttachments = []
-                clearSnippetPicker()
+                clearCompletions()
                 endFillSession()
                 saveTask?.cancel()
                 try? await database.saveDraft("", conversationID: conversationID)
@@ -276,7 +277,7 @@ final class ComposerModel: ObservableObject {
 
     func textDidChange() {
         guard !isRestoring, let conversationID else { return }
-        refreshSnippetPicker()
+        refreshCompletions()
         let value = text
         saveTask?.cancel()
         saveTask = Task { [database] in
@@ -291,53 +292,63 @@ final class ComposerModel: ObservableObject {
         }
     }
 
-    // MARK: - Snippets
+    // MARK: - Completions (slash commands + snippets)
 
     /// Re-evaluate the `/`-trigger against the current text on every keystroke.
-    /// Shows the picker when the trailing token is a `/query` that ranks at
-    /// least one usable snippet; hides it otherwise.
-    private func refreshSnippetPicker() {
+    /// Shows the picker when the trailing token is a `/query` that ranks at least
+    /// one built-in command or usable snippet; hides it otherwise.
+    private func refreshCompletions() {
         guard let match = SnippetTrigger.parse(text) else {
-            clearSnippetPicker()
+            clearCompletions()
             return
         }
-        let results = SnippetRanking.matches(query: match.query, snippets: snippets.snippets)
+        let results = CompletionRanking.matches(
+            query: match.query,
+            commands: SlashCommand.all,
+            snippets: snippets.snippets
+        )
         guard !results.isEmpty else {
-            clearSnippetPicker()
+            clearCompletions()
             return
         }
-        snippetTriggerRange = match.range
-        snippetMatches = results
-        if snippetSelection >= results.count { snippetSelection = 0 }
+        completionTriggerRange = match.range
+        completions = results
+        if completionSelection >= results.count { completionSelection = 0 }
     }
 
-    func moveSnippetSelection(_ delta: Int) {
-        let count = snippetMatches.count
+    func moveCompletionSelection(_ delta: Int) {
+        let count = completions.count
         guard count > 0 else { return }
-        snippetSelection = (snippetSelection + delta + count) % count
+        completionSelection = (completionSelection + delta + count) % count
     }
 
-    /// Insert the highlighted snippet, replacing the `/token` that triggered it.
+    /// Insert the highlighted completion, replacing the `/token` that triggered
+    /// it. A slash command expands to its (possibly dynamic) text; a snippet
+    /// copies its body and may open a fill session for `{blank}` templates.
     /// Returns `false` when there's nothing to commit so the caller (the text
     /// view's Return handler) can fall through to its normal behavior.
     @discardableResult
-    func commitSelectedSnippet() -> Bool {
-        guard snippetMatches.indices.contains(snippetSelection),
-              let range = snippetTriggerRange else { return false }
-        let body = snippetMatches[snippetSelection].body
-        // UTF-16 offset where the body lands, so we can find its blanks by
-        // NSRange once it's spliced into the full draft.
+    func commitSelectedCompletion() -> Bool {
+        guard completions.indices.contains(completionSelection),
+              let range = completionTriggerRange else { return false }
+        let item = completions[completionSelection]
+        // UTF-16 offset where the inserted text lands, so a template's blanks can
+        // be found by NSRange once spliced into the full draft.
         let insertion = text[..<range.lowerBound].utf16.count
-        text.replaceSubrange(range, with: body)
-        clearSnippetPicker()
-        beginFillSession(from: insertion)
+        text.replaceSubrange(range, with: item.resolvedText())
+        clearCompletions()
+        if item.isCommand {
+            endFillSession()
+        } else {
+            beginFillSession(from: insertion)
+        }
         return true
     }
 
-    func clearSnippetPicker() {
-        if !snippetMatches.isEmpty { snippetMatches = [] }
-        snippetSelection = 0
-        snippetTriggerRange = nil
+    func clearCompletions() {
+        if !completions.isEmpty { completions = [] }
+        completionSelection = 0
+        completionTriggerRange = nil
     }
 
     // MARK: - Template fill
