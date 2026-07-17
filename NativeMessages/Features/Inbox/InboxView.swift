@@ -381,6 +381,7 @@ private struct SidebarView: View {
             if level == 0 {
                 unreadFilterButton
                 needsReplyFilterButton
+                serviceFilterMenu
                 reloadButton
             }
             if level <= 1 { searchButton }
@@ -424,6 +425,50 @@ private struct SidebarView: View {
         }
         .buttonStyle(RiceIconButtonStyle(isActive: model.showsNeedsReplyOnly))
         .help(model.showsNeedsReplyOnly ? "Show all conversations (⇧⌘R)" : "Needs reply only (⇧⌘R)")
+    }
+
+    /// Multi-select service visibility. Unlike the unread / needs-reply filters
+    /// this is a *composable* axis, so it's a checkmark menu rather than a single
+    /// toggle button. A distinct bubble icon (not the funnel the unread filter
+    /// uses) fills and tints with the accent when anything is hidden, so the
+    /// header reads at a glance whether a service filter is on. Sizing mirrors
+    /// `RiceIconButtonStyle` so it sits flush with its neighbours.
+    private var serviceFilterMenu: some View {
+        let active = !model.hiddenServices.isEmpty
+        // Drive the Menu through the *same* RiceIconButtonStyle the sibling icons
+        // use (via `.menuStyle(.button)`), so it's pixel-identical in size and
+        // shares their neutral→accent active treatment. `isActive` keys off the
+        // hidden set alone: all services shown ⇒ neutral grey, like the others.
+        return Menu {
+            serviceMenuContent
+        } label: {
+            Image(systemName: "message")
+        }
+        .menuStyle(.button)
+        .buttonStyle(RiceIconButtonStyle(isActive: active))
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(active ? "Service filter on — some services hidden" : "Filter by service")
+    }
+
+    /// The per-service toggles plus a reset, shared by the inline menu and the
+    /// overflow menu so both stay in lockstep. Native `Toggle`s render as
+    /// checkmark rows, so a checked service = shown; toggling the same row again
+    /// flips it back. "Show All Services" is the explicit off switch — disabled
+    /// (and thus a state indicator) whenever nothing is hidden.
+    @ViewBuilder
+    private var serviceMenuContent: some View {
+        Section("Show Services") {
+            ForEach(MessageServiceKind.togglable, id: \.self) { service in
+                Toggle(service.displayLabel, isOn: Binding(
+                    get: { model.showsService(service) },
+                    set: { _ in model.toggleService(service) }
+                ))
+            }
+        }
+        Divider()
+        Button("Show All Services") { model.showAllServices() }
+            .disabled(model.hiddenServices.isEmpty)
     }
 
     private var reloadButton: some View {
@@ -478,6 +523,12 @@ private struct SidebarView: View {
                       systemImage: model.showsNeedsReplyOnly
                       ? "arrowshape.turn.up.left.circle.fill"
                       : "arrowshape.turn.up.left.circle")
+            }
+            Menu {
+                serviceMenuContent
+            } label: {
+                Label(model.hiddenServices.isEmpty ? "Filter by Service" : "Filter by Service — Some Hidden",
+                      systemImage: "message")
             }
             Button {
                 model.load()

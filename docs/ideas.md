@@ -11,7 +11,7 @@ user-owned organization) with concrete, prioritized, feasibility-tagged items.
 - **Feasibility** — `✅` clean within our constraints · `⚠️` possible but
   constrained/tricky · `⛔` blocked by a hard constraint (kept here so it isn't
   re-proposed).
-- **Status** — `🚢` shipped · blank = open.
+- **Status** — `🚢` shipped · `🚫` declined (deliberately not pursuing) · blank = open.
 
 The single biggest asset this app has that Apple's Messages does not: **direct,
 read-only access to the entire local `chat.db`.** The retrieval, analytics, and
@@ -46,7 +46,7 @@ Everything below respects these.
 | **Saved / starred messages** | Local bookmarks on any message, browsable in one place | M | ✅ | Store `MessageID`s in `AppDatabase`; no chat.db write. |
 | **Jump to date** | Date scrubber / "go to date" to leap anywhere in a long thread instantly | M | ✅ | Cursor paging already keyed on message date. |
 | **On this day** | Surface messages from today's date in prior years | M | ✅ | Pure query over `date`; delightful and unique. |
-| **Attachment search** | Find attachments by filename, type, or size across chats | S–M | ✅ | We already index attachment rows. |
+| **Attachment search** | Find attachments by filename, type, or size across chats | S–M | ✅ 🚫 | Declined — the shipped Universal Library + advanced search operators (`has:image`, `from:`) cover this need well enough. |
 | **Conversation export** | Export a thread (or date range) to Markdown / plain text / HTML | M | ✅ | Read-only serialization of what's already loaded. |
 
 ## Insight & analytics — impossible in Apple Messages
@@ -69,14 +69,14 @@ Everything below respects these.
 | **Archive** | Remove a thread from the main list without losing it | S | ✅ | Overlay flag; filter in `visibleConversations`. |
 | **Mute a conversation** | Suppress that thread's notifications locally | S | ✅ | Overlay flag checked in `maybeNotify`. |
 | **VIP contacts** | Always-notify + always-pin a chosen set, in their own section | S–M | ✅ 🚢 | Shipped. `vip_conversations` overlay table (migration 8) → `vipIDs` set on `InboxModel`, mirroring pins. VIP forms a sort tier *above* pinned (always-pin), gets its own titled "VIP" section atop the unscoped list (`showsVIPSection` / `visibleVIPConversations`), and threads an `isVIP` flag into `maybeNotify` → `NotificationCoordinator.post` for a ⭐-marked banner (the always-notify seam a future Mute/Focus feature must exempt). Toggle via row/thread context menu, the ⭐ toolbar button, ⌘K, or ⌃⌘V. **⚠️ Merge note:** claims `AppDatabase` migration 8 — the next overlay-table branch to merge after this must renumber if it also grabbed 8. |
-| **Filter by service** | Toggle iMessage / SMS / RCS visibility | S | ✅ | Service is already on every conversation. |
+| **Filter by service** | Toggle iMessage / SMS / RCS visibility | S | ✅ 🚢 | Shipped. A composable axis (not the mutually-exclusive `filter`): `hiddenServices: Set<MessageServiceKind>` in `InboxModel`, persisted to UserDefaults, applied in `visibleConversations` *after* folder scope and *before* the unread/needs-reply filter, so all three compose. `.unknown` is never hidden (`MessageServiceKind.togglable` = iMessage/SMS/RCS). UI is a `Toggle`-row menu in the sidebar header driven through the shared `RiceIconButtonStyle` (`.menuStyle(.button)`) so it matches its neighbours and tints only when a service is hidden; a "Show All Services" reset doubles as the off switch. Mirrored into the overflow menu; the open thread always stays visible. |
 
 ## Power-user velocity
 
 | Idea | What | Effort | Feas. | Notes |
 |------|------|--------|-------|-------|
-| **Vim-ish list nav** | `j`/`k` move threads, `Enter` opens, `g`/`G` ends, all without the mouse | S–M | ✅ | Focus/selection model already exists. |
-| **Quick switcher** | ⌘K-style recent-conversation switcher (editor tab-switch feel) | S–M | ✅ | Subset of the command palette; could ship first. |
+| **Vim-ish list nav** | `j`/`k` move threads, `Enter` opens, `g`/`G` ends, all without the mouse | S–M | ✅ 🚫 | Declined — not a fit for the intended interaction model. |
+| **Quick switcher** | ⌘K-style recent-conversation switcher (editor tab-switch feel) | S–M | ✅ 🚫 | Declined — subsumed by the shipped command palette (⌘K). |
 | **Canned responses / snippets** | Reusable text with a picker or `/`-trigger in the composer | M | ✅ 🚢 | Shipped. `snippets` overlay table (migration 7, renumbered from 5 to clear the Folders collision) + `SnippetStore` shared by composer and Settings. A trailing `/keyword` opens a floating picker (`SnippetTrigger` parse → `SnippetRanking` over `FuzzyMatch`); ↑↓ pick · ↵/⇥ insert · esc dismiss, routed through `GrowingTextView`. Manage in Settings; seeds a starter set on first launch. |
 | **Slash commands** | `/shrug`, `/unflip`, `/date`, insert-snippet in the composer | S | ✅ | Text transforms before send. |
 | **Shortcut cheat-sheet (⌘/)** | Overlay listing every keybinding | S | ✅ | Discoverability for a keyboard-first app. |

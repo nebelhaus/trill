@@ -110,6 +110,40 @@ final class InboxModel: ObservableObject {
         get { filter == .needsReply }
         set { filter = newValue ? .needsReply : .all }
     }
+
+    /// Services hidden from the sidebar. Unlike `filter`, this is a *composable*
+    /// axis (you can hide SMS while also scoping to a folder or unread), so it's
+    /// a set rather than a mutually-exclusive case. Empty = show everything. Only
+    /// `MessageServiceKind.togglable` services are ever placed here; `.unknown`
+    /// is never hidden. Persisted across launches.
+    @Published var hiddenServices: Set<MessageServiceKind> = InboxModel.loadHiddenServices() {
+        didSet {
+            UserDefaults.standard.set(
+                hiddenServices.map(\.rawValue).sorted().joined(separator: ","),
+                forKey: InboxModel.hiddenServicesKey
+            )
+        }
+    }
+
+    /// Whether a service is currently shown (drives the menu's checkmarks).
+    func showsService(_ service: MessageServiceKind) -> Bool {
+        !hiddenServices.contains(service)
+    }
+
+    /// Flip one service in or out of the sidebar.
+    func toggleService(_ service: MessageServiceKind) {
+        if hiddenServices.contains(service) {
+            hiddenServices.remove(service)
+        } else {
+            hiddenServices.insert(service)
+        }
+    }
+
+    /// Clear the service filter entirely — the menu's explicit "off" switch.
+    func showAllServices() {
+        hiddenServices.removeAll()
+    }
+
     @Published private(set) var providerMode: ProviderMode = .fixture
     @Published private(set) var errorSummary: String?
 
@@ -124,6 +158,7 @@ final class InboxModel: ObservableObject {
     private static let providerModeKey = "providerMode"
     private static let filterKey = "inboxFilter"
     private static let selectedFolderKey = "selectedFolderID"
+    private static let hiddenServicesKey = "hiddenServices"
 
     private static func loadPersistedFilter() -> InboxFilter {
         let defaults = UserDefaults.standard
@@ -132,6 +167,13 @@ final class InboxModel: ObservableObject {
         }
         // One-time migration from the pre-triage unread-only bool.
         return defaults.bool(forKey: "showsUnreadOnly") ? .unread : .all
+    }
+
+    private static func loadHiddenServices() -> Set<MessageServiceKind> {
+        guard let raw = UserDefaults.standard.string(forKey: hiddenServicesKey), !raw.isEmpty else {
+            return []
+        }
+        return Set(raw.split(separator: ",").compactMap { MessageServiceKind(rawValue: String($0)) })
     }
 
     init(database: AppDatabase, snippets: SnippetStore) {
@@ -251,16 +293,28 @@ final class InboxModel: ObservableObject {
         } else {
             scoped = conversations
         }
+        // Service axis narrows next, composing with folder scope and the filter
+        // below (e.g. "unread iMessage within Work"). Hidden services drop out;
+        // the open thread always stays visible so hiding its service never yanks
+        // it. Empty set is the common case, so skip the pass entirely then.
+        let serviced: [Conversation]
+        if hiddenServices.isEmpty {
+            serviced = scoped
+        } else {
+            serviced = scoped.filter {
+                !hiddenServices.contains($0.service) || $0.id == selectedConversationID
+            }
+        }
         switch filter {
         case .all:
-            return scoped
+            return serviced
         case .unread:
-            return scoped.filter {
+            return serviced.filter {
                 hasVisibleUnread($0) || $0.id == selectedConversationID
             }
         case .needsReply:
             let now = Date.now
-            return scoped.filter {
+            return serviced.filter {
                 NeedsReply.needsReply($0, now: now) || $0.id == selectedConversationID
             }
         }
