@@ -12,9 +12,9 @@ struct ComposerView: View {
     @AppStorage("sendOnReturn") private var sendOnReturn = true
     @State private var isDropTargeted = false
     @State private var measuredHeight: CGFloat = 0
-    /// Measured height of the snippet popover, so it can be offset fully above
+    /// Measured height of the completion popover, so it can be offset fully above
     /// the box regardless of how many rows it has.
-    @State private var snippetPickerHeight: CGFloat = 0
+    @State private var completionPickerHeight: CGFloat = 0
 
     /// Floor used only until the first real measurement lands, kept below a
     /// true single line so it never forces the box taller than one row.
@@ -89,26 +89,27 @@ struct ComposerView: View {
                     lineWidth: isDropTargeted ? 1.5 : 1
                 )
         )
-        // Float the snippet picker just above the box, leading-aligned. Anchored
-        // to the box's top edge, then offset up by its own measured height (plus
-        // a gap) so it grows upward into the timeline instead of over the box.
+        // Float the completion picker just above the box, leading-aligned.
+        // Anchored to the box's top edge, then offset up by its own measured
+        // height (plus a gap) so it grows upward into the timeline, not over the
+        // box.
         .overlay(alignment: .topLeading) {
-            if model.isSnippetPickerActive {
-                SnippetPickerView(
-                    matches: model.snippetMatches,
-                    selection: model.snippetSelection,
+            if model.isCompletionPickerActive {
+                CompletionPickerView(
+                    matches: model.completions,
+                    selection: model.completionSelection,
                     onSelect: { index in
-                        model.snippetSelection = index
-                        model.commitSelectedSnippet()
+                        model.completionSelection = index
+                        model.commitSelectedCompletion()
                     }
                 )
                 .background(
                     GeometryReader { proxy in
-                        Color.clear.preference(key: SnippetPickerHeightKey.self, value: proxy.size.height)
+                        Color.clear.preference(key: CompletionPickerHeightKey.self, value: proxy.size.height)
                     }
                 )
-                .offset(y: -(snippetPickerHeight + 6))
-                .onPreferenceChange(SnippetPickerHeightKey.self) { snippetPickerHeight = $0 }
+                .offset(y: -(completionPickerHeight + 6))
+                .onPreferenceChange(CompletionPickerHeightKey.self) { completionPickerHeight = $0 }
                 .transition(.opacity)
             }
         }
@@ -122,10 +123,10 @@ struct ComposerView: View {
             isEnabled: model.conversationID != nil && model.undoSecondsRemaining == nil,
             sendOnReturn: sendOnReturn,
             isScrollable: measuredHeight >= ceiling - 0.5,
-            isSnippetPickerActive: model.isSnippetPickerActive,
-            onSnippetMove: { model.moveSnippetSelection($0) },
-            onSnippetCommit: { model.commitSelectedSnippet() },
-            onSnippetCancel: { model.clearSnippetPicker() },
+            isCompletionPickerActive: model.isCompletionPickerActive,
+            onCompletionMove: { model.moveCompletionSelection($0) },
+            onCompletionCommit: { model.commitSelectedCompletion() },
+            onCompletionCancel: { model.clearCompletions() },
             pendingSelection: model.pendingSelection,
             isFillSessionActive: model.isFillSessionActive,
             onFillAdvance: { model.advanceFill(from: $0) },
@@ -350,7 +351,7 @@ struct ComposerView: View {
     }
 }
 
-private struct SnippetPickerHeightKey: PreferenceKey {
+private struct CompletionPickerHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
