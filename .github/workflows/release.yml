@@ -1,0 +1,92 @@
+name: release
+
+# Tag vX.Y.Z -> build Trill.app -> GitHub release with a zipped bundle ->
+# Homebrew cask bump. Cut tags with `bench release trill` from the workshop;
+# it enforces that the tag matches VERSION and that everything is pushed.
+#
+# The built app is ad-hoc signed (CI has no Developer ID), so users clear
+# Gatekeeper once with right-click -> Open. VERSION is the single source of
+# truth: it names the tag and is injected as MARKETING_VERSION at build time.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build + publish release
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches VERSION
+        run: |
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME != VERSION $VERSION — bump VERSION or retag" >&2
+            exit 1
+          fi
+
+      - name: Build Release Trill.app (ad-hoc signed)
+        run: |
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          xcodebuild \
+            -project Trill.xcodeproj \
+            -scheme Trill \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath dd \
+            -skipMacroValidation \
+            MARKETING_VERSION="$VERSION" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="-" \
+            DEVELOPMENT_TEAM="" \
+            CODE_SIGNING_ALLOWED=YES \
+            build
+
+      - name: Zip the bundle
+        run: |
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent \
+            "dd/Build/Products/Release/Trill.app" \
+            "dist/trill-$GITHUB_REF_NAME-macos.zip"
+
+      - name: Create GitHub release
+        run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  bump-tap:
+    name: bump nebelhaus/homebrew-tap
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: nebelhaus/homebrew-tap
+          # Write deploy key for the tap repo, stored as a secret here. The
+          # cask's version/sha lines are CI-owned; humans never bump them.
+          ssh-key: ${{ secrets.TAP_DEPLOY_KEY }}
+
+      - name: Point Casks/trill.rb at the new release
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          VER="${TAG#v}"
+          curl -fsSL --retry 5 --retry-delay 5 -o /tmp/trill.zip \
+            "https://github.com/nebelhaus/trill/releases/download/$TAG/trill-$TAG-macos.zip"
+          SHA="$(sha256sum /tmp/trill.zip | cut -d' ' -f1)"
+          sed -i -E \
+            -e "s#^  version \".*\"#  version \"$VER\"#" \
+            -e "s#^  sha256 \".*\"#  sha256 \"$SHA\"#" \
+            Casks/trill.rb
+          if git diff --quiet; then
+            echo "cask already current"
+            exit 0
+          fi
+          git config user.name "haus-release[bot]"
+          git config user.email "haus-release@users.noreply.github.com"
+          git commit -am "trill ${VER}"
+          git push
