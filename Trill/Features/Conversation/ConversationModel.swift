@@ -25,6 +25,22 @@ final class ConversationModel: ObservableObject {
     /// Whether the "jump to date" picker popover is showing.
     @Published var isJumpToDatePresented = false
 
+    // MARK: Select messages (export)
+
+    /// Whether the timeline is in multi-select mode: rows show a checkbox, taps
+    /// toggle selection instead of their normal action, and the header becomes a
+    /// selection bar whose primary CTA exports the chosen messages. Scoped to the
+    /// messages currently loaded in the timeline — the same set the reader sees.
+    @Published private(set) var isSelecting = false
+    /// The messages ticked in select mode, by id. O(1) per-row membership checks.
+    @Published private(set) var selectedMessageIDs: Set<MessageID> = []
+
+    /// The selected messages themselves, in timeline order — handed to the export
+    /// sheet. Derived from the loaded set so it stays consistent with what's shown.
+    var selectedMessages: [Message] {
+        messages.filter { selectedMessageIDs.contains($0.id) }
+    }
+
     // MARK: Find in conversation (⌘F)
 
     /// Whether the in-thread find bar is showing.
@@ -80,6 +96,7 @@ final class ConversationModel: ObservableObject {
         highlightedMessageID = nil
         exportCache = nil
         isJumpToDatePresented = false
+        endSelection()
         resetFind()
     }
 
@@ -92,6 +109,7 @@ final class ConversationModel: ObservableObject {
         revealTarget = nil
         highlightedMessageID = nil
         isJumpToDatePresented = false
+        endSelection()
         resetFind()
         let repository = repository
         loadTask = Task { [weak self] in
@@ -196,6 +214,7 @@ final class ConversationModel: ObservableObject {
         state = .loading
         revealTarget = nil
         highlightedMessageID = nil
+        endSelection()
         resetFind()
         let repository = repository
         loadTask = Task { [weak self] in
@@ -220,6 +239,41 @@ final class ConversationModel: ObservableObject {
                 AppLog.ui.error("Jump-to-date load failed error=\(String(describing: type(of: error)), privacy: .public)")
             }
         }
+    }
+
+    // MARK: - Select messages
+
+    /// Enters multi-select mode over the loaded timeline. No-op with no thread
+    /// open. Closes the find bar first — the two header modes are exclusive.
+    func beginSelection() {
+        guard conversation != nil else { return }
+        endFind()
+        selectedMessageIDs = []
+        isSelecting = true
+    }
+
+    /// Leaves select mode and drops the ticked set.
+    func endSelection() {
+        guard isSelecting else { return }
+        isSelecting = false
+        selectedMessageIDs = []
+    }
+
+    /// Ticks or un-ticks one message. Ignored outside select mode.
+    func toggleSelection(_ id: MessageID) {
+        guard isSelecting else { return }
+        if selectedMessageIDs.contains(id) {
+            selectedMessageIDs.remove(id)
+        } else {
+            selectedMessageIDs.insert(id)
+        }
+    }
+
+    /// Ticks every loaded message, or clears the set when all are already ticked
+    /// (the button doubles as select-all / select-none).
+    func toggleSelectAll() {
+        let all = Set(messages.map(\.id))
+        selectedMessageIDs = selectedMessageIDs == all ? [] : all
     }
 
     // MARK: - Find in conversation

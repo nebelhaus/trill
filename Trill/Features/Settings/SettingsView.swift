@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @EnvironmentObject private var inbox: InboxModel
     @AppStorage("displayDensity") private var densityRaw = DisplayDensity.comfortable.rawValue
     @AppStorage("accentName") private var accentName = "mauve"
     @AppStorage("uiScale") private var uiScale = 1.0
@@ -157,6 +158,8 @@ struct SettingsView: View {
             }
 
             SnippetSettingsView()
+
+            ExportSettingsView(inbox: inbox)
 
             Text("Native Messages wears the Nebelung rice: flat, dark, desaturated Catppuccin.")
                 .riceFont(10)

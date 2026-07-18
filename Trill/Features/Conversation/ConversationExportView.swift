@@ -9,6 +9,10 @@ import UniformTypeIdentifiers
 /// save panel or the clipboard.
 struct ConversationExportView: View {
     @ObservedObject var model: ConversationModel
+    /// When set, the sheet exports exactly these messages (a multi-select
+    /// export) instead of reading the full thread. The date-range control is
+    /// hidden — an explicit hand-picked set has no window to clip.
+    var presetMessages: [Message]?
     let onClose: () -> Void
 
     @Environment(\.riceAccent) private var accent
@@ -37,9 +41,17 @@ struct ConversationExportView: View {
         .task { await tick() }
     }
 
+    private var headerTitle: String {
+        if let presetMessages {
+            let count = presetMessages.count
+            return "Export \(count) Selected Message\(count == 1 ? "" : "s")"
+        }
+        return "Export — \(model.conversation?.displayName ?? "Conversation")"
+    }
+
     private var header: some View {
         HStack {
-            Text("Export — \(model.conversation?.displayName ?? "Conversation")")
+            Text(headerTitle)
                 .riceSectionHeader()
             Spacer()
             Button("Done", action: onClose)
@@ -62,7 +74,9 @@ struct ConversationExportView: View {
             } else {
                 VStack(alignment: .leading, spacing: 14) {
                     formatPicker
-                    rangeControls
+                    if presetMessages == nil {
+                        rangeControls
+                    }
                     previewPane
                     actions
                 }
@@ -218,6 +232,12 @@ struct ConversationExportView: View {
     // MARK: - Actions
 
     private func load() async {
+        // A hand-picked selection skips the full-thread read entirely — the
+        // messages are already in hand.
+        if let presetMessages {
+            allMessages = ConversationExporter.filter(presetMessages, range: nil)
+            return
+        }
         let messages = await model.loadAllForExport()
         allMessages = messages
         if let first = messages.first?.createdAt, let last = messages.last?.createdAt {

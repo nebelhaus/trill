@@ -60,6 +60,7 @@ struct TrillApp: App {
             RicedRoot {
                 SettingsView()
                     .environmentObject(snippetStore)
+                    .environmentObject(inboxModel)
             }
         }
 

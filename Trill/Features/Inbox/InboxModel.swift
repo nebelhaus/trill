@@ -924,6 +924,34 @@ final class InboxModel: ObservableObject {
         conversations.first(where: { $0.id == id })?.displayName
     }
 
+    // MARK: - Bulk export
+
+    /// Every conversation, paging past the sidebar's first-page cap — the source
+    /// list for "export all conversations" and its pick-a-subset picker. Read-only
+    /// (never touches chat.db beyond the provider's own reads). Newest first, to
+    /// match the sidebar. Returns whatever it gathered on error rather than throwing.
+    func allConversationsForExport() async -> [Conversation] {
+        var gathered: [Conversation] = []
+        var cursor: String?
+        var pagesRemaining = 1_000
+        repeat {
+            guard let page = try? await repository.conversations(
+                page: ConversationPageRequest(limit: 200, cursor: cursor)
+            ) else { break }
+            gathered.append(contentsOf: page.conversations)
+            cursor = page.nextCursor
+            pagesRemaining -= 1
+        } while cursor != nil && pagesRemaining > 0
+        return gathered.sorted { $0.lastActivity > $1.lastActivity }
+    }
+
+    /// Full history of one thread for the bulk exporter — a thin passthrough to
+    /// the repository's one-shot read. Empty on failure so one unreadable thread
+    /// can't sink the whole run.
+    func exportMessages(in id: ConversationID) async -> [Message] {
+        (try? await repository.exportMessages(in: id)) ?? []
+    }
+
     /// Jump from a library item to its source message, closing the library.
     func openLibraryItem(_ item: LibraryItem) {
         isLibraryPresented = false

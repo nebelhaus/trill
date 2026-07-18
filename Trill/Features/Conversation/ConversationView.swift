@@ -25,6 +25,7 @@ struct ConversationView: View {
     @State private var isGalleryPresented = false
     @State private var isStatsPresented = false
     @State private var isExportPresented = false
+    @State private var isSelectionExportPresented = false
     /// Live height of the whole thread pane; the composer caps its growth at half.
     @State private var paneHeight: CGFloat = 0
 
@@ -34,7 +35,9 @@ struct ConversationView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if isCompact {
+            if model.isSelecting {
+                selectionBar
+            } else if isCompact {
                 compactHeader
             } else {
                 header
@@ -82,6 +85,14 @@ struct ConversationView: View {
         .sheet(isPresented: $isExportPresented) {
             ConversationExportView(model: model, onClose: { isExportPresented = false })
         }
+        .sheet(isPresented: $isSelectionExportPresented) {
+            ConversationExportView(
+                model: model,
+                presetMessages: model.selectedMessages,
+                onClose: { isSelectionExportPresented = false }
+            )
+        }
+        .animation(.easeOut(duration: 0.14), value: model.isSelecting)
     }
 
     /// Media + stats, shared by the regular and compact headers so both stay in
@@ -117,12 +128,79 @@ struct ConversationView: View {
         .buttonStyle(RiceIconButtonStyle())
         .help("Media gallery")
         Button {
+            model.beginSelection()
+        } label: {
+            Image(systemName: "checkmark.circle")
+        }
+        .buttonStyle(RiceIconButtonStyle())
+        .help("Select messages to export")
+        .disabled(model.state != .loaded)
+        Button {
             isExportPresented = true
         } label: {
             Image(systemName: "square.and.arrow.up")
         }
         .buttonStyle(RiceIconButtonStyle())
-        .help("Export conversation")
+        .help("Export whole conversation")
+    }
+
+    /// Header replacement while multi-selecting: a live count on the left and,
+    /// on the right, select-all plus the prominent Export CTA that is the whole
+    /// point of this mode. Mirrors the compact header's traffic-light clearance
+    /// so it sits correctly in the single-column layout too.
+    private var selectionBar: some View {
+        VStack(spacing: 0) {
+            if isCompact { Color.clear.frame(height: 22) }
+            HStack(spacing: 10) {
+                Button(action: model.endSelection) {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(RiceIconButtonStyle())
+                .help("Cancel selection")
+
+                Text(selectionCountLabel)
+                    .riceFont(14, .semibold)
+                    .foregroundStyle(Rice.text)
+                    .monospacedDigit()
+
+                Spacer(minLength: 8)
+
+                Button(selectAllTitle) {
+                    model.toggleSelectAll()
+                }
+                .buttonStyle(RiceSubtleButtonStyle())
+                .disabled(model.messages.isEmpty)
+
+                Button {
+                    isSelectionExportPresented = true
+                } label: {
+                    Label("Export", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(RiceProminentButtonStyle())
+                .disabled(model.selectedMessageIDs.isEmpty)
+            }
+            .padding(.leading, selectionBarLeadingInset)
+            .padding(.trailing, 16)
+            .padding(.top, isCompact ? 0 : 12)
+            .padding(.bottom, 9)
+        }
+    }
+
+    /// Clear the window's traffic lights when the sidebar is hidden at the
+    /// regular breakpoint; the compact bar clears them with a top spacer instead.
+    private var selectionBarLeadingInset: CGFloat {
+        if isCompact { return 12 }
+        return isSidebarCollapsed ? 78 : 16
+    }
+
+    private var selectionCountLabel: String {
+        let count = model.selectedMessageIDs.count
+        return count == 0 ? "Select messages" : "\(count) selected"
+    }
+
+    private var selectAllTitle: String {
+        let all = !model.messages.isEmpty && model.selectedMessageIDs.count == model.messages.count
+        return all ? "Deselect All" : "Select All"
     }
 
     private var header: some View {
@@ -319,13 +397,16 @@ private struct MessageTimelineView: View {
                                     isFindMatch: findMatches.contains(message.id),
                                     isCurrentFindMatch: message.id == currentFindMatch,
                                     isSaved: savedMessageIDs.contains(message.id),
+                                    isSelecting: model.isSelecting,
+                                    isSelected: model.selectedMessageIDs.contains(message.id),
                                     replyIDs: replies[message.id] ?? [],
                                     onJump: { target in
                                         withAnimation(.easeInOut(duration: 0.25)) {
                                             proxy.scrollTo(target, anchor: .center)
                                         }
                                     },
-                                    onToggleSaved: { onToggleSaved(message.id) }
+                                    onToggleSaved: { onToggleSaved(message.id) },
+                                    onToggleSelection: { model.toggleSelection(message.id) }
                                 )
                                 .id(message.id)
                             }
@@ -669,14 +750,48 @@ private struct MessageRow: View {
     var isFindMatch = false
     var isCurrentFindMatch = false
     var isSaved = false
+    var isSelecting = false
+    var isSelected = false
     var replyIDs: [MessageID] = []
     var onJump: (MessageID) -> Void = { _ in }
     var onToggleSaved: () -> Void = {}
+    var onToggleSelection: () -> Void = {}
 
     @Environment(\.riceAccent) private var accent
     @State private var isRevealed = false
 
     var body: some View {
+        if isSelecting {
+            selectableRow
+        } else {
+            bubbleRow
+        }
+    }
+
+    /// In select mode: a leading checkbox, the bubble made inert (its own
+    /// gestures/links suppressed), and the whole row a single tap target that
+    /// toggles the tick. A faint accent wash marks the selected rows.
+    private var selectableRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .riceFont(17)
+                .foregroundStyle(isSelected ? accent : Rice.overlay0)
+                .accessibilityLabel(isSelected ? "Selected" : "Not selected")
+            bubbleRow
+                .allowsHitTesting(false)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onToggleSelection)
+        .padding(.vertical, 2)
+        .padding(.horizontal, 4)
+        .background(
+            isSelected ? accent.opacity(0.10) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .animation(.easeOut(duration: 0.12), value: isSelected)
+    }
+
+    private var bubbleRow: some View {
         HStack(alignment: .bottom, spacing: 8) {
             if message.isOutgoing { Spacer(minLength: 90) }
             VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 3) {
