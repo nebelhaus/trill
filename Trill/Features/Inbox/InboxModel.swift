@@ -25,6 +25,9 @@ enum InboxFilter: String, Sendable {
     case unread
     /// Triage view: threads whose last message is from them and unanswered.
     case needsReply
+    /// Only threads that hold an unsent draft. The sidebar hides this filter's
+    /// affordances entirely when no drafts exist.
+    case drafts
 }
 
 enum InboxLoadState: Equatable {
@@ -53,6 +56,10 @@ final class InboxModel: ObservableObject {
     /// Bookmarked message IDs (local overlay). Drives the star toggle + glyph in
     /// the timeline and the Universal Library's Saved tab. No chat.db write.
     @Published private(set) var savedMessageIDs: Set<MessageID> = []
+    /// Conversations holding an unsent draft. Seeded from the database on load,
+    /// then kept live by the composer via `onDraftChanged`. Drives the Drafts
+    /// filter and the visibility of its sidebar affordances.
+    @Published private(set) var draftIDs: Set<ConversationID> = []
     /// User-defined folders (local overlay), sidebar order. See `Folder`.
     @Published private(set) var folders: [Folder] = []
     /// folderID → the conversations filed under it. One dictionary serves both
@@ -128,6 +135,16 @@ final class InboxModel: ObservableObject {
         get { filter == .needsReply }
         set { filter = newValue ? .needsReply : .all }
     }
+
+    var showsDraftsOnly: Bool {
+        get { filter == .drafts }
+        set { filter = newValue ? .drafts : .all }
+    }
+
+    /// Whether any conversation currently holds a draft. The sidebar keys the
+    /// Drafts filter's visibility off this, so the affordance simply isn't there
+    /// when there's nothing to show.
+    var hasDrafts: Bool { !draftIDs.isEmpty }
 
     /// Services hidden from the sidebar. Unlike `filter`, this is a *composable*
     /// axis (you can hide SMS while also scoping to a folder or unread), so it's
@@ -220,6 +237,9 @@ final class InboxModel: ObservableObject {
         self.repository = repository
         conversationModel = ConversationModel(repository: repository)
         composerModel = ComposerModel(database: database, snippets: snippets)
+        composerModel.onDraftChanged = { [weak self] id, hasContent in
+            self?.updateDraftMembership(id, hasContent: hasContent)
+        }
         notifications.openConversation = { [weak self] id in
             self?.select(id)
         }
@@ -275,13 +295,19 @@ final class InboxModel: ObservableObject {
                 async let loadedArchived = database.archivedConversationIDs()
                 async let loadedMuted = database.mutedConversationIDs()
                 async let loadedSnoozed = database.snoozedConversations()
+                async let loadedDrafts = database.draftConversationIDs()
                 let (loadedPage, loadedPins, loadedVIPs, loadedMarks, folderList, memberMap) =
                     try await (page, pins, vips, marks, loadedFolders, loadedMembers)
                 let loadedSaved = try await saved
                 let (archived, muted, snoozed) = try await (loadedArchived, loadedMuted, loadedSnoozed)
+                let drafts = try await loadedDrafts
                 pinnedIDs = loadedPins
                 vipIDs = loadedVIPs
                 savedMessageIDs = loadedSaved
+                draftIDs = drafts
+                // A draft can vanish while away (e.g. sent from Messages.app);
+                // don't strand the user on a Drafts view that's now empty.
+                if drafts.isEmpty, filter == .drafts { filter = .all }
                 clearedUnreadAt = loadedMarks
                 folders = folderList
                 folderMembers = memberMap
@@ -380,6 +406,24 @@ final class InboxModel: ObservableObject {
             return serviced.filter {
                 NeedsReply.needsReply($0, now: now) || $0.id == selectedConversationID
             }
+        case .drafts:
+            return serviced.filter {
+                draftIDs.contains($0.id) || $0.id == selectedConversationID
+            }
+        }
+    }
+
+    /// Keep the Drafts overlay in lockstep with the composer. Idempotent: a
+    /// conversation is in the set exactly when it has text, so we can insert or
+    /// remove without knowing the prior state. Removing the last draft while the
+    /// Drafts filter is active falls back to All so the view can't get stuck
+    /// empty with its toggle gone.
+    private func updateDraftMembership(_ id: ConversationID, hasContent: Bool) {
+        if hasContent {
+            draftIDs.insert(id)
+        } else {
+            draftIDs.remove(id)
+            if draftIDs.isEmpty, filter == .drafts { filter = .all }
         }
     }
 

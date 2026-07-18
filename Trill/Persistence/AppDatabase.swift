@@ -168,6 +168,13 @@ actor AppDatabase {
         ) ?? ""
     }
 
+    /// Every conversation that currently holds a non-empty draft. An empty draft
+    /// deletes its row (see `saveDraft`), so a row's presence *is* the flag —
+    /// this drives the inbox's Drafts filter.
+    func draftConversationIDs() throws -> Set<ConversationID> {
+        try conversationIDSet("SELECT conversation_key FROM drafts")
+    }
+
     func setReadMark(_ date: Date, conversationID: ConversationID) throws {
         try execute(
             "INSERT OR REPLACE INTO read_marks (conversation_key, marked_at) VALUES (?, ?)",

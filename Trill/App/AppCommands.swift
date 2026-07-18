@@ -20,6 +20,8 @@ struct AppCommands: Commands {
     let toggleVIP: () -> Void
     let toggleUnreadFilter: () -> Void
     let toggleNeedsReplyFilter: () -> Void
+    let toggleDraftsFilter: () -> Void
+    let hasDrafts: Bool
     let selectPinned: (Int) -> Void
     let useFixture: () -> Void
     let useMessages: () -> Void
@@ -68,6 +70,9 @@ struct AppCommands: Commands {
                 .keyboardShortcut("u", modifiers: [.command, .shift])
             Button("Needs Reply Only", action: toggleNeedsReplyFilter)
                 .keyboardShortcut("r", modifiers: [.command, .shift])
+            Button("Drafts Only", action: toggleDraftsFilter)
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+                .disabled(!hasDrafts)
             Divider()
             ForEach(1..<10) { slot in
                 Button("Pinned Conversation \(slot)") { selectPinned(slot - 1) }

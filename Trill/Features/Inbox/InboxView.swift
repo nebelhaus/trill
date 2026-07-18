@@ -402,6 +402,8 @@ private struct SidebarView: View {
             if level == 0 {
                 unreadFilterButton
                 needsReplyFilterButton
+                // Only surfaced when drafts exist — no drafts, no button.
+                if model.hasDrafts { draftsFilterButton }
                 serviceFilterMenu
                 reloadButton
             }
@@ -446,6 +448,18 @@ private struct SidebarView: View {
         }
         .buttonStyle(RiceIconButtonStyle(isActive: model.showsNeedsReplyOnly))
         .help(model.showsNeedsReplyOnly ? "Show all conversations (⇧⌘R)" : "Needs reply only (⇧⌘R)")
+    }
+
+    private var draftsFilterButton: some View {
+        Button {
+            model.showsDraftsOnly.toggle()
+        } label: {
+            Image(systemName: model.showsDraftsOnly
+                  ? "pencil.circle.fill"
+                  : "pencil.circle")
+        }
+        .buttonStyle(RiceIconButtonStyle(isActive: model.showsDraftsOnly))
+        .help(model.showsDraftsOnly ? "Show all conversations (⇧⌘D)" : "Drafts only (⇧⌘D)")
     }
 
     /// Multi-select service visibility. Unlike the unread / needs-reply filters
@@ -545,6 +559,16 @@ private struct SidebarView: View {
                       ? "arrowshape.turn.up.left.circle.fill"
                       : "arrowshape.turn.up.left.circle")
             }
+            if model.hasDrafts {
+                Button {
+                    model.showsDraftsOnly.toggle()
+                } label: {
+                    Label(model.showsDraftsOnly ? "Show All Conversations" : "Show Drafts",
+                          systemImage: model.showsDraftsOnly
+                          ? "pencil.circle.fill"
+                          : "pencil.circle")
+                }
+            }
             Menu {
                 serviceMenuContent
             } label: {
@@ -631,6 +655,7 @@ private struct SidebarView: View {
         switch model.filter {
         case .needsReply: return "Nothing awaiting a reply"
         case .unread: return "No unread conversations"
+        case .drafts: return "No drafts"
         case .all: return "No conversations in this folder"
         }
     }

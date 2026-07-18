@@ -40,6 +40,13 @@ final class ComposerModel: ObservableObject {
 
     private var selectionToken = 0
 
+    /// Called on the main actor after a draft is written or cleared, reporting
+    /// the conversation and whether it now holds any text. Lets the inbox keep
+    /// its Drafts filter in sync without polling the database. `hasContent`
+    /// makes the update idempotent — the observer inserts or removes, never
+    /// needing to know the prior state.
+    var onDraftChanged: ((ConversationID, _ hasContent: Bool) -> Void)?
+
     private let database: AppDatabase
     private let snippets: SnippetStore
     private var sendAction: ((String, [URL]) async throws -> SendOutcome)?
@@ -92,6 +99,10 @@ final class ComposerModel: ObservableObject {
     ) {
         // Leaving the thread that has a message in its undo window: dispatch it
         // now, in the background, so switching conversations never drops a send.
+        // A held send owns the outgoing thread's draft lifecycle (dispatchDetached
+        // clears or restores it), and the visible text *is* that message, not a
+        // draft — so skip the draft persistence below in that case.
+        let dispatchingPendingSend = pendingSend != nil
         if let pending = pendingSend {
             undoTimerTask?.cancel()
             undoTimerTask = nil
@@ -99,7 +110,21 @@ final class ComposerModel: ObservableObject {
             undoSecondsRemaining = nil
             dispatchDetached(pending)
         }
-        saveTask?.cancel()
+        // Persist the outgoing draft now instead of dropping its pending
+        // debounce — switching away must never lose text typed in the last
+        // 250ms. Fire-and-forget: we're leaving this thread, so there's no need
+        // to block. Keyed on `self.conversationID` — the thread we're *leaving*,
+        // not the `conversationID` parameter we're switching *to*.
+        if let outgoing = self.conversationID, !isRestoring, !dispatchingPendingSend {
+            let value = text
+            saveTask?.cancel()
+            Task { [database] in
+                try? await database.saveDraft(value, conversationID: outgoing)
+            }
+            onDraftChanged?(outgoing, !value.isEmpty)
+        } else {
+            saveTask?.cancel()
+        }
         restoreTask?.cancel()
         clearCompletions()
         endFillSession()
@@ -225,16 +250,19 @@ final class ComposerModel: ObservableObject {
     /// Runs without touching the visible composer (which is loading a different
     /// thread); on failure the draft is restored so the message is never lost.
     private func dispatchDetached(_ pending: PendingSend) {
-        Task { [database] in
+        Task { [database, weak self] in
             do {
                 switch try await pending.send(pending.body, pending.files) {
                 case .accepted, .confirmed, .unknown:
                     try? await database.saveDraft("", conversationID: pending.conversationID)
+                    self?.onDraftChanged?(pending.conversationID, false)
                 case .rejected:
                     try? await database.saveDraft(pending.body, conversationID: pending.conversationID)
+                    self?.onDraftChanged?(pending.conversationID, !pending.body.isEmpty)
                 }
             } catch {
                 try? await database.saveDraft(pending.body, conversationID: pending.conversationID)
+                self?.onDraftChanged?(pending.conversationID, !pending.body.isEmpty)
             }
         }
     }
@@ -257,6 +285,7 @@ final class ComposerModel: ObservableObject {
                 sendFeedback = nil
                 saveTask?.cancel()
                 try? await database.saveDraft("", conversationID: conversationID)
+                onDraftChanged?(conversationID, false)
             case let .rejected(_, reason):
                 sendFeedback = Self.feedback(for: reason)
             case .unknown:
@@ -268,6 +297,7 @@ final class ComposerModel: ObservableObject {
                 endFillSession()
                 saveTask?.cancel()
                 try? await database.saveDraft("", conversationID: conversationID)
+                onDraftChanged?(conversationID, false)
                 sendFeedback = "Some of the message may not have sent — check Messages.app."
             }
         } catch {
@@ -280,16 +310,38 @@ final class ComposerModel: ObservableObject {
         refreshCompletions()
         let value = text
         saveTask?.cancel()
-        saveTask = Task { [database] in
+        saveTask = Task { [database, weak self] in
             do {
                 try await Task.sleep(for: .milliseconds(250))
                 try await database.saveDraft(value, conversationID: conversationID)
+                self?.onDraftChanged?(conversationID, !value.isEmpty)
             } catch is CancellationError {
                 return
             } catch {
                 AppLog.database.error("Draft persistence failed error=\(String(describing: type(of: error)), privacy: .public)")
             }
         }
+    }
+
+    /// Persist the current draft synchronously, bypassing the 250ms debounce.
+    /// Called on app termination: text typed in the last debounce window lives
+    /// only in a pending `saveTask`, which quitting would cancel unfired — so
+    /// without this the last few keystrokes before ⌘Q are lost. Blocks the
+    /// caller until the write lands (bounded, so a stuck write can't wedge
+    /// termination), because once we return the process may exit immediately.
+    func flushDraft() {
+        guard !isRestoring, let conversationID else { return }
+        saveTask?.cancel()
+        let value = text
+        let done = DispatchSemaphore(value: 0)
+        // Detached, not a plain `Task {}`: this method is @MainActor, so a
+        // main-actor-isolated task would resume its continuation on the main
+        // thread — which is blocked on `done.wait()` below — and deadlock.
+        Task.detached { [database] in
+            try? await database.saveDraft(value, conversationID: conversationID)
+            done.signal()
+        }
+        _ = done.wait(timeout: .now() + 2)
     }
 
     // MARK: - Completions (slash commands + snippets)

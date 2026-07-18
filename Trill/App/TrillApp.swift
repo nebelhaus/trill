@@ -12,6 +12,19 @@ struct TrillApp: App {
         let services = AppEnvironment.makeServices()
         _inboxModel = StateObject(wrappedValue: services.inbox)
         _snippetStore = StateObject(wrappedValue: services.snippets)
+
+        // Flush the in-progress draft before the process exits. The composer
+        // saves on a 250ms debounce, so text typed in the moment before ⌘Q
+        // would otherwise die with its unfired save task. Delivered on the main
+        // queue, so the @MainActor hop is safe.
+        let inbox = services.inbox
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { inbox.composerModel.flushDraft() }
+        }
     }
 
     var body: some Scene {
@@ -47,6 +60,8 @@ struct TrillApp: App {
                 toggleVIP: { inboxModel.toggleSelectedVIP() },
                 toggleUnreadFilter: { inboxModel.showsUnreadOnly.toggle() },
                 toggleNeedsReplyFilter: { inboxModel.showsNeedsReplyOnly.toggle() },
+                toggleDraftsFilter: { inboxModel.showsDraftsOnly.toggle() },
+                hasDrafts: inboxModel.hasDrafts,
                 selectPinned: { inboxModel.selectPinned(at: $0) },
                 useFixture: { inboxModel.switchProvider(to: .fixture) },
                 useMessages: { inboxModel.switchProvider(to: .messages) },

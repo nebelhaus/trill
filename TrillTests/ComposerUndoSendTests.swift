@@ -97,6 +97,33 @@ final class ComposerUndoSendTests: XCTestCase {
         XCTAssertEqual(model.text, "")
     }
 
+    func testFlushDraftPersistsImmediatelyWithoutWaitingForDebounce() async throws {
+        let recorder = Recorder()
+        let database = try AppDatabase(url: root.appendingPathComponent("app.sqlite3"))
+        let snippets = SnippetStore(database: database)
+        let model = ComposerModel(database: database, snippets: snippets)
+        let conversation = ConversationID(provider: ProviderID(rawValue: "test"), externalGUID: "c1")
+        var health = ProviderHealth.fixture
+        health.sending = .ready
+        model.select(
+            conversation,
+            capabilities: ProviderCapabilities([.sendText]),
+            health: health
+        ) { text, _ in
+            recorder.sends.append(text)
+            return .accepted(operationID: UUID())
+        }
+        try await Task.sleep(for: .milliseconds(50))
+
+        // Type, then flush right away — no time for the 250ms debounce to fire.
+        model.text = "typed right before quitting"
+        model.flushDraft()
+
+        // The draft is already on disk, exactly as it would be after a quit.
+        let stored = try await database.draft(conversationID: conversation)
+        XCTAssertEqual(stored, "typed right before quitting")
+    }
+
     func testSwitchingConversationFlushesHeldSend() async throws {
         UserDefaults.standard.set(true, forKey: "undoSend")
         let recorder = Recorder()

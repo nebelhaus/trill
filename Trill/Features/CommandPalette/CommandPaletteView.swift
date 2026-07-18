@@ -132,6 +132,20 @@ struct CommandPaletteView: View {
             },
         ]
 
+        // Drafts is a conditional filter — only offer it when drafts exist.
+        if model.hasDrafts {
+            catalog.append(
+                PaletteAction(
+                    id: "drafts",
+                    title: model.showsDraftsOnly ? "Show All Conversations" : "Show Drafts",
+                    systemImage: "pencil.circle",
+                    shortcut: "⇧⌘D"
+                ) {
+                    model.showsDraftsOnly.toggle()
+                }
+            )
+        }
+
         if let selected = model.selectedConversationID {
             let isVIP = model.isVIP(selected)
             catalog.append(
