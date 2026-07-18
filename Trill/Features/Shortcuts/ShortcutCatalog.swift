@@ -35,6 +35,12 @@ enum ShortcutCatalog {
             ShortcutReference(keys: ["⌘", "]"], label: "Forward"),
             ShortcutReference(keys: ["⌘", "1–9"], label: "Jump to pinned conversation"),
         ]),
+        ShortcutSection(title: "Tabs", shortcuts: [
+            ShortcutReference(keys: ["⌘", "T"], label: "Open conversation in new tab"),
+            ShortcutReference(keys: ["⇧", "⌘", "]"], label: "Next tab"),
+            ShortcutReference(keys: ["⇧", "⌘", "["], label: "Previous tab"),
+            ShortcutReference(keys: ["⌘", "W"], label: "Close tab"),
+        ]),
         ShortcutSection(title: "Conversations", shortcuts: [
             ShortcutReference(keys: ["⌘", "N"], label: "New message"),
             ShortcutReference(keys: ["⌃", "⌘", "V"], label: "Add / remove VIP"),

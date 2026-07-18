@@ -45,7 +45,11 @@ enum InboxLoadState: Equatable {
 final class InboxModel: ObservableObject {
     @Published private(set) var state: InboxLoadState = .idle
     @Published private(set) var conversations: [Conversation] = []
-    @Published var selectedConversationID: ConversationID?
+    /// The active tab. Always an element of `openTabs`, or `nil` when nothing is
+    /// open. Persisted so the active thread survives a relaunch.
+    @Published var selectedConversationID: ConversationID? {
+        didSet { persistActiveTab() }
+    }
     @Published private(set) var health: ProviderHealth = .fixture
     @Published private(set) var capabilities = ProviderCapabilities()
     @Published private(set) var pinnedIDs: Set<ConversationID> = []
@@ -182,7 +186,32 @@ final class InboxModel: ObservableObject {
     @Published private(set) var providerMode: ProviderMode = .fixture
     @Published private(set) var errorSummary: String?
 
-    let conversationModel: ConversationModel
+    /// Open conversation tabs, in strip order. The active tab is
+    /// `selectedConversationID`; the strip hides itself below two entries.
+    /// Persisted (as `ConversationID` keys) so tabs restore between launches.
+    @Published private(set) var openTabs: [ConversationID] = [] {
+        didSet { persistOpenTabs() }
+    }
+    /// One warm `ConversationModel` per open tab, so switching tabs is instant and
+    /// background tabs keep receiving live messages. Invariant: its key set equals
+    /// `Set(openTabs)`.
+    private var tabModels: [ConversationID: ConversationModel] = [:]
+    /// Shown when no tab is active (nothing selected), keeping the computed
+    /// `conversationModel` non-optional so existing call sites are unchanged.
+    private let placeholderConversationModel: ConversationModel
+    /// The active tab's warm timeline, or the placeholder when nothing's selected.
+    /// Computed so it swaps instances on a tab switch — SwiftUI re-binds the
+    /// `ConversationView`'s `@ObservedObject` to the new tab automatically.
+    var conversationModel: ConversationModel {
+        selectedConversationID.flatMap { tabModels[$0] } ?? placeholderConversationModel
+    }
+    /// Which thread the shared composer is pointed at, so the idempotent re-entry
+    /// through `selectedConversationID`'s onChange doesn't re-point (and re-restore
+    /// the draft on) an already-active thread.
+    private var composerConversationID: ConversationID?
+    /// Cap on warm tabs. Opens are explicit, so this only bites pathological cases;
+    /// the oldest non-active tab is evicted past it.
+    private static let maxTabs = 12
     let composerModel: ComposerModel
     /// Shared, cached Open Graph fetcher for the Universal Library's Links tab.
     let linkPreviewLoader: LinkPreviewLoader
@@ -210,6 +239,8 @@ final class InboxModel: ObservableObject {
     private static let filterKey = "inboxFilter"
     private static let selectedFolderKey = "selectedFolderID"
     private static let hiddenServicesKey = "hiddenServices"
+    private static let openTabsKey = "openTabs"
+    private static let activeTabKey = "activeTab"
 
     private static func loadPersistedFilter() -> InboxFilter {
         let defaults = UserDefaults.standard
@@ -235,7 +266,7 @@ final class InboxModel: ObservableObject {
         providerMode = mode
         let repository = MessagesRepository(provider: Self.makeProvider(mode), database: database)
         self.repository = repository
-        conversationModel = ConversationModel(repository: repository)
+        placeholderConversationModel = ConversationModel(repository: repository)
         composerModel = ComposerModel(database: database, snippets: snippets)
         composerModel.onDraftChanged = { [weak self] id, hasContent in
             self?.updateDraftMembership(id, hasContent: hasContent)
@@ -322,6 +353,7 @@ final class InboxModel: ObservableObject {
                     selectedFolderID = nil
                 }
                 conversations = sort(loadedPage.conversations)
+                restoreTabs()
                 state = conversations.isEmpty ? .empty : .loaded
                 updateDockBadge()
                 startEventStream()
@@ -344,15 +376,18 @@ final class InboxModel: ObservableObject {
         UserDefaults.standard.set(mode.rawValue, forKey: Self.providerModeKey)
         selectedConversationID = nil
         conversations = []
-        // The trail belongs to the old provider's thread list; a switch retires it.
+        // The trail and open tabs belong to the old provider's thread list; a
+        // switch retires them.
         backStack.removeAll()
         forwardStack.removeAll()
+        openTabs.removeAll()
+        tabModels.removeAll()
+        composerConversationID = nil
         eventTask?.cancel()
-        conversationModel.clear()
         composerModel.select(nil, capabilities: ProviderCapabilities(), health: .fixture, sendAction: nil)
 
         repository = MessagesRepository(provider: Self.makeProvider(mode), database: database)
-        conversationModel.updateRepository(repository)
+        placeholderConversationModel.updateRepository(repository)
         load()
     }
 
@@ -492,23 +527,133 @@ final class InboxModel: ObservableObject {
         return true
     }
 
+    /// Navigate the *active* tab to `id` in place (the browser model: clicking a
+    /// sidebar row reuses the current tab). `nil` deselects without touching the
+    /// open tab set, so the compact back button leaves tabs intact.
     func select(_ id: ConversationID?, focus: MessageID? = nil) {
         recordHistory(navigatingTo: id)
-        if selectedConversationID != id { selectedConversationID = id }
-        if let id {
-            markCleared(id)
-            updateDockBadge()
-        }
-        guard conversationModel.conversation?.id != id else {
-            if let focus { conversationModel.reveal(focus) }
+        guard let id else {
+            if selectedConversationID != nil { selectedConversationID = nil }
+            pointComposer(at: nil)
             return
         }
-        guard let conversation = conversations.first(where: { $0.id == id }) else {
-            conversationModel.clear()
+        ensureOpen(id, mode: .replaceActive)
+        activate(id, focus: focus)
+    }
+
+    /// Open `id` in a new tab (⌘T / double-click / ⌘-click a sidebar row). If it's
+    /// already open this just activates that tab.
+    func openInNewTab(_ id: ConversationID?) {
+        guard let id, conversations.contains(where: { $0.id == id }) else { return }
+        guard !openTabs.contains(id) else { activateTab(id); return }
+        recordHistory(navigatingTo: id)
+        ensureOpen(id, mode: .newTab)
+        activate(id, focus: nil)
+    }
+
+    /// Switch the active tab to an already-open one (strip click, ⌘⇧[ / ⌘⇧]).
+    func activateTab(_ id: ConversationID) {
+        guard openTabs.contains(id), selectedConversationID != id else { return }
+        recordHistory(navigatingTo: id)
+        activate(id, focus: nil)
+    }
+
+    /// Close a tab. If it was active, land on the neighbor that slides into its
+    /// place (else the previous one, else nothing).
+    func closeTab(_ id: ConversationID) {
+        guard let index = openTabs.firstIndex(of: id) else { return }
+        openTabs.remove(at: index)
+        tabModels.removeValue(forKey: id)
+        guard selectedConversationID == id else { return }
+        if openTabs.indices.contains(index) {
+            activate(openTabs[index], focus: nil)
+        } else if let last = openTabs.last {
+            activate(last, focus: nil)
+        } else {
+            select(nil)
+        }
+    }
+
+    func nextTab() { cycleTab(by: 1) }
+    func previousTab() { cycleTab(by: -1) }
+
+    private func cycleTab(by delta: Int) {
+        guard openTabs.count > 1,
+              let active = selectedConversationID,
+              let index = openTabs.firstIndex(of: active) else { return }
+        let next = openTabs[(index + delta + openTabs.count) % openTabs.count]
+        activateTab(next)
+    }
+
+    /// Reorder the strip: move `dragged` to `target`'s slot. Called repeatedly as
+    /// a drag hovers over each chip, so it only needs to handle a single hop.
+    /// Touches order only — the warm models are keyed by id, so they ride along —
+    /// and the active tab is unaffected.
+    func moveTab(_ dragged: ConversationID, to target: ConversationID) {
+        guard dragged != target,
+              let from = openTabs.firstIndex(of: dragged),
+              let to = openTabs.firstIndex(of: target) else { return }
+        var tabs = openTabs
+        tabs.remove(at: from)
+        tabs.insert(dragged, at: to)
+        openTabs = tabs
+    }
+
+    /// Whether `id` is the active tab — drives the strip's highlight.
+    func isActiveTab(_ id: ConversationID) -> Bool { selectedConversationID == id }
+
+    private enum OpenMode { case replaceActive, newTab }
+
+    /// Ensure `id` is an open tab with a warm, loaded `ConversationModel`, keeping
+    /// `Set(openTabs) == Set(tabModels.keys)`. `.replaceActive` swaps the active
+    /// tab's slot in place; `.newTab` appends (evicting the oldest past the cap).
+    private func ensureOpen(_ id: ConversationID, mode: OpenMode) {
+        // Tabs only exist for real, loaded threads. Selecting an id that isn't in
+        // the list (e.g. a programmatic jump before load) still sets the active
+        // selection in `activate` — it just doesn't spawn a tab or warm model.
+        guard let conversation = conversations.first(where: { $0.id == id }) else { return }
+        if !openTabs.contains(id) {
+            switch mode {
+            case .replaceActive:
+                if let active = selectedConversationID, let index = openTabs.firstIndex(of: active) {
+                    openTabs[index] = id
+                    tabModels.removeValue(forKey: active)
+                } else {
+                    openTabs.append(id)
+                }
+            case .newTab:
+                openTabs.append(id)
+                enforceTabCap(keeping: id)
+            }
+        }
+        if tabModels[id] == nil {
+            let model = ConversationModel(repository: repository)
+            model.select(conversation)
+            tabModels[id] = model
+        }
+    }
+
+    /// Make `id` the active tab: point the selection, composer, and (if asked) the
+    /// reveal at it. The warm model is already loaded by `ensureOpen`, so a switch
+    /// to an existing tab does no reload.
+    private func activate(_ id: ConversationID, focus: MessageID?) {
+        if selectedConversationID != id { selectedConversationID = id }
+        markCleared(id)
+        updateDockBadge()
+        if let focus { tabModels[id]?.reveal(focus) }
+        pointComposer(at: id)
+    }
+
+    /// Re-point the shared composer at `id`, guarded so the onChange re-entry
+    /// (row tap → `select` sets `selectedConversationID` → onChange → `select`)
+    /// doesn't re-restore an already-active draft.
+    private func pointComposer(at id: ConversationID?) {
+        guard composerConversationID != id else { return }
+        composerConversationID = id
+        guard let id, let conversation = conversations.first(where: { $0.id == id }) else {
             composerModel.select(nil, capabilities: capabilities, health: health, sendAction: nil)
             return
         }
-        conversationModel.select(conversation, reveal: focus)
         let repository = repository
         composerModel.select(conversation.id, capabilities: capabilities, health: health) { text, attachments in
             try await repository.send(SendRequest(
@@ -518,6 +663,39 @@ final class InboxModel: ObservableObject {
                 attachments: attachments
             ))
         }
+    }
+
+    private func enforceTabCap(keeping id: ConversationID) {
+        while openTabs.count > Self.maxTabs,
+              let victim = openTabs.first(where: { $0 != id && $0 != selectedConversationID }) {
+            openTabs.removeAll { $0 == victim }
+            tabModels.removeValue(forKey: victim)
+        }
+    }
+
+    // MARK: - Tab persistence
+
+    private func persistOpenTabs() {
+        UserDefaults.standard.set(openTabs.map(\.persistenceKey), forKey: Self.openTabsKey)
+    }
+
+    private func persistActiveTab() {
+        UserDefaults.standard.set(selectedConversationID?.persistenceKey, forKey: Self.activeTabKey)
+    }
+
+    /// Rebuild the open tabs from the persisted keys, dropping any thread that's no
+    /// longer in the loaded list, then activate the persisted (or first) tab.
+    private func restoreTabs() {
+        guard openTabs.isEmpty else { return }
+        let keys = UserDefaults.standard.stringArray(forKey: Self.openTabsKey) ?? []
+        let ids = keys
+            .compactMap(ConversationID.init(persistenceKey:))
+            .filter { id in conversations.contains { $0.id == id } }
+        guard !ids.isEmpty else { return }
+        for id in ids { ensureOpen(id, mode: .newTab) }
+        let active = UserDefaults.standard.string(forKey: Self.activeTabKey)
+            .flatMap(ConversationID.init(persistenceKey:))
+        activate(active.flatMap { ids.contains($0) ? $0 : nil } ?? ids[0], focus: nil)
     }
 
     // MARK: - Navigation history
@@ -579,7 +757,9 @@ final class InboxModel: ObservableObject {
     private func handle(_ event: ProviderEvent) {
         switch event {
         case let .messageAdded(message, _):
-            conversationModel.appendLive(message)
+            // Fan out to whichever open tab owns the thread, so a background tab's
+            // warm timeline stays current — not just the active one.
+            tabModels[message.conversationID]?.appendLive(message)
             if message.conversationID == selectedConversationID {
                 markCleared(message.conversationID)
             }
@@ -597,8 +777,9 @@ final class InboxModel: ObservableObject {
             health = updated
         case .databaseChanged:
             // A write with no new row — in-place edit, tapback, or receipt.
-            // Refresh the open thread so those changes show without a poll.
-            conversationModel.refreshOpenThread()
+            // Refresh every open tab so those changes show without a poll; each
+            // model guards on its own conversation.
+            for model in tabModels.values { model.refreshOpenThread() }
         }
     }
 

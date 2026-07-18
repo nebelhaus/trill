@@ -14,6 +14,13 @@ struct AppCommands: Commands {
     let goForward: () -> Void
     let canGoBack: Bool
     let canGoForward: Bool
+    let openInNewTab: () -> Void
+    let nextTab: () -> Void
+    let previousTab: () -> Void
+    let closeTab: () -> Void
+    /// True with 2+ open tabs — enables cycling and lets ⌘W close the tab (when
+    /// false, ⌘W is disabled so the system's Close Window handles it instead).
+    let hasMultipleTabs: Bool
     let reload: () -> Void
     let toggleSidebar: () -> Void
     let togglePin: () -> Void
@@ -57,6 +64,19 @@ struct AppCommands: Commands {
             Button("Forward", action: goForward)
                 .keyboardShortcut("]", modifiers: .command)
                 .disabled(!canGoForward)
+            Divider()
+            Button("Open in New Tab", action: openInNewTab)
+                .keyboardShortcut("t", modifiers: .command)
+            Button("Next Tab", action: nextTab)
+                .keyboardShortcut("]", modifiers: [.command, .shift])
+                .disabled(!hasMultipleTabs)
+            Button("Previous Tab", action: previousTab)
+                .keyboardShortcut("[", modifiers: [.command, .shift])
+                .disabled(!hasMultipleTabs)
+            Button("Close Tab", action: closeTab)
+                .keyboardShortcut("w", modifiers: .command)
+                .disabled(!hasMultipleTabs)
+            Divider()
             Button("Reload", action: reload)
                 .keyboardShortcut("r", modifiers: .command)
             Button("Keyboard Shortcuts", action: showShortcuts)

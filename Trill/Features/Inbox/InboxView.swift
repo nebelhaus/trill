@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct InboxView: View {
@@ -147,10 +148,28 @@ struct InboxView: View {
         }
     }
 
+    /// Horizontal room the window's traffic lights need when the sidebar is
+    /// collapsed, so the tab strip's first chip clears them.
+    private static let trafficLightInset: CGFloat = 76
+
     private func detail(isCompact: Bool) -> some View {
-        detailContent(isCompact: isCompact)
+        VStack(spacing: 0) {
+            // The strip only appears with 2+ open tabs, and never in the narrow
+            // single-column layout (no room, and its own back button already owns
+            // the top band). Inset past the traffic lights when the sidebar is
+            // collapsed and they float over this pane's top-left.
+            if !isCompact, model.openTabs.count >= 2 {
+                TabStripView(
+                    model: model,
+                    leadingInset: model.isSidebarVisible ? 0 : Self.trafficLightInset
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            detailContent(isCompact: isCompact)
+        }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Rice.base)
+            .animation(.easeOut(duration: 0.16), value: model.openTabs.count >= 2)
             .overlay(alignment: .topLeading) {
                 // Compact detail carries its own in-header back button, so the
                 // floating toggle is only for the regular collapsed pane.
@@ -727,11 +746,14 @@ private struct SidebarView: View {
             isMuted: model.isMuted(conversation.id),
             isSelected: model.selectedConversationID == conversation.id,
             showsUnread: model.hasVisibleUnread(conversation),
-            density: density
+            density: density,
+            onOpenInNewTab: { model.openInNewTab(conversation.id) }
         ) {
             model.select(conversation.id)
         }
         .contextMenu {
+            Button("Open in New Tab") { model.openInNewTab(conversation.id) }
+            Divider()
             Button(model.isVIP(conversation.id) ? "Remove from VIP" : "Add to VIP") {
                 model.toggleVIP(conversation.id)
             }
@@ -828,13 +850,17 @@ private struct ConversationRowButton: View {
     let isSelected: Bool
     let showsUnread: Bool
     let density: DisplayDensity
+    /// ⌘-click opens the thread in a new tab instead of navigating in place.
+    var onOpenInNewTab: () -> Void = {}
     let action: () -> Void
 
     @Environment(\.riceAccent) private var accent
     @State private var isHovering = false
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            if NSEvent.modifierFlags.contains(.command) { onOpenInNewTab() } else { action() }
+        } label: {
             HStack(alignment: .top, spacing: 9) {
                 AvatarView(conversation: conversation)
 
