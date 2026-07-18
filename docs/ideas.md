@@ -21,17 +21,21 @@ ideas are deliberately modest and clearly bounded.
 
 ## Constraint reality (read before proposing send-side features)
 
-These are provably out of reach on the current architecture. Listed so we stop
-rediscovering them:
+These are out of reach on the **current native send path** (AppleScript to
+Messages.app). Listed so we stop rediscovering them. The send-backed ones
+marked 🔓 are not permanent dead ends: a future vetted `platform-imessage`
+layer could unlock them (see [ARCHITECTURE §6.3](../ARCHITECTURE.md#63-advanced-provider-candidate-platform-imessage))
+— that's a separate, gated milestone, not something to assume in a near-term idea.
 
-| Wish | Why it's blocked |
+| Wish | Why it's blocked on the native path |
 |------|------------------|
-| Send a tapback / react to a message | ⛔ Messages.app exposes no automation surface for tapbacks. Best we can do is a one-click *handoff* that focuses the message in Messages.app. |
-| Send a threaded/inline reply | ⛔ Same — AppleScript `send` has no reply-target parameter. |
-| Edit or unsend a sent message | ⛔ Read-only DB + no automation verb. |
+| Send a tapback / react to a message | ⛔ 🔓 Messages.app exposes no automation surface for tapbacks; unlockable via `platform-imessage`. |
+| Send a threaded/inline reply | ⛔ 🔓 AppleScript `send` has no reply-target parameter; unlockable via `platform-imessage`. |
+| Edit or unsend a sent message | ⛔ 🔓 Read-only DB + no automation verb; unlockable via `platform-imessage`. |
+| Mark a conversation read upstream | ⛔ 🔓 Needs a `chat.db` write; unlockable via `platform-imessage` (we keep a local read-mark overlay meanwhile). |
 | Typing indicators (send or receive) | ⛔ Not durably recorded in `chat.db`; no automation to emit. |
 | Message effects, polls, group admin | ⛔ Out of scope per PRD non-goals. |
-| Anything that writes `chat.db` | ⛔ Hard rule. All user-owned state (stars, tags, snoozes, notes, read marks) lives in our own `AppDatabase` overlay instead — a pattern already proven by pins and read marks. |
+| Trill's own SQL writing `chat.db` | ⛔ Hard rule — *our* code never hand-writes that database. (A vetted third-party library managing its own schema-correct writes is now policy-permitted; see [security.md](security.md).) User-owned state (stars, tags, snoozes, notes, read marks) lives in our `AppDatabase` overlay regardless — a pattern already proven by pins and read marks. |
 
 Everything below respects these.
 

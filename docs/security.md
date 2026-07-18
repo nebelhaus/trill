@@ -24,7 +24,7 @@ Third-party DTOs are confined to `Providers/PlatformIMessageProvider`. Domain, r
 
 - Fixture mode: no sensitive permission required.
 - Messages database: Full Disk Access, requested only after explanation and only for the signed app identity.
-- Sending: future Accessibility and Apple Events Automation permission; currently disabled.
+- Sending: Apple Events Automation permission to control Messages.app, prompted on first send. No Accessibility permission is required on the native send path.
 - Contacts and notifications: independent health dimensions; not requested at launch.
 - Remote relay: absent from this milestone.
 
@@ -43,7 +43,7 @@ Fixtures use reserved/example values and synthetic prose. Real Messages data mus
 
 ## Sending boundary
 
-Provider capabilities and sending health must both allow an action before UI enablement. The current providers expose no send capability. A rejected or unknown result is never presented as success, and unknown outcomes are never automatically retried because the original message may already have been delivered.
+Provider capabilities and sending health must both allow an action before UI enablement. The live provider sends text and attachments by driving Messages.app over AppleScript (`osascript`) — Messages.app owns persistence, so no write ever reaches `chat.db`. Message content is passed as an AppleScript argument, never interpolated into the script source. The providers expose no send capability for tapbacks, replies, edits or mark-as-read, which the native path cannot perform. A rejected or unknown result is never presented as success, and unknown outcomes are never automatically retried because the original message may already have been delivered.
 
 ## Current threat boundary
 

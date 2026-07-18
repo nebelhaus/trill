@@ -1,14 +1,18 @@
-# Product Requirements Document: Native iMessage Client for macOS
+# Product Requirements Document: Trill
+
+> **What this document is.** This PRD holds Trill's durable product intent —
+> the problem, the principles, the requirements a build must satisfy, and the
+> questions still genuinely open. It deliberately does **not** track status or
+> sequencing: for what actually ships today see the [README](README.md), and for
+> the forward roadmap and technical strategy see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 1. Executive summary
 
-Build a fast, compact and highly controllable native macOS messaging client for a user's existing iMessage and SMS conversations. The product should feel like a serious desktop communication tool rather than a stretched mobile interface: keyboard-first, information-dense, searchable and customizable.
+Trill is a fast, compact and highly controllable native macOS messaging client for a user's existing iMessage, SMS and RCS conversations. It should feel like a serious desktop communication tool rather than a stretched mobile interface: keyboard-first, information-dense, searchable and customizable.
 
-The app uses the Messages account already signed in on the Mac. It does not create a new messaging network. It reads the local Messages database without modifying it and performs outbound actions through a dedicated Messages provider.
+The app uses the Messages account already signed in on the Mac. It does not create a new messaging network. Trill's own code reads the local Messages database without modifying it, and performs outbound actions by driving Messages.app rather than writing that database itself.
 
-The first release is completely local. A later release may use BlueBubbles as an optional self-hosted relay for REST access, webhooks and push notifications. The future notification system must allow custom immediate notifications, summaries and scheduled digests.
-
-Working title: **Trill Client**. The shipping name and visual identity are intentionally undecided.
+Trill is local-first. A later milestone may add BlueBubbles as an optional self-hosted relay for REST access, webhooks and push notifications. Any future notification system must support custom immediate notifications, summaries and scheduled digests.
 
 ## 2. Problem
 
@@ -50,137 +54,132 @@ A technical macOS power user who handles many personal and professional iMessage
 ## 5. Product principles
 
 1. **Local-first by default.** Core messaging must not depend on a cloud account or relay.
-2. **Never mutate `chat.db`.** Read Apple's database; send actions through supported automation or an isolated provider.
+2. **Trill's own code never writes `chat.db`.** Trill reads Apple's database read-only and sends by driving Messages.app, which owns its own persistence. Trill hand-writes no `INSERT`/`UPDATE`/`DELETE`, index, migration, vacuum, repair or write-capable pragma to that database. Writes to `chat.db` are permitted **only** through a well-maintained, schema-aware third-party library Trill has deliberately vetted (e.g. Beeper's `platform-imessage`); the shipping product uses no such library yet, so it writes nothing. See [Security boundaries](docs/security.md).
 3. **Respect macOS security.** Keep SIP enabled. Explain permissions before requesting them.
 4. **Desktop-native interaction.** Menus, keyboard shortcuts, drag-and-drop, Quick Look, Services and multiple windows should behave like a Mac app.
 5. **Progressive capability.** Missing permissions or unsupported provider features must degrade clearly and safely.
-6. **User-owned organization.** Pins, tags, folders, drafts, notes, snoozes and notification policies live in the app's own database.
-7. **Transport independence.** UI and product logic consume normalized domain models rather than `imsg`, BlueBubbles or Apple database rows directly.
+6. **User-owned organization.** Pins, tags, folders, drafts, notes, snoozes, read marks and notification policies live in the app's own database.
+7. **Transport independence.** UI and product logic consume normalized domain models rather than Apple database rows, `platform-imessage` or BlueBubbles DTOs directly.
 8. **Privacy-preserving notifications.** The user controls whether previews show sender, body, attachment metadata or nothing.
 
 ## 6. Goals and non-goals
 
-### Goals for the first usable release
+### Goals
 
 - Display conversations and message history from the signed-in Mac.
 - Receive live updates while the application is running.
 - Send text and attachments.
-- Resolve contact names when permission is granted.
+- Resolve contact names (and photos when permitted) when access is granted.
 - Provide strong keyboard navigation and global search.
-- Provide local pins, favorites, tags, drafts and snoozes.
+- Provide local pins, favorites, tags, folders, drafts, snoozes and read marks.
 - Deliver customizable local notifications.
 - Handle missing permissions and backend failures gracefully.
-- Establish provider and notification abstractions suitable for future BlueBubbles integration.
+- Keep provider and notification abstractions suitable for a future BlueBubbles integration.
 
-### Explicit non-goals for the first release
+### Non-goals
 
 - Reimplementing or reverse-engineering Apple's network-level iMessage protocol.
 - iOS, iPadOS, Android, Windows or web clients.
 - Multi-user or team accounts.
 - Mac App Store distribution.
 - Disabling SIP or injecting code into Messages.app.
-- Writing to, repairing or migrating Apple's Messages database.
+- Trill hand-writing to, repairing or migrating Apple's Messages database.
 - Replacing FaceTime.
-- Implementing a public internet relay.
-- BlueBubbles, Firebase, APNs or UnifiedPush integration.
-- Guaranteed support for edits, unsend, typing indicators, read receipts, effects, polls or group administration.
+- Implementing a public internet relay (BlueBubbles remains an optional future self-hosted path).
+- **Creating** edits, unsends, typing indicators, tapbacks, threaded replies, effects, polls or group administration. Trill *displays* tapbacks, replies, read receipts, delivery state and edited/unsent markers where the data exists, but the native send path (driving Messages.app) has no automation surface to create them. A future vetted `platform-imessage` layer could unlock some of these; until then they are display-only.
 
-## 7. Scope and priorities
+## 7. Product requirements
 
-Priority meanings:
-
-- **P0:** required for the first usable release.
-- **P1:** expected shortly after the foundation is stable.
-- **P2:** future expansion; design for it, do not implement it during MVP.
+These are durable requirements a build must satisfy. Their sequencing (what ships first, next, later) lives in the [ARCHITECTURE.md roadmap](ARCHITECTURE.md#22-roadmap); current status lives in the [README](README.md).
 
 ### 7.1 Onboarding and permissions
 
-| Requirement | Priority | Acceptance notes |
-| --- | --- | --- |
-| Explain why Messages Data / Full Disk Access is required | P0 | Explanation appears before directing the user to System Settings. |
-| Detect unreadable or missing `chat.db` | P0 | Show a specific recovery screen, never an empty inbox that looks successful. |
-| Request or guide Automation permission for Messages.app | P0 | Sending remains disabled until authorized. |
-| Request Contacts permission separately | P0 | Raw handles remain usable if denied. |
-| Show a permission and provider health dashboard | P0 | Includes database, sending, live watch and contacts status. |
-| Never require Accessibility for baseline operation | P0 | Accessibility-backed features remain optional experiments. |
+| Requirement | Acceptance notes |
+| --- | --- |
+| Explain why Messages Data / Full Disk Access is required | Explanation appears before directing the user to System Settings. |
+| Detect unreadable or missing `chat.db` | Show a specific recovery screen, never an empty inbox that looks successful. |
+| Request or guide Automation permission for Messages.app | Sending remains disabled until authorized. |
+| Request Contacts permission separately | Raw handles remain usable if denied. |
+| Show a permission and provider health dashboard | Includes database, sending, live watch and contacts status. |
+| Never require Accessibility for baseline operation | Accessibility-backed features remain optional experiments. |
 
 ### 7.2 Conversation navigation
 
-| Requirement | Priority | Acceptance notes |
-| --- | --- | --- |
-| List direct and group conversations | P0 | Name, participants, latest preview, timestamp, service and unread indication. |
-| Sort by recent activity | P0 | Stable ordering during live updates. |
-| Search/jump command palette | P0 | Keyboard shortcut, fuzzy matches contacts and chats. |
-| Pin/favorite conversations locally | P0 | Does not modify Messages.app state. |
-| Filter unread, direct, group and service | P1 | Filters are composable. |
-| Local tags and folders | P1 | A chat may belong to multiple tags/folders. |
-| Snooze a conversation | P1 | Hides or quiets it until a selected time. |
-| Conversation tabs | P1 | Restore tabs between launches. |
-| Multiple conversation windows | P1 | Uses standard macOS window restoration. |
+| Requirement | Acceptance notes |
+| --- | --- |
+| List direct and group conversations | Name, participants, latest preview, timestamp, service and unread indication. |
+| Sort by recent activity | Stable ordering during live updates. |
+| Search/jump command palette | Keyboard shortcut, fuzzy matches contacts and chats. |
+| Pin/favorite conversations locally | Does not modify Messages.app state. |
+| Filter unread, direct, group and service | Filters are composable. |
+| Local tags and folders | A chat may belong to multiple tags/folders. |
+| Snooze a conversation | Hides or quiets it until a selected time. |
+| Conversation tabs | Restore tabs between launches. |
+| Multiple conversation windows | Uses standard macOS window restoration. |
 
 ### 7.3 Message timeline
 
-| Requirement | Priority | Acceptance notes |
-| --- | --- | --- |
-| Render chronological history | P0 | Handles large chats incrementally without loading everything. |
-| Distinguish outgoing/incoming and sender identity | P0 | Group sender labels remain clear. |
-| Render text, images and generic attachments | P0 | Missing files show an explicit unavailable state. |
-| Show tapbacks and basic reply relationships when present in data | P0 | Display-only support does not imply the ability to create replies. |
-| Load older history on demand | P0 | Preserve visible scroll position. |
-| Copy message text and identifiers | P0 | Context menu and keyboard support. |
-| Quick Look and reveal attachment in Finder | P0 | Uses native macOS facilities. |
-| Date separators and unread marker | P1 | Unread marker is based on best available source/provider state. |
-| Attachment gallery | P1 | Filter by image, video, audio, link and file. |
-| Message details inspector | P1 | Timestamp, sender, GUID, service, delivery metadata where available. |
+| Requirement | Acceptance notes |
+| --- | --- |
+| Render chronological history | Handles large chats incrementally without loading everything. |
+| Distinguish outgoing/incoming and sender identity | Group sender labels remain clear. |
+| Render text, images and generic attachments | Missing files show an explicit unavailable state. |
+| Show tapbacks and basic reply relationships when present in data | Display-only support does not imply the ability to create replies. |
+| Load older history on demand | Preserve visible scroll position. |
+| Copy message text and identifiers | Context menu and keyboard support. |
+| Quick Look and reveal attachment in Finder | Uses native macOS facilities. |
+| Date separators and unread marker | Unread marker is based on best available source/provider state. |
+| Attachment gallery | Filter by image, video, audio, link and file. |
+| Message details inspector | Timestamp, sender, GUID, service, delivery metadata where available. |
 
 ### 7.4 Composer and outbound actions
 
-| Requirement | Priority | Acceptance notes |
-| --- | --- | --- |
-| Send text to an existing chat | P0 | Prevent accidental duplicate sends during uncertain outcomes. |
-| Send one or more files | P0 | Drag/drop, paste and file picker. |
-| Preserve drafts per conversation | P0 | Drafts are stored only in the app's database. |
-| Configurable Return/Command-Return send behavior | P0 | Setting is immediately reflected in the composer. |
-| Standard tapback reactions if baseline provider supports them safely | P1 | Capability-gated; unsupported actions are hidden or explained. |
-| Start a new direct chat | P1 | Validate phone/email and confirm routing. |
-| Scheduled sending | P2 | Do not emulate silently unless reliability can be guaranteed. |
-| Advanced replies, edits and unsend | P2 | Provider capability; never require SIP disablement. |
+| Requirement | Acceptance notes |
+| --- | --- |
+| Send text to an existing chat | Prevent accidental duplicate sends during uncertain outcomes. |
+| Send one or more files | Drag/drop, paste and file picker. |
+| Preserve drafts per conversation | Drafts are stored only in the app's database. |
+| Configurable Return/Command-Return send behavior | Setting is immediately reflected in the composer. |
+| Start a new direct chat | Validate phone/email and confirm routing. |
+| Standard tapback reactions and inline replies | Out of reach on the native send path; gated on a future vetted `platform-imessage` layer. Capability-gated; unsupported actions are hidden or explained. |
+| Scheduled sending | Deferred until a server component exists; do not emulate silently unless reliability can be guaranteed. |
+| Advanced replies, edits and unsend | Provider capability; never require SIP disablement. |
 
 ### 7.5 Search
 
-| Requirement | Priority | Acceptance notes |
-| --- | --- | --- |
-| Search message text | P0 | Results include conversation, sender, date and surrounding context. |
-| Search conversations and contacts | P0 | Available from command palette. |
-| Filter by chat, sender and date | P1 | Query state is visible and removable. |
-| Filter by attachment type | P1 | Does not scan attachment contents in MVP. |
-| Saved searches | P2 | Stored locally. |
+| Requirement | Acceptance notes |
+| --- | --- |
+| Search message text | Results include conversation, sender, date and surrounding context. |
+| Search conversations and contacts | Available from command palette. |
+| Filter by chat, sender and date | Query state is visible and removable. |
+| Filter by attachment type | Does not scan attachment contents. |
+| Saved searches | Stored locally. |
 
 ### 7.6 Notifications and digests
 
-| Requirement | Priority | Acceptance notes |
-| --- | --- | --- |
-| Local notification for an eligible incoming message | P0 | Deduplicated and suppressed for the currently focused conversation. |
-| Global preview privacy setting | P0 | Full body, sender only or generic notification. |
-| Per-chat mute policy | P1 | Local policy; independent of Messages.app mute state. |
-| Per-person/group overrides | P1 | Override sound, preview, priority and quiet hours. |
-| Quiet hours | P1 | Time zone aware. |
-| Batch bursts from the same chat | P1 | Avoid one notification per line during rapid messages. |
-| Scheduled digest | P2 | Summarize queued events at user-selected times. |
-| Smart digest rules | P2 | Examples: work chats hourly, family immediately, muted groups daily. |
-| Custom digest presentation | P2 | Compact list, grouped by chat, unread counts and optional excerpts. |
-| Remote push | P2 | Optional BlueBubbles/self-hosted relay path described in architecture. |
+| Requirement | Acceptance notes |
+| --- | --- |
+| Local notification for an eligible incoming message | Deduplicated and suppressed for the currently focused conversation. |
+| Global preview privacy setting | Full body, sender only or generic notification. |
+| Per-chat mute policy | Local policy; independent of Messages.app mute state. |
+| Per-person/group overrides | Override sound, preview, priority and quiet hours. |
+| Quiet hours | Time zone aware. |
+| Batch bursts from the same chat | Avoid one notification per line during rapid messages. |
+| Scheduled digest | Summarize queued events at user-selected times. |
+| Smart digest rules | Examples: work chats hourly, family immediately, muted groups daily. |
+| Custom digest presentation | Compact list, grouped by chat, unread counts and optional excerpts. |
+| Remote push | Optional BlueBubbles/self-hosted relay path described in architecture. |
 
 ### 7.7 Customization
 
-| Requirement | Priority | Acceptance notes |
-| --- | --- | --- |
-| Compact, comfortable and spacious density presets | P0 | Affects sidebar, timeline and composer coherently. |
-| Light, dark and system appearance | P0 | Native system appearance first. |
-| Sidebar and inspector visibility shortcuts | P0 | Persisted per window where appropriate. |
-| Configurable keyboard shortcuts | P1 | Detect conflicts and offer reset. |
-| Theme tokens | P1 | Semantic tokens, not arbitrary view-level color overrides. |
-| Custom CSS | Not planned | Native views should not grow a parallel CSS rendering system. |
+| Requirement | Acceptance notes |
+| --- | --- |
+| Compact, comfortable and spacious density presets | Affects sidebar, timeline and composer coherently. |
+| Light, dark and system appearance | Native system appearance first. |
+| Sidebar and inspector visibility shortcuts | Persisted per window where appropriate. |
+| Configurable keyboard shortcuts | Detect conflicts and offer reset. |
+| Theme tokens | Semantic tokens, not arbitrary view-level color overrides. |
+| Custom CSS | Not planned. Native views should not grow a parallel CSS rendering system. |
 
 ## 8. Primary user flows
 
@@ -191,7 +190,7 @@ Priority meanings:
 3. If unavailable, app explains Full Disk Access and opens the correct System Settings pane.
 4. User returns; app rechecks automatically and offers a manual retry.
 5. App requests Contacts only when name resolution is about to be enabled.
-6. Sending permission is requested from a deliberate “Test sending capability” action, not opportunistically during launch.
+6. Sending permission is requested on first send, not opportunistically during launch.
 7. App imports the initial chat list and opens the inbox.
 
 ### 8.2 Read and reply
@@ -256,7 +255,7 @@ Final shortcuts should follow macOS conventions and be centrally registered so m
 ## 10. Data ownership and privacy behavior
 
 - Apple's Messages database and attachments remain the source of truth for messages.
-- The application stores only its own metadata, preferences, drafts, event cursors and optional normalized cache.
+- The application stores only its own metadata, preferences, drafts, event cursors, read marks and optional normalized cache.
 - The user can delete all app-owned data without affecting Messages.app.
 - Logs must redact message bodies, recipient handles, attachment paths, authentication values and notification payloads by default.
 - Analytics are off by default. If ever added, analytics must be opt-in and must never include message content or stable contact identifiers.
@@ -271,7 +270,7 @@ Final shortcuts should follow macOS conventions and be centrally registered so m
 - Live-event processing must be idempotent.
 - Sending must not automatically retry after an uncertain result unless the provider can prove idempotency.
 - An app restart should resume from a durable event cursor and reconcile a bounded history window.
-- All destructive local actions require clear scope language: “Remove local tag” must never look like “Delete conversation.”
+- All destructive local actions require clear scope language: "Remove local tag" must never look like "Delete conversation."
 
 ## 12. Success measures
 
@@ -291,85 +290,24 @@ For a broader beta:
 - No confirmed mutation or corruption of Apple's database.
 - Notification deduplication exceeds 99.9% in automated replay tests.
 
-## 13. Roadmap
-
-### Phase 0 — technical feasibility spike
-
-- Prove read-only access to a copied fixture database.
-- Prove access to the live database with clear permission detection.
-- Evaluate `IMsgCore`'s public library API.
-- Prove send and live watch through the least-privileged provider route.
-- Document dependency pinning and macOS-version behavior.
-
-### Phase 1 — local reader and sender MVP
-
-- Native shell, onboarding and health dashboard.
-- Conversation list, message timeline and pagination.
-- Text/attachment sending with uncertain-outcome handling.
-- Live updates and reconciliation.
-- Contacts resolution.
-- Global search.
-- Local notifications.
-- Pins and drafts.
-
-### Phase 2 — power-user organization
-
-- Tags, folders, snooze and tabs.
-- Attachment browser.
-- Search filters and saved views.
-- Rich notification rules and quiet hours.
-- Performance tuning and accessibility audit.
-
-### Phase 3 — notification intelligence
-
-- Durable notification event inbox.
-- Burst coalescing.
-- Scheduled and rule-based digests.
-- Custom digest UI and notification actions.
-- Optional on-device summarization only after a separate privacy/design review.
-
-### Phase 4 — optional remote relay and push
-
-- BlueBubbles REST/webhook provider spike.
-- Secure relay connectivity and Keychain credentials.
-- APNs and/or UnifiedPush delivery adapter.
-- Remote event fetch, cursor recovery and deduplication.
-- Explicit network threat model and operational health UI.
-
-## 14. Risks and mitigations
+## 13. Risks and mitigations
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| Apple changes `chat.db` schema | Reads fail or fields become incorrect | Repository owns schema adapters, fixture tests cover multiple macOS versions, fail closed on unknown critical schema. |
-| Automation changes across macOS releases | Sending or advanced actions fail | Capability probes, provider isolation, no silent fallback to risky private APIs. |
+| Apple changes `chat.db` schema | Reads fail or fields become incorrect | The reader owns schema adapters, fixture tests cover multiple macOS versions, queries pin to long-stable columns, fail closed with `unsupportedSchema` on unknown critical schema. |
+| AppleScript/Automation changes across macOS releases | Sending fails | Capability probes, provider isolation, no silent fallback to risky private APIs. |
 | Permission UX is confusing | User sees an empty or broken app | Dedicated health model, actionable onboarding and recheck on activation. |
 | Duplicate sends after timeout | Socially damaging | Client operation IDs, send-once policy and explicit uncertain state. |
 | Live watcher misses events | Missed notifications/UI updates | Durable cursor plus bounded database reconciliation on launch/wake/reconnect. |
 | Loading huge chats causes UI stalls | App becomes unusable | Pagination, background actors, cancellation, lazy rendering and instrumentation. |
-| BlueBubbles relay exposed publicly | Message/credential compromise | Deferred threat model, TLS, private network preferred, Keychain secrets, redacted URLs and least-content push payloads. |
-| Third-party library becomes unmaintained | Build or runtime breakage | Provider boundary, pinned versions, conformance tests and CLI fallback. |
+| A future BlueBubbles relay exposed publicly | Message/credential compromise | Deferred threat model, TLS, private network preferred, Keychain secrets, redacted URLs and least-content push payloads. |
+| A vetted third-party library becomes unmaintained | Build or runtime breakage | Provider boundary, pinned versions, conformance tests and a fallback to the native read-only path. |
 
-## 15. Open product questions
+## 14. Open product questions
 
-These do not block the feasibility spike:
+Resolved decisions now live in the README (name, tabs, folders-as-labels, local read state) and ARCHITECTURE (provider strategy). Genuinely open:
 
-- Shipping name and icon.
-- Whether conversation tabs are a first-class default or an optional mode.
-- Whether local folders behave like labels or mutually exclusive mailboxes.
-- Whether the app should mirror Messages.app unread state when safe, or maintain a separate local read state.
 - Whether on-device AI summaries are desirable for digests; this requires an explicit privacy decision.
 - Which remote clients, if any, justify BlueBubbles relay work.
 - Whether future push uses APNs, UnifiedPush or both.
-
-## 16. MVP release gate
-
-Phase 1 is releasable to the owner only when:
-
-- SIP remains enabled throughout development and use.
-- Trill's own code opens `chat.db` read-only and never hand-writes to it. (This MVP ships no write-capable provider; delegated writes through a vetted, well-maintained third-party library are permitted by policy but out of scope here.)
-- Text and attachment sends are covered by end-to-end manual tests.
-- Duplicate-send recovery behavior has been exercised.
-- Permission-denied, Messages-signed-out and missing-attachment states have UI.
-- Live watch survives sleep/wake and app relaunch reconciliation.
-- Logs contain no message content under the default configuration.
-- A clean uninstall/data-reset path removes only app-owned data.
+- Whether a future vetted `platform-imessage` layer should be adopted to unlock send-backed actions (tapbacks, replies, edits, mark-as-read), and on what vetting bar.

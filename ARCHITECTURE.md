@@ -57,8 +57,9 @@ flowchart TD
 
 Keep the dependency set deliberately small:
 
-- `openclaw/imsg`, specifically its `IMsgCore` product, as the first direct local-provider candidate.
-- A SQLite layer for the app-owned store. Prefer GRDB if its current Swift 6/macOS support is healthy; otherwise use SQLite.swift or a small direct SQLite wrapper.
+- The shipping live provider has **no third-party read/send dependency**: it is our own `ChatDatabaseReader` (direct `SQLITE_OPEN_READONLY` SQL over `chat.db`) plus `MessagesSender` (AppleScript via `osascript`). See §6.
+- `beeper/platform-imessage` is pinned and compiled for DTO-contract mapping tests, but its `PlatformAPI` is not instantiated in the shipping app; it is the intended future vetted library for write-backed advanced actions (§6.3).
+- A SQLite layer for the app-owned store. The app uses a small direct SQLite wrapper (`AppDatabase`); GRDB or SQLite.swift remain options if richer needs appear.
 - No networking framework beyond `URLSession` until the remote relay phase.
 - No analytics SDK.
 
@@ -86,9 +87,9 @@ Trill/
     NotificationRepository.swift
   Providers/
     MessagesProvider.swift
-    IMsgCoreProvider/
-    IMsgRPCProvider/          # fallback, not simultaneous production path
+    LiveIMessage/            # shipping provider: read-only chat.db SQL + AppleScript send
     FixtureProvider/
+    PlatformIMessageProvider/ # gated: compiled for DTO mapping, PlatformAPI not instantiated
     BlueBubblesProvider/     # future placeholder only
   Persistence/
     AppDatabase.swift
@@ -163,37 +164,20 @@ Unsupported actions should not throw generic failures after the UI offers them. 
 
 ## 6. Provider strategy
 
-### 6.1 Primary candidate: direct `IMsgCore`
+### 6.1 Shipping provider: native `LiveIMessage`
 
-`openclaw/imsg` publishes an MIT-licensed Swift library named `IMsgCore`. The feasibility spike should determine whether its current public API cleanly exposes the required read/watch/send functions to a GUI host.
+The live provider is our own code, with no third-party read/send library (see [ADR 0002](architecture-decisions/0002-live-imessage-provider.md)). It has three parts:
 
-Advantages:
+- **Reads — `ChatDatabaseReader`.** Opens `chat.db` with `SQLITE_OPEN_READONLY` per call and issues plain SELECTs (chats, messages, handles, reactions, attachments, search, all-chats attachment/link scans for the Universal Library). Message bodies with NULL `text` are decoded from the typedstream `attributedBody` blob (`TypedstreamText`), validated against real rows before adoption.
+- **Sends — `MessagesSender`.** Shells to `osascript`, targeting `chat id <chat.guid>` in Messages.app with a participant fallback for 1:1 chats. Messages.app owns persistence; Trill never writes `chat.db`. Message content is passed as an AppleScript argument, never string-interpolated into the script.
+- **Live updates.** A `chat.db-wal` event source (with a polling fallback) emits `messageAdded`/`conversationUpdated` events and drives in-place edits, tapbacks and receipt changes on the open thread.
+- **Names — `ContactsNameResolver`.** Maps handles to names/photos via the Contacts framework when granted (suffix-10 phone matching, lowercased emails); falls back to reading the local AddressBook store directly under Full Disk Access when Contacts is denied.
 
-- Same-process native Swift integration.
-- No JSON-RPC serialization or helper lifecycle.
-- Permissions are associated with the application bundle.
-- Easier structured concurrency and cancellation.
+Advantages: same-process native Swift, no helper lifecycle, permissions bound to the app bundle, easy cancellation. Cost: the send path is AppleScript-only, so it structurally cannot create tapbacks, threaded replies, edits/unsends, typing indicators or mark-as-read — those need either a `chat.db` write or private automation, which is why they are display-only today (§6.3 covers the future unlock).
 
-Risks:
+### 6.2 Historical candidates (not used)
 
-- The library's public API may be optimized for its CLI rather than long-lived GUI consumers.
-- Source compatibility may change despite the package product existing.
-- Some advanced commands belong to the executable or private bridge rather than `IMsgCore`.
-
-### 6.2 Fallback: bundled `imsg rpc`
-
-If direct integration requires forking or extensive internal coupling, bundle a reviewed `imsg` executable and launch one long-lived `imsg rpc` process. Communicate with newline-framed JSON-RPC over stdin/stdout.
-
-Requirements for this adapter:
-
-- Explicit child lifecycle and restart backoff.
-- Separate stdout protocol parsing from stderr diagnostics.
-- Request IDs and cancellation bookkeeping.
-- Schema validation at the provider boundary.
-- A durable event cursor and bounded reconciliation after restarts.
-- Code-sign the helper inside the app bundle and verify TCC behavior.
-
-Do not shell out once per UI action. Use one supervised process.
+Earlier planning evaluated `openclaw/imsg` (`IMsgCore` direct integration, or a bundled `imsg rpc` helper process). The product direction moved to Beeper's `platform-imessage` and then to the native path above; neither `imsg` route is a dependency. They are noted only so they are not re-proposed as the primary path.
 
 ### 6.3 Advanced provider candidate: `platform-imessage`
 
@@ -625,7 +609,7 @@ Every provider must pass the same behavioral suite:
 ### Integration tests
 
 - App-owned database transactions and recovery.
-- `imsg rpc` framing if the fallback adapter is used.
+- Provider-to-domain mapping against `platform-imessage` DTO fixtures.
 - Sleep/wake and watcher restart simulation.
 - Notification scheduling using injected clock and delivery spy.
 - BlueBubbles REST/webhook mapping in Phase 4 using a local mock server.
@@ -653,43 +637,44 @@ Use a dedicated test conversation/account where practical. Validate sending manu
 
 ## 19. Build and delivery milestones
 
-### Milestone A: repository and fixture reader
+### Milestone A: repository and fixture reader — shipped
 
 - Native app builds and tests.
 - Provider protocol and domain types.
 - Fixture provider.
-- `IMsgCore` dependency spike behind a buildable adapter.
+- `platform-imessage` pinned and compiled behind a gated adapter for DTO-contract mapping.
 - Conversation and timeline UI against fixtures.
 
-### Milestone B: live local access
+### Milestone B: live local access — shipped
 
 - Permission health checks.
-- Read-only live conversations and messages.
-- Live watch/reconciliation.
+- Read-only live conversations and messages via native `ChatDatabaseReader`.
+- WAL-driven live watch and reconciliation.
 - Contacts integration.
 
-### Milestone C: safe sending
+### Milestone C: sending — shipped
 
 - Text and attachment composer.
-- Automation permission flow.
-- Send operation tracking and unknown-outcome reconciliation.
+- AppleScript send via `MessagesSender` and the Automation permission flow.
+- Send operation tracking and unknown-outcome reconciliation; undo-send window.
 
-### Milestone D: useful daily client
+### Milestone D: useful daily client — shipped
 
-- Search, pins, drafts and local notifications.
-- Performance, accessibility and recovery hardening.
+- Search, pins, drafts and local notifications (with inline reply).
+- Performance and recovery hardening; accessibility audit ongoing.
 
-### Milestone E: organization and digests
+### Milestone E: organization and digests — in progress
 
-- Tags, snooze, tabs, rules, batching and scheduled digests.
+- Shipped: tags/folders, snooze, archive, mute, VIP, service filters.
+- Remaining: conversation tabs, notification rules, quiet hours, burst batching and scheduled digests.
 
-### Milestone F: optional relay
+### Milestone F: optional relay — future
 
 - BlueBubbles provider spike, network threat model and push adapter.
 
 ## 20. Architectural acceptance criteria
 
-- No feature outside `Providers/` imports `IMsgCore`, `imsg` RPC DTOs or BlueBubbles DTOs.
+- No feature outside `Providers/` imports `platform-imessage`/`PlatformSDK` DTOs or BlueBubbles DTOs.
 - Trill's own code opens no write-capable connection to Apple's Messages database; any such write path is delegated to a vetted third-party library, never hand-rolled.
 - Fixture provider can run the primary UI without private user data.
 - Provider capabilities control action availability.
@@ -702,10 +687,41 @@ Use a dedicated test conversation/account where practical. Validate sending manu
 
 ## 21. References and current assumptions
 
-- [`openclaw/imsg`](https://github.com/openclaw/imsg) documents direct read-only Messages database access, filesystem-event watching with polling fallback, AppleScript sending, JSON-RPC and an `IMsgCore` Swift library product.
-- [`beeper/platform-imessage`](https://github.com/beeper/platform-imessage) documents an embeddable Swift package with automation/Accessibility-based advanced actions while SIP remains enabled.
+- The shipping live provider is native Trill code (`ChatDatabaseReader` + `MessagesSender`): direct read-only `chat.db` access, WAL-driven watching with a polling fallback, and AppleScript sending. It depends on no third-party messaging library.
+- [`beeper/platform-imessage`](https://github.com/beeper/platform-imessage) documents an embeddable Swift package with automation/Accessibility-based advanced actions while SIP remains enabled; pinned and compiled but not instantiated (§6.3).
+- [`openclaw/imsg`](https://github.com/openclaw/imsg) was an earlier evaluated candidate (`IMsgCore` library / `imsg rpc` helper); it is not a dependency (§6.2).
 - [BlueBubbles REST API & Webhooks](https://docs.bluebubbles.app/server/developer-guides/rest-api-and-webhooks) documents REST authentication and webhook categories.
 - [BlueBubbles UnifiedPush](https://docs.bluebubbles.app/client/usage-guides/using-unified-push-for-notifications) demonstrates webhook-based delivery through a UnifiedPush distributor.
 - [Apple's Apple Events entitlement documentation](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.automation.apple-events) is the baseline reference for hardened-runtime automation entitlement configuration.
 
 All dependency behavior is subject to change. The implementation spike must verify current tagged releases and macOS behavior rather than treating this document as API-level documentation.
+
+## 22. Roadmap
+
+This is the forward sequencing for the [PRD](PRD.md)'s durable requirements. Current shipped state lives in the [README](README.md); the running idea pool with per-feature status is [docs/ideas.md](docs/ideas.md).
+
+### Shipped foundation
+
+Native live provider (read-only `chat.db` + AppleScript send), WAL-driven live updates and reconciliation, contacts, global + in-thread search with operators, command palette, pins/drafts/read marks, local notifications with inline reply, and the first wave of power-user organization (folders/tags, snooze, archive, mute, VIP, service filters, Universal Library, conversation stats, needs-reply triage).
+
+### Next — power-user organization (completing PRD §7.2/§7.5)
+
+- Conversation tabs and multi-window restoration.
+- Saved searches and richer search-filter UI.
+- Attachment/library refinements.
+- Accessibility audit (VoiceOver, Dynamic Type, high-contrast theme).
+
+### Then — notification intelligence (PRD §7.6)
+
+- Durable notification event inbox.
+- Per-person/group rules, quiet hours and burst coalescing.
+- Scheduled and rule-based digests with custom presentation.
+- Optional on-device summarization only after a separate privacy/design review.
+
+### Later — write-backed advanced actions
+
+Adopt a vetted `platform-imessage` layer (§6.3) to unlock tapback/reply sending, edits/unsends and mark-as-read, gated on the signed-host vetting/validation pass in [ADR 0001](architecture-decisions/0001-messages-provider.md). Each capability is independently probed and user-enabled; the native read-only provider remains the stable baseline.
+
+### Optional — remote relay and push (PRD §7.6 remote push)
+
+BlueBubbles REST/webhook provider (§6.4, §11), Keychain-stored credentials, APNs and/or UnifiedPush delivery adapter, remote event fetch with cursor recovery, and an explicit network threat model. Only pursued if a concrete remote-client need justifies it.
