@@ -10,6 +10,10 @@ struct AppCommands: Commands {
     let jumpToDate: () -> Void
     let findNext: () -> Void
     let findPrevious: () -> Void
+    let goBack: () -> Void
+    let goForward: () -> Void
+    let canGoBack: Bool
+    let canGoForward: Bool
     let reload: () -> Void
     let toggleSidebar: () -> Void
     let togglePin: () -> Void
@@ -44,6 +48,13 @@ struct AppCommands: Commands {
                 .keyboardShortcut("g", modifiers: .command)
             Button("Find Previous", action: findPrevious)
                 .keyboardShortcut("g", modifiers: [.command, .shift])
+            Divider()
+            Button("Back", action: goBack)
+                .keyboardShortcut("[", modifiers: .command)
+                .disabled(!canGoBack)
+            Button("Forward", action: goForward)
+                .keyboardShortcut("]", modifiers: .command)
+                .disabled(!canGoForward)
             Button("Reload", action: reload)
                 .keyboardShortcut("r", modifiers: .command)
             Button("Keyboard Shortcuts", action: showShortcuts)
