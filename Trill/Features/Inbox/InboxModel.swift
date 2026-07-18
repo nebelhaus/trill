@@ -175,6 +175,17 @@ final class InboxModel: ObservableObject {
     private var repository: MessagesRepository
     private var loadTask: Task<Void, Never>?
     private var eventTask: Task<Void, Never>?
+    /// Browser-style navigation history over the *selected conversation*. `back`
+    /// holds previously-viewed threads (most recent last); `forward` holds the
+    /// ones a ⌘[ back-step stepped out of, cleared the moment a fresh selection
+    /// forks the trail. Published so the ⌘[ / ⌘] menu items can enable/disable.
+    @Published private(set) var backStack: [ConversationID] = []
+    @Published private(set) var forwardStack: [ConversationID] = []
+    /// Set only while `goBack`/`goForward` drive the selection, so `select`'s
+    /// history recorder knows this hop is a replay, not a new fork.
+    private var isNavigatingHistory = false
+    /// Cap so a marathon session can't grow the trail without bound.
+    private static let historyLimit = 50
     /// Fires when the next-to-wake snoozed thread is due, so it resurfaces
     /// without a poll. Rescheduled whenever the snooze set changes.
     private var snoozeWakeTask: Task<Void, Never>?
@@ -307,6 +318,9 @@ final class InboxModel: ObservableObject {
         UserDefaults.standard.set(mode.rawValue, forKey: Self.providerModeKey)
         selectedConversationID = nil
         conversations = []
+        // The trail belongs to the old provider's thread list; a switch retires it.
+        backStack.removeAll()
+        forwardStack.removeAll()
         eventTask?.cancel()
         conversationModel.clear()
         composerModel.select(nil, capabilities: ProviderCapabilities(), health: .fixture, sendAction: nil)
@@ -435,6 +449,7 @@ final class InboxModel: ObservableObject {
     }
 
     func select(_ id: ConversationID?, focus: MessageID? = nil) {
+        recordHistory(navigatingTo: id)
         if selectedConversationID != id { selectedConversationID = id }
         if let id {
             markCleared(id)
@@ -459,6 +474,43 @@ final class InboxModel: ObservableObject {
                 attachments: attachments
             ))
         }
+    }
+
+    // MARK: - Navigation history
+
+    var canGoBack: Bool { !backStack.isEmpty }
+    var canGoForward: Bool { !forwardStack.isEmpty }
+
+    /// Push the thread we're leaving onto the back trail whenever a *fresh*
+    /// selection moves to a different conversation, and fork the forward trail.
+    /// Replays driven by `goBack`/`goForward` skip this so they don't rewrite the
+    /// very history they're walking.
+    private func recordHistory(navigatingTo id: ConversationID?) {
+        guard !isNavigatingHistory else { return }
+        guard let id, let current = selectedConversationID, current != id else { return }
+        backStack.append(current)
+        if backStack.count > Self.historyLimit { backStack.removeFirst() }
+        forwardStack.removeAll()
+    }
+
+    /// ⌘[ — step back to the previously-viewed conversation.
+    func goBack() {
+        guard let previous = backStack.popLast() else { return }
+        if let current = selectedConversationID { forwardStack.append(current) }
+        navigateHistory(to: previous)
+    }
+
+    /// ⌘] — step forward again after one or more ⌘[ back-steps.
+    func goForward() {
+        guard let next = forwardStack.popLast() else { return }
+        if let current = selectedConversationID { backStack.append(current) }
+        navigateHistory(to: next)
+    }
+
+    private func navigateHistory(to id: ConversationID) {
+        isNavigatingHistory = true
+        select(id)
+        isNavigatingHistory = false
     }
 
     // MARK: - Live events

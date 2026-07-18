@@ -31,6 +31,8 @@ enum ShortcutCatalog {
             ShortcutReference(keys: ["⌘", "G"], label: "Find next match"),
             ShortcutReference(keys: ["⇧", "⌘", "G"], label: "Find previous match"),
             ShortcutReference(keys: ["⌘", "J"], label: "Jump to date"),
+            ShortcutReference(keys: ["⌘", "["], label: "Back (previously viewed)"),
+            ShortcutReference(keys: ["⌘", "]"], label: "Forward"),
             ShortcutReference(keys: ["⌘", "1–9"], label: "Jump to pinned conversation"),
         ]),
         ShortcutSection(title: "Conversations", shortcuts: [
