@@ -56,4 +56,4 @@ This is a diagnostic checklist, not authorization to enable live reads or sends.
 
 Do not disable SIP. Do not add Terminal to Full Disk Access as a substitute for validating the app's own TCC identity.
 
-Once a safe no-index upstream API exists, the expanded signed-Mac checklist must cover read-only file tracing, a signed-in Messages account, pagination across schema variants, clean event cancellation/reconnect, permission revocation while running, and manually addressed test-account sends. Those sends must never run in CI.
+Once `platform-imessage` has been vetted for live use, the expanded signed-Mac checklist must cover file-write tracing (confirming every `chat.db` write comes from the vetted library, none from Trill's own SQL), a signed-in Messages account, pagination across schema variants, clean event cancellation/reconnect, permission revocation while running, and manually addressed test-account sends. Those sends must never run in CI.

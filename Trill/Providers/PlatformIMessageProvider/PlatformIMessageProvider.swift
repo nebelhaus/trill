@@ -5,10 +5,11 @@ import PlatformSDK
 /// Safety-gated adapter for platform-imessage v0.24.4.
 ///
 /// The package is integrated and its public DTOs are mapped below. Live calls
-/// are intentionally blocked because the current public `PlatformAPI` creates
-/// indexes through a read-write connection to Apple's chat.db. Enabling this
-/// adapter requires an upstream/forked public initializer that preserves
-/// `IMDatabase(createIndexes: false)` end-to-end.
+/// are intentionally blocked until the library has passed a signed-host
+/// vetting/validation pass. Its public `PlatformAPI` opens Apple's chat.db
+/// read-write to create indexes; policy now permits a vetted, well-maintained
+/// library to manage its own chat.db writes, so enabling this adapter is a
+/// matter of vetting + validation — not of forcing `IMDatabase(createIndexes: false)`.
 actor PlatformIMessageProvider: MessagesProvider {
     nonisolated let id = ProviderID(rawValue: "platform-imessage")
     nonisolated static let pinnedVersion = "0.24.4"
@@ -26,7 +27,7 @@ actor PlatformIMessageProvider: MessagesProvider {
             databaseState = HealthState(
                 availability: .limited,
                 reason: .manualVerificationRequired,
-                recoverySuggestion: "Live reads remain safety-gated until platform-imessage exposes a no-index public API."
+                recoverySuggestion: "Live reads remain safety-gated until platform-imessage passes a signed-host vetting/validation pass."
             )
         } else {
             databaseState = databaseProbe
@@ -79,7 +80,7 @@ actor PlatformIMessageProvider: MessagesProvider {
     }
 
     private var blockedError: MessagesProviderError {
-        .unavailable("platform-imessage's public API may create indexes in chat.db")
+        .unavailable("platform-imessage is not yet vetted for live use (pending a signed-host validation pass)")
     }
 }
 

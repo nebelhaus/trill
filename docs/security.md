@@ -2,9 +2,9 @@
 
 ## Core invariant
 
-Trill never modifies `~/Library/Messages/chat.db` or another Apple-owned Messages database. System Integrity Protection stays enabled.
+Trill's own code never writes to `~/Library/Messages/chat.db` (or any Apple-owned Messages database) — no hand-rolled `INSERT`/`UPDATE`/`DELETE`, index creation, migration, vacuum, repair, or write-capable pragma from our own SQL. Writes to that database are permitted **only** through a well-maintained, schema-aware third-party library we have deliberately vetted and trust to keep the on-disk schema correct (Beeper's `platform-imessage` is the intended example). System Integrity Protection stays enabled throughout.
 
-The app's permission checker opens the database only with:
+Today Trill ships no such library live, so its own database access — the permission checker and the live `ChatDatabaseReader` — is strictly read-only, opened only with:
 
 ```text
 SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX
@@ -16,7 +16,7 @@ The app-owned `app.sqlite3` under Application Support is a separate database. It
 
 ## Third-party boundary
 
-`platform-imessage` 0.24.4 is present for compilation and DTO contract mapping. Its `PlatformAPI` is never instantiated because that facade currently initializes `IMDatabase(createIndexes: true)`. Live capabilities stay empty and calls fail closed. See [ADR 0001](architecture-decisions/0001-messages-provider.md).
+`platform-imessage` 0.24.4 is present for compilation and DTO contract mapping. Its `PlatformAPI` is not instantiated yet — not because its `IMDatabase(createIndexes: true)` write is categorically forbidden (a vetted, well-maintained library managing its own `chat.db` writes is now allowed), but because the library still owes a signed-host vetting/validation pass before we trust it live. Until then live capabilities stay empty and calls fail closed. See [ADR 0001](architecture-decisions/0001-messages-provider.md).
 
 Third-party DTOs are confined to `Providers/PlatformIMessageProvider`. Domain, repositories, persistence, features, and views do not import them.
 
@@ -28,7 +28,7 @@ Third-party DTOs are confined to `Providers/PlatformIMessageProvider`. Domain, r
 - Contacts and notifications: independent health dimensions; not requested at launch.
 - Remote relay: absent from this milestone.
 
-Granting Full Disk Access does not enable live integration by itself and does not relax the read-only invariant.
+Granting Full Disk Access does not enable live integration by itself; a write-capable provider still requires a vetted, trusted library and its signed-host validation pass.
 
 ## Logging and sensitive data
 
@@ -49,4 +49,4 @@ Provider capabilities and sending health must both allow an action before UI ena
 
 This milestone trusts the local macOS user and does not attempt device compromise, malicious local administrator, or dependency-build isolation. It adds no analytics, updater, remote networking, push service, or background data export. Swift Package code and its build macro remain supply-chain inputs; exact resolution is recorded in `Package.resolved`, and changes require review.
 
-Before enabling live data, review the full dependency diff, validate a signed release identity, trace all opens against the Messages directory, and prove that the safe construction path cannot regress to `createIndexes: true`.
+Before enabling live data, review the full dependency diff, validate a signed release identity, trace all opens against the Messages directory, and confirm that every write to `chat.db` originates from the vetted third-party library and stays within its documented, schema-aware surface — never from Trill's own SQL.

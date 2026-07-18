@@ -3,9 +3,11 @@
 - Status: Accepted for the foundation; live provider blocked pending a safe upstream API
 - Date: 2026-07-13
 
+> **Amended 2026-07-18:** the *absolute* no-write rule this ADR relied on has been relaxed. Trill's own code still never hand-writes to `chat.db`, but writes performed by a well-maintained, vetted third-party library (e.g. `platform-imessage`) that keeps the schema correct are now permitted — see the current [Core invariant](../security.md). The gating below is therefore now a **vetting + signed-host validation** gate, not a categorical prohibition, and forcing `createIndexes: false` upstream is no longer required.
+
 ## Context
 
-The planning documents originally proposed `openclaw/imsg`. The product direction was changed to Beeper's [`platform-imessage`](https://github.com/beeper/platform-imessage), and user safety requires that the application never write to an Apple-owned Messages database.
+The planning documents originally proposed `openclaw/imsg`. The product direction was changed to Beeper's [`platform-imessage`](https://github.com/beeper/platform-imessage), and — under the policy in force at the time — user safety required that the application never write to an Apple-owned Messages database at all.
 
 The inspected dependency is the exact 0.24.4 tag at revision `78cd285e30a5afc109102553bbbe17ea80d66d27`. It is MIT licensed, declares Swift tools 5.9, publishes the `IMessage` and `PlatformSDK` library products, and declares macOS 11 support in the package configuration. This app retains its macOS 14 deployment target.
 
@@ -19,7 +21,7 @@ It is not safe to instantiate the API in this app today:
 - `IMDatabase.createIndexesIfNecessary` opens Apple's Messages database read-write and can execute `CREATE INDEX IF NOT EXISTS`.
 - The public `PlatformAPI` initializer does not expose an end-to-end `createIndexes: false` option or injected read-only database.
 
-That behavior conflicts with the product's absolute no-write rule. Full Disk Access does not make the write acceptable.
+At the time this conflicted with the product's then-absolute no-write rule (since amended — see the banner above), and Full Disk Access did not make the write acceptable.
 
 ## Decision
 

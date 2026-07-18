@@ -4,6 +4,8 @@
 
 Accepted (supersedes the safety gate consequence of ADR 0001 while keeping its analysis).
 
+> **Amended 2026-07-18:** the native path described here stays read-only and remains what ships. Separately, the *policy* has since been relaxed so a vetted, well-maintained third-party library may write to `chat.db` on Trill's behalf — see the current [Core invariant](../security.md). That does not change this ADR's decision; it only means the `platform-imessage` route is no longer categorically off the table.
+
 ## Context
 
 ADR 0001 gated the `platform-imessage` adapter because its public `PlatformAPI`

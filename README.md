@@ -47,7 +47,7 @@ default in the rice, but it stands alone — install the cask above on any Mac.
 - App-owned SQLite migrations for pins, drafts, provider cursors, and local read marks.
 - Read-only Messages database permission/schema probe.
 
-The live provider never writes to `chat.db` — every connection is `SQLITE_OPEN_READONLY` and sends go through Messages.app, which owns its own persistence. The older [`beeper/platform-imessage`](https://github.com/beeper/platform-imessage) adapter remains in the tree but unused by the UI: its public `PlatformAPI` can create indexes in `chat.db`, which is why it was gated (see [ADR 0001](docs/architecture-decisions/0001-messages-provider.md)) and ultimately bypassed in favor of the direct reader.
+The live provider never writes to `chat.db` — every connection is `SQLITE_OPEN_READONLY` and sends go through Messages.app, which owns its own persistence. The older [`beeper/platform-imessage`](https://github.com/beeper/platform-imessage) adapter remains in the tree but unused by the UI: its public `PlatformAPI` opens `chat.db` read-write to create indexes. Trill's policy no longer forbids that outright — a vetted, well-maintained library may manage its own `chat.db` writes — so enabling the adapter is gated on vetting it plus a signed-host validation pass (see [ADR 0001](docs/architecture-decisions/0001-messages-provider.md)); this milestone simply ships the direct read-only reader instead.
 
 ## Permissions
 
@@ -94,7 +94,7 @@ If this checkout lives in an iCloud-synced folder (e.g. `~/Documents`), point `-
 
 ## Provider and permissions
 
-The provider picker offers **Synthetic Fixture** and **Messages (Safety-gated)**. Selecting Messages performs only a direct `SQLITE_OPEN_READONLY` probe. If Full Disk Access is absent, the app explains it and links to System Settings. If access exists, the provider still remains gated until `platform-imessage` exposes a public, end-to-end `createIndexes: false` construction path and a signed-host validation pass succeeds.
+The provider picker offers **Synthetic Fixture** and **Messages (Safety-gated)**. Selecting Messages performs only a direct `SQLITE_OPEN_READONLY` probe. If Full Disk Access is absent, the app explains it and links to System Settings. If access exists, the provider still remains gated until `platform-imessage` has passed a signed-host vetting/validation pass. (Trill is now willing to let that vetted library manage its own `chat.db` writes, so it no longer requires a `createIndexes: false` construction path.)
 
 Never disable SIP for this project. Full Disk Access, when eventually used, belongs to the built app's bundle identity—not Terminal—when launched from Xcode or Finder.
 

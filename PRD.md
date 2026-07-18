@@ -366,7 +366,7 @@ These do not block the feasibility spike:
 Phase 1 is releasable to the owner only when:
 
 - SIP remains enabled throughout development and use.
-- `chat.db` is opened read-only and no code path writes to it.
+- Trill's own code opens `chat.db` read-only and never hand-writes to it. (This MVP ships no write-capable provider; delegated writes through a vetted, well-maintained third-party library are permitted by policy but out of scope here.)
 - Text and attachment sends are covered by end-to-end manual tests.
 - Duplicate-send recovery behavior has been exercised.
 - Permission-denied, Messages-signed-out and missing-attachment states have UI.

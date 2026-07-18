@@ -2,7 +2,7 @@
 
 ## 1. Architecture summary
 
-Build a native Swift application with SwiftUI as the main presentation framework and AppKit where native desktop behavior or large-list performance requires it. The application reads Messages data through an isolated provider and sends through provider-owned macOS automation. It never writes to Apple's Messages database.
+Build a native Swift application with SwiftUI as the main presentation framework and AppKit where native desktop behavior or large-list performance requires it. The application reads Messages data through an isolated provider and sends through provider-owned macOS automation. Trill's own code never writes to Apple's Messages database directly; any write-backed capability is delegated to a well-maintained, vetted third-party library rather than hand-rolled SQL.
 
 The architecture separates five concerns:
 
@@ -690,7 +690,7 @@ Use a dedicated test conversation/account where practical. Validate sending manu
 ## 20. Architectural acceptance criteria
 
 - No feature outside `Providers/` imports `IMsgCore`, `imsg` RPC DTOs or BlueBubbles DTOs.
-- No write-capable connection to Apple's Messages database exists.
+- Trill's own code opens no write-capable connection to Apple's Messages database; any such write path is delegated to a vetted third-party library, never hand-rolled.
 - Fixture provider can run the primary UI without private user data.
 - Provider capabilities control action availability.
 - Message/event identity is provider-qualified and deduplicated.
