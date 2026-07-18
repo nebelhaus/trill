@@ -18,7 +18,11 @@ permissions:
 jobs:
   release:
     name: build + publish release
-    runs-on: macos-15
+    # macos-26 + Xcode 26.2: BetterSwiftAX needs the macOS 26 (Tahoe) SDK's
+    # AXWebConstants.h (the kAX* constants), absent from macos-15 — see build.yml.
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
 

@@ -6,13 +6,19 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Trill needs the macOS 26 (Tahoe) SDK: BetterSwiftAX references AX constants
+# (kAXARIA*, kAXDOM*, …) that only exist in HIServices' AXWebConstants.h, a
+# file the macOS 15 SDK doesn't ship — so builds on macos-15 fail with ~160
+# "cannot find 'kAX…' in scope" errors. Build on the macos-26 image and pin
+# Xcode 26.2 (matches the dev machine; the image's default drifts to newer
+# 26.x). Runner catalogue: https://github.com/actions/runner-images.
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+
 jobs:
   build:
     name: xcodebuild (macOS)
-    # Trill needs Xcode 26.2 / Swift 6.2 — use the newest runner image and its
-    # default (latest) Xcode. If the image's default lags, pin with
-    # `sudo xcode-select -s /Applications/Xcode_26.2.app` here.
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - name: Show toolchain
@@ -33,7 +39,7 @@ jobs:
 
   test:
     name: unit tests
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - name: Test
