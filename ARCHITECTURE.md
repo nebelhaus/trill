@@ -195,11 +195,11 @@ Requirements for this adapter:
 
 Do not shell out once per UI action. Use one supervised process.
 
-### 6.3 Experimental advanced provider: `platform-imessage`
+### 6.3 Advanced provider candidate: `platform-imessage`
 
-Beeper's MIT-licensed `platform-imessage` is an optional future provider candidate. It exposes a Swift Package and claims broad feature parity with SIP enabled using Messages data, automation and Accessibility APIs.
+Beeper's MIT-licensed `platform-imessage` is an embeddable Swift package (already pinned and compiling) that wraps a full `PlatformAPI`: paged threads and messages, search, a live event stream, sending, and — through its automation/Accessibility layer with SIP enabled — the write-backed actions our native read-only path structurally can't do. Concretely, it can unlock **sending tapbacks/reactions, editing and unsending, marking conversations read, threaded replies, and typing indicators** — the exact gaps ADR 0002 lists. It also keeps its own `chat.db` schema handling current (its only direct write is a couple of performance indexes on `date_read`/`date_edited`), which under the [relaxed no-write policy](../security.md) is acceptable precisely because it's a vetted, well-maintained library rather than hand-rolled SQL of ours.
 
-Evaluate it only after the baseline app is stable. Accessibility-backed automation can unlock replies, reactions, edits, typing and read state, but it adds a broad permission and may be more sensitive to Messages UI changes. Advanced actions must be independently capability-probed and user-enabled.
+It is a real candidate, not a gated no-go — but it is not free. Its advanced actions ride a broad Accessibility + Apple Events permission and are more sensitive to Messages UI changes than plain DB reads, so each capability must be independently probed and user-enabled, and the whole library must clear a signed-host vetting/validation pass (see [ADR 0001](architecture-decisions/0001-messages-provider.md)) before we trust it live. The sensible sequencing is to keep shipping the native read-only provider as the stable baseline and layer `platform-imessage` in only for the richer write-backed actions once that vetting is done.
 
 ### 6.4 Future provider: BlueBubbles
 
