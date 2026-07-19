@@ -5,9 +5,17 @@ name: release
 # Homebrew cask bump. Cut tags with `bench release trill` from the workshop;
 # it enforces that the tag matches VERSION and that everything is pushed.
 #
-# The built app is ad-hoc signed (CI has no Developer ID), so users clear
-# Gatekeeper once with right-click -> Open. VERSION is the single source of
-# truth: it names the tag and is injected as MARKETING_VERSION at build time.
+# The app is signed with our Developer ID (hardened runtime) and notarized by
+# Apple, so it opens straight from the cask with no Gatekeeper prompt. VERSION is
+# the single source of truth: it names the tag and is injected as MARKETING_VERSION
+# at build time.
+#
+# Signing/notarization secrets (set once, per repo):
+#   MACOS_CERT_P12       base64 of the exported "Developer ID Application" .p12
+#   MACOS_CERT_PASSWORD  the password protecting that .p12
+#   NOTARY_KEY_P8        base64 of the App Store Connect API key (.p8)
+#   NOTARY_KEY_ID        that key's Key ID
+#   NOTARY_ISSUER_ID     the App Store Connect issuer ID
 
 on:
   push:
@@ -35,7 +43,26 @@ jobs:
             exit 1
           fi
 
-      - name: Build Release Trill.app (ad-hoc signed)
+      - name: Import Developer ID signing certificate
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PW="$(uuidgen)"
+          echo "$MACOS_CERT_P12" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$MACOS_CERT_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          # Let codesign/xcodebuild use the key non-interactively.
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PW" "$KEYCHAIN" >/dev/null
+          # Put our keychain first on the search list so the identity resolves.
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Build Release Trill.app (Developer ID, hardened runtime)
         run: |
           VERSION="$(tr -d '[:space:]' < VERSION)"
           xcodebuild \
@@ -47,17 +74,45 @@ jobs:
             -skipMacroValidation \
             MARKETING_VERSION="$VERSION" \
             CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="-" \
-            DEVELOPMENT_TEAM="" \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            DEVELOPMENT_TEAM="88M28542LQ" \
             CODE_SIGNING_ALLOWED=YES \
+            ENABLE_HARDENED_RUNTIME=YES \
+            OTHER_CODE_SIGN_FLAGS="--timestamp" \
             build
 
-      - name: Zip the bundle
+      - name: Notarize + staple
+        env:
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          APP="dd/Build/Products/Release/Trill.app"
+          echo "$NOTARY_KEY_P8" | base64 -d > "$RUNNER_TEMP/notary.p8"
+          # notarytool needs an archive; this zip is only for submission.
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --key "$RUNNER_TEMP/notary.p8" \
+            --key-id "$NOTARY_KEY_ID" \
+            --issuer "$NOTARY_ISSUER_ID" \
+            --wait
+          # Staple the ticket onto the .app so it verifies offline.
+          xcrun stapler staple "$APP"
+          rm -f "$RUNNER_TEMP/notary.p8"
+
+      - name: Zip the stapled bundle
         run: |
           mkdir -p dist
+          # Zip AFTER stapling — the submitted zip above has no ticket.
           ditto -c -k --sequesterRsrc --keepParent \
             "dd/Build/Products/Release/Trill.app" \
             "dist/trill-$GITHUB_REF_NAME-macos.zip"
+
+      - name: Verify signature + notarization
+        run: |
+          APP="dd/Build/Products/Release/Trill.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          spctl -a -vvv -t exec "$APP"
 
       - name: Create GitHub release
         run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes
