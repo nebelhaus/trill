@@ -8,6 +8,32 @@ struct StyleTally: Equatable, Sendable, Identifiable {
     var id: String { value }
 }
 
+/// Where a style profile was sampled from — one thread, or every conversation
+/// at once (the "how you text, overall" scan). Carries the phrasing the exported
+/// document uses so per-thread and global profiles share one exporter.
+enum StyleScope: Equatable, Sendable {
+    /// A single thread, named by its display name.
+    case conversation(String)
+    /// Every conversation combined.
+    case everyone
+
+    /// Short label for the sheet title and export filename.
+    var label: String {
+        switch self {
+        case .conversation(let name): name
+        case .everyone: "All Conversations"
+        }
+    }
+
+    /// How the exported doc names where the sample came from.
+    var sourcePhrase: String {
+        switch self {
+        case .conversation(let name): "the thread with \(name)"
+        case .everyone: "all your conversations"
+        }
+    }
+}
+
 /// A statistical fingerprint of *your* texting style, computed purely by counting
 /// surface features of the messages you sent — length, casing, punctuation,
 /// emoji, vocabulary, cadence — plus a spread of verbatim examples. No model runs
@@ -15,8 +41,8 @@ struct StyleTally: Equatable, Sendable, Identifiable {
 /// exported document (see `StyleProfileExporter`) is what you hand to an AI so it
 /// can imitate the voice these numbers describe. Read-only; chat.db is untouched.
 struct StyleProfile: Equatable, Sendable {
-    /// The thread this voice was sampled from — group or contact name.
-    let subjectName: String
+    /// Where the voice was sampled from — a thread or all conversations.
+    let scope: StyleScope
     /// How many of my own text messages fed the profile (outgoing, non-empty).
     let messageCount: Int
 
@@ -56,9 +82,9 @@ struct StyleProfile: Equatable, Sendable {
     /// newest — the few-shot examples an LLM learns the voice from.
     let sampleMessages: [String]
 
-    static func empty(subjectName: String) -> StyleProfile {
+    static func empty(scope: StyleScope) -> StyleProfile {
         StyleProfile(
-            subjectName: subjectName, messageCount: 0,
+            scope: scope, messageCount: 0,
             medianWordCount: 0, averageWordCount: 0, shortShare: 0, longShare: 0, burstShare: 0,
             lowercaseShare: 0, endsWithPeriodShare: 0, endsWithQuestionShare: 0,
             endsWithExclamationShare: 0, noTerminalPunctuationShare: 0, ellipsisShare: 0, emojiShare: 0,
@@ -90,7 +116,7 @@ enum StyleProfileBuilder {
     /// time-of-day style facets without a call-site change.
     static func build(
         from messages: [Message],
-        subjectName: String,
+        scope: StyleScope,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> StyleProfile {
@@ -98,7 +124,13 @@ enum StyleProfileBuilder {
             left.createdAt == right.createdAt ? left.id.id < right.id.id : left.createdAt < right.createdAt
         }
         let mine = ordered.filter { $0.isOutgoing && !$0.text.trimmedNonEmpty.isEmpty }
-        guard !mine.isEmpty else { return .empty(subjectName: subjectName) }
+        guard !mine.isEmpty else { return .empty(scope: scope) }
+
+        // Bursts and reply latency only mean something when we can see the other
+        // side: a mine-only input (the global "everyone" scan pulls just my
+        // messages) has no turn boundaries, so those two metrics are suppressed
+        // rather than computed from a meaningless run.
+        let hasIncoming = ordered.contains { !$0.isOutgoing }
 
         let bodies = mine.map { $0.text.trimmedNonEmpty }
         let count = Double(mine.count)
@@ -143,13 +175,13 @@ enum StyleProfileBuilder {
         }
 
         return StyleProfile(
-            subjectName: subjectName,
+            scope: scope,
             messageCount: mine.count,
             medianWordCount: Int(median(wordCounts.map(Double.init)) ?? 0),
             averageWordCount: average(wordCounts),
             shortShare: Double(short) / count,
             longShare: Double(long) / count,
-            burstShare: burstShare(ordered),
+            burstShare: hasIncoming ? burstShare(ordered) : 0,
             lowercaseShare: Double(lower) / count,
             endsWithPeriodShare: Double(period) / count,
             endsWithQuestionShare: Double(question) / count,
@@ -162,7 +194,7 @@ enum StyleProfileBuilder {
             topClosers: top(closerCounts, 6),
             topWords: top(wordFreq, 12),
             topPhrases: top(bigramFreq.filter { $0.value > 1 }, 8),
-            medianReplyMinutes: median(replyGaps(ordered)).map { $0 / 60 },
+            medianReplyMinutes: hasIncoming ? median(replyGaps(ordered)).map { $0 / 60 } : nil,
             sampleMessages: samples(bodies)
         )
     }

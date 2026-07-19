@@ -5,6 +5,7 @@ struct AppCommands: Commands {
     let showPalette: () -> Void
     let showSearch: () -> Void
     let showLibrary: () -> Void
+    let showStyleProfile: () -> Void
     let showShortcuts: () -> Void
     let findInConversation: () -> Void
     let jumpToDate: () -> Void
@@ -49,6 +50,7 @@ struct AppCommands: Commands {
                 .keyboardShortcut("f", modifiers: [.command, .shift])
             Button("Library…", action: showLibrary)
                 .keyboardShortcut("l", modifiers: [.command, .shift])
+            Button("Writing Style Profile…", action: showStyleProfile)
             Button("Find in Conversation…", action: findInConversation)
                 .keyboardShortcut("f", modifiers: .command)
             Button("Jump to Date…", action: jumpToDate)

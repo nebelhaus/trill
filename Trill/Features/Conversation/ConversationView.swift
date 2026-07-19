@@ -84,7 +84,11 @@ struct ConversationView: View {
             ConversationStatsView(model: model, onClose: { isStatsPresented = false })
         }
         .sheet(isPresented: $isStylePresented) {
-            StyleProfileView(model: model, onClose: { isStylePresented = false })
+            StyleProfileView(
+                scope: .conversation(model.conversation?.displayName ?? "Conversation"),
+                load: { await model.loadAllForExport() },
+                onClose: { isStylePresented = false }
+            )
         }
         .sheet(isPresented: $isExportPresented) {
             ConversationExportView(model: model, onClose: { isExportPresented = false })

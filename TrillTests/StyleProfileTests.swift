@@ -31,7 +31,7 @@ final class StyleProfileTests: XCTestCase {
     }
 
     private func build(_ messages: [Message]) -> StyleProfile {
-        StyleProfileBuilder.build(from: messages, subjectName: "Alice", now: at(0))
+        StyleProfileBuilder.build(from: messages, scope: .conversation("Alice"), now: at(0))
     }
 
     // MARK: - Scope
@@ -51,7 +51,7 @@ final class StyleProfileTests: XCTestCase {
     func testEmptyWhenNoOutgoingText() {
         let profile = build([msg("1", "hi", at: 0, fromMe: false)])
         XCTAssertEqual(profile.messageCount, 0)
-        XCTAssertEqual(profile, .empty(subjectName: "Alice"))
+        XCTAssertEqual(profile, .empty(scope: .conversation("Alice")))
     }
 
     // MARK: - Length
@@ -158,6 +158,46 @@ final class StyleProfileTests: XCTestCase {
         XCTAssertEqual(profile.sampleMessages, ["lol", "hey"])
     }
 
+    // MARK: - Global scope
+
+    /// The global scan pulls only my messages (no incoming). Without turn
+    /// boundaries, bursts and reply latency are meaningless and get suppressed.
+    func testGlobalScopeSuppressesBurstAndReply() {
+        let messages = [
+            msg("1", "a", at: 0, fromMe: true),
+            msg("2", "b", at: 30, fromMe: true),
+            msg("3", "c", at: 60, fromMe: true),
+        ]
+        let profile = StyleProfileBuilder.build(from: messages, scope: .everyone, now: at(0))
+        XCTAssertEqual(profile.messageCount, 3)
+        XCTAssertEqual(profile.burstShare, 0, accuracy: 0.0001)
+        XCTAssertNil(profile.medianReplyMinutes)
+    }
+
+    func testExporterOmitsBurstRowForGlobalScope() {
+        let profile = StyleProfileBuilder.build(
+            from: [msg("1", "hey there", at: 0, fromMe: true)],
+            scope: .everyone,
+            now: at(0)
+        )
+        let doc = StyleProfileExporter.export(profile, generatedAt: at(0))
+        XCTAssertTrue(doc.contains("all your conversations"))
+        XCTAssertFalse(doc.contains("**Bursts:**"))
+    }
+
+    /// Fixture provider gathers my outgoing texts from every thread for the
+    /// global scan, and they build into a coherent profile.
+    func testFixtureMyMessagesAcrossAllChats() async throws {
+        let provider = FixtureProvider()
+        let mine = try await provider.myMessages(limit: 4_000)
+        XCTAssertFalse(mine.isEmpty)
+        XCTAssertTrue(mine.allSatisfy(\.isOutgoing))
+
+        let profile = StyleProfileBuilder.build(from: mine, scope: .everyone)
+        XCTAssertEqual(profile.messageCount, mine.count)
+        XCTAssertFalse(profile.sampleMessages.isEmpty)
+    }
+
     // MARK: - Exporter
 
     func testExporterHasAllSections() {
@@ -175,7 +215,7 @@ final class StyleProfileTests: XCTestCase {
     }
 
     func testExporterEmptyProfile() {
-        let doc = StyleProfileExporter.export(.empty(subjectName: "Alice"))
+        let doc = StyleProfileExporter.export(.empty(scope: .conversation("Alice")))
         XCTAssertTrue(doc.contains("No messages of yours"))
         XCTAssertFalse(doc.contains("## Sample messages"))
     }
@@ -190,7 +230,7 @@ final class StyleProfileTests: XCTestCase {
         let avery = try XCTUnwrap(conversations.first { $0.displayName == "Avery Chen" })
         let messages = try await provider.exportMessages(in: avery.id)
 
-        let profile = StyleProfileBuilder.build(from: messages, subjectName: avery.displayName)
+        let profile = StyleProfileBuilder.build(from: messages, scope: .conversation(avery.displayName))
         XCTAssertGreaterThan(profile.messageCount, 0)
         XCTAssertFalse(profile.sampleMessages.isEmpty)
 

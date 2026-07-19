@@ -16,7 +16,7 @@ enum StyleProfileExporter {
         lines.append("# How you text")
         lines.append("")
         let stamp = generatedAt.formatted(.dateTime.month(.abbreviated).day().year())
-        lines.append("*Generated \(stamp) from \(profile.messageCount) of your messages in the thread with \(profile.subjectName). Everything below was computed on-device by counting your own texts — no message left this Mac. Paste it into an AI model to have it write in your style.*")
+        lines.append("*Generated \(stamp) from \(profile.messageCount) of your messages in \(profile.scope.sourcePhrase). Everything below was computed on-device by counting your own texts — no message left this Mac. Paste it into an AI model to have it write in your style.*")
 
         lines.append("")
         lines.append("## Ready-to-use prompt")
@@ -79,7 +79,11 @@ enum StyleProfileExporter {
     private static func glance(_ profile: StyleProfile) -> [String] {
         var rows: [String] = []
         rows.append("- **Message length:** typically \(profile.medianWordCount) words (avg \(oneDecimal(profile.averageWordCount))) — \(pct(profile.shortShare)) are 3 words or fewer, \(pct(profile.longShare)) run long")
-        rows.append("- **Bursts:** \(pct(profile.burstShare)) of my texts come in rapid-fire runs")
+        // Bursts need turn boundaries to be meaningful; the global scan pulls only
+        // my messages, so it has none — omit the row there rather than print noise.
+        if profile.scope != .everyone {
+            rows.append("- **Bursts:** \(pct(profile.burstShare)) of my texts come in rapid-fire runs")
+        }
         rows.append("- **Capitalization:** \(pct(profile.lowercaseShare)) all-lowercase")
         rows.append("- **Endings:** \(pct(profile.noTerminalPunctuationShare)) no punctuation · \(pct(profile.endsWithPeriodShare)) period · \(pct(profile.endsWithQuestionShare)) question · \(pct(profile.endsWithExclamationShare)) exclamation")
         if profile.ellipsisShare >= 0.03 {

@@ -66,6 +66,13 @@ struct InboxView: View {
             .sheet(isPresented: $model.isComposePresented) {
                 ComposeSheet(model: model)
             }
+            .sheet(isPresented: $model.isStyleProfilePresented) {
+                StyleProfileView(
+                    scope: .everyone,
+                    load: { await model.loadMyMessages() },
+                    onClose: { model.isStyleProfilePresented = false }
+                )
+            }
             .sheet(item: $model.folderEditor) { mode in
                 FolderEditorView(model: model, mode: mode)
             }

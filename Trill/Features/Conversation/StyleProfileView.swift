@@ -2,14 +2,16 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Sheet that scans how *you* write in the open thread and exports a Markdown
-/// "style profile" — a document built to be pasted into an AI model so it can
-/// recreate your voice. Reads the full history on appear (read-only, never
-/// touching chat.db), builds the profile entirely on-device by counting your own
-/// messages, previews it, and writes it out via the save panel or the clipboard.
-/// No message content ever leaves the Mac.
+/// Sheet that scans how *you* write and exports a Markdown "style profile" — a
+/// document built to be pasted into an AI model so it can recreate your voice.
+/// Reads the message set on appear (read-only, never touching chat.db), builds
+/// the profile entirely on-device by counting your own messages, previews it, and
+/// writes it out via the save panel or the clipboard. No message content ever
+/// leaves the Mac. Scope-agnostic: the caller supplies the `scope` (one thread or
+/// every conversation) and a `load` closure that gathers the messages.
 struct StyleProfileView: View {
-    @ObservedObject var model: ConversationModel
+    let scope: StyleScope
+    let load: () async -> [Message]
     let onClose: () -> Void
 
     @Environment(\.riceAccent) private var accent
@@ -28,13 +30,13 @@ struct StyleProfileView: View {
         }
         .frame(width: 480, height: 560)
         .background(Rice.mantle)
-        .task { await load() }
+        .task { await loadMessages() }
         .task { await tick() }
     }
 
     private var header: some View {
         HStack {
-            Text("Writing Style — \(model.conversation?.displayName ?? "Conversation")")
+            Text("Writing Style — \(scope.label)")
                 .riceSectionHeader()
             Spacer()
             Button("Done", action: onClose)
@@ -52,7 +54,7 @@ struct StyleProfileView: View {
                 EmptyStateView(
                     icon: "signature",
                     title: "Nothing to Analyze",
-                    message: "You haven't sent any messages in this conversation yet."
+                    message: "No messages of yours were found to build a style profile from."
                 )
             } else {
                 VStack(alignment: .leading, spacing: 14) {
@@ -127,11 +129,7 @@ struct StyleProfileView: View {
 
     private var profile: StyleProfile? {
         guard let messages else { return nil }
-        return StyleProfileBuilder.build(from: messages, subjectName: subjectName)
-    }
-
-    private var subjectName: String {
-        model.conversation?.displayName ?? "Conversation"
+        return StyleProfileBuilder.build(from: messages, scope: scope)
     }
 
     private var output: String {
@@ -147,8 +145,8 @@ struct StyleProfileView: View {
 
     // MARK: - Actions
 
-    private func load() async {
-        messages = await model.loadAllForExport()
+    private func loadMessages() async {
+        messages = await load()
     }
 
     private func tick() async {
@@ -179,11 +177,11 @@ struct StyleProfileView: View {
         }
     }
 
-    /// Filesystem-safe stem from the thread name (same illegal-character rule the
+    /// Filesystem-safe stem from the scope label (same illegal-character rule the
     /// conversation exporter uses).
     private var sanitizedStem: String {
         let illegal = CharacterSet(charactersIn: "/\\:?%*|\"<>").union(.newlines).union(.controlCharacters)
-        let cleaned = String(subjectName.unicodeScalars.map { illegal.contains($0) ? " " : Character($0) })
+        let cleaned = String(scope.label.unicodeScalars.map { illegal.contains($0) ? " " : Character($0) })
             .trimmingCharacters(in: .whitespaces)
         return cleaned.isEmpty ? "Conversation" : cleaned
     }
