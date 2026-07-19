@@ -130,6 +130,9 @@ struct CommandPaletteView: View {
             PaletteAction(id: "reload", title: "Reload", systemImage: "arrow.clockwise", shortcut: "⌘R") {
                 model.load()
             },
+            PaletteAction(id: "writingStyle", title: "Writing Style Profile…", systemImage: "signature", shortcut: nil) {
+                model.isStyleProfilePresented = true
+            },
         ]
 
         // Drafts is a conditional filter — only offer it when drafts exist.
