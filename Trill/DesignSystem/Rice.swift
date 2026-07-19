@@ -14,6 +14,12 @@ extension Color {
 /// Nebelung palette: the desaturated Catppuccin Mocha variant shared across the
 /// nebelhaus rice (nebelung, pounce, …). Flat surfaces, grey neutrals, muted
 /// pastel accents, no shadows.
+///
+/// These hex values are **hand-copied** from `nebelung/palette/nebelung.hex.json`
+/// (the family's single source of truth). Trill builds outside Nix, so unlike
+/// pounce it can't consume nebelung's generated `palette` output — a palette
+/// change in nebelung must be mirrored here by hand. (Trill uses a subset:
+/// `overlay2`, `rosewater`, and `flamingo` are intentionally omitted.)
 enum Rice {
     static let crust = Color(hex: 0x121212)
     static let mantle = Color(hex: 0x191919)

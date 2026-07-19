@@ -238,7 +238,7 @@
 				INFOPLIST_KEY_NSContactsUsageDescription = "Trill can resolve conversation handles to names when you enable contacts.";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 2026.07.18;
 				OTHER_LDFLAGS = "-lsqlite3";
 				PRODUCT_BUNDLE_IDENTIFIER = com.nebelhaus.trill;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -264,7 +264,7 @@
 				INFOPLIST_KEY_NSContactsUsageDescription = "Trill can resolve conversation handles to names when you enable contacts.";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 2026.07.18;
 				OTHER_LDFLAGS = "-lsqlite3";
 				PRODUCT_BUNDLE_IDENTIFIER = com.nebelhaus.trill;
 				PRODUCT_NAME = "$(TARGET_NAME)";
