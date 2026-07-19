@@ -24,6 +24,7 @@ struct ConversationView: View {
 
     @State private var isGalleryPresented = false
     @State private var isStatsPresented = false
+    @State private var isStylePresented = false
     @State private var isExportPresented = false
     @State private var isSelectionExportPresented = false
     /// Live height of the whole thread pane; the composer caps its growth at half.
@@ -82,6 +83,9 @@ struct ConversationView: View {
         .sheet(isPresented: $isStatsPresented) {
             ConversationStatsView(model: model, onClose: { isStatsPresented = false })
         }
+        .sheet(isPresented: $isStylePresented) {
+            StyleProfileView(model: model, onClose: { isStylePresented = false })
+        }
         .sheet(isPresented: $isExportPresented) {
             ConversationExportView(model: model, onClose: { isExportPresented = false })
         }
@@ -120,6 +124,13 @@ struct ConversationView: View {
         }
         .buttonStyle(RiceIconButtonStyle())
         .help("Conversation stats")
+        Button {
+            isStylePresented = true
+        } label: {
+            Image(systemName: "signature")
+        }
+        .buttonStyle(RiceIconButtonStyle())
+        .help("Export writing-style profile")
         Button {
             isGalleryPresented = true
         } label: {
