@@ -513,6 +513,26 @@ struct ChatDatabaseReader: Sendable {
         }
     }
 
+    /// My own messages across every chat, newest-first, bounded by `limit`. Backs
+    /// the global writing-style profile. No `chat_message_join` — direction alone
+    /// selects the rows, and the caller wants text/date only, so `chat_id` is a
+    /// constant placeholder to keep the column layout identical to `messageRow`.
+    func myMessageRows(limit: Int) throws -> [MessageRow] {
+        try withConnection { db in
+            try query(db, """
+                SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.is_from_me, m.date,
+                       m.date_delivered, m.is_delivered, m.is_sent, m.error, m.handle_id,
+                       m.cache_has_attachments, m.thread_originator_guid, 0 AS chat_id,
+                       IFNULL(m.date_read, 0), IFNULL(m.date_edited, 0)
+                FROM message m
+                WHERE m.is_from_me = 1 AND m.associated_message_type = 0 AND m.item_type = 0
+                  AND IFNULL(m.date_retracted, 0) = 0
+                ORDER BY m.date DESC
+                LIMIT ?
+                """, bind: [.int(Int64(limit))], map: messageRow)
+        }
+    }
+
     func chats(rowIDs: [Int64]) throws -> [Int64: ChatRow] {
         guard !rowIDs.isEmpty else { return [:] }
         return try withConnection { db in

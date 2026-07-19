@@ -351,6 +351,38 @@ actor LiveIMessageProvider: MessagesProvider {
         }
     }
 
+    /// Every text message of mine across all chats, for the global writing-style
+    /// profile. Deliberately lightweight: the style builder reads only text, date,
+    /// and direction, so we skip the per-thread handle/reaction/attachment
+    /// hydration `map(rows:…)` does and build minimal outgoing messages straight
+    /// from the row text. Read-only, like every other path here.
+    func myMessages(limit: Int) async throws -> [Message] {
+        let rows = try reader.myMessageRows(limit: limit)
+        return rows.compactMap { row -> Message? in
+            let text = displayText(text: row.text, body: row.attributedBody)
+            guard !text.isEmpty else { return nil }
+            let date = Self.date(fromAppleNanoseconds: row.date)
+            return Message(
+                id: MessageID(provider: id, externalGUID: row.guid),
+                conversationID: ConversationID(provider: id, externalGUID: ""),
+                providerSequence: String(row.rowID),
+                sender: nil,
+                isOutgoing: true,
+                text: text,
+                createdAt: date,
+                sentAt: date,
+                deliveredAt: nil,
+                attachments: [],
+                reactions: [],
+                replyTo: nil,
+                threadOrigin: nil,
+                service: .unknown,
+                deliveryState: .sent,
+                isEdited: row.dateEdited > 0
+            )
+        }
+    }
+
     private static func isMedia(_ attachment: MessageAttachment) -> Bool {
         attachment.isImage
             || (attachment.mimeType?.hasPrefix("video/") ?? false)

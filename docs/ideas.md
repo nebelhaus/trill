@@ -64,6 +64,21 @@ Everything below respects these.
 | **Year in review** | An annual "wrapped" recap: top contacts, message counts, busiest day, top emoji/tapback | L | ✅ 🚫 | Declined — feasible but not worth the L-sized effort for a seasonal gimmick. |
 | **Response-time insights** | How fast you reply to whom, and who leaves you on read | M | ✅ ⚠️ | **Partially shipped.** The core metric exists per-thread in the stats panel (`ConversationStatsBuilder` → "You reply in" / "They reply in", turn-switch-aware medians). Still missing the *cross-contact* surface the idea is really about: an all-conversations ranking of who you answer fastest and "who leaves you on read." That aggregate (run the median-reply builder over every thread, sort, present) is the net-new work. Sensitive framing; keep it private/local and non-judgy. |
 
+## AI & style — local-first, BYOK
+
+The one place AI fits the app's local-first, reads-everything-so-earn-it promise
+without breaking it. The rule: **anything that ships message content to a cloud
+model is the off-device export we already refused once** (see *Scheduled send*),
+so it's opt-in, BYOK, and loud — or it doesn't run a model at all. The
+already-shipped item does the latter: it produces a *document* the user feeds to
+a model themselves; trill never makes a call and nothing leaves the Mac.
+
+| Idea | What | Effort | Feas. | Notes |
+|------|------|--------|-------|-------|
+| **Writing-style profile** | Scan how *you* text and export a Markdown "style profile" built to paste into an AI so it recreates your voice | M | ✅ 🚢 | Shipped. Zero AI in-app, zero network, zero key — the "scan" is pure counting over your own messages (`StyleProfileBuilder`, mirroring `ConversationStatsBuilder`): length, burst rhythm, casing, terminal punctuation, emoji, characteristic words/phrases, openers/closers, reply cadence, plus a deduped time-spread set of verbatim samples for few-shot grounding. `StyleProfileExporter` (mirroring `ConversationExporter`) renders a ready-to-use prompt + metrics sheet + samples; `StyleProfileView` is the sheet (full-history read → preview → Copy / Save…). Two scopes share one type via `StyleScope`: **per-thread** (`signature` button in the conversation header, reuses `loadAllForExport`) and **global** ("Writing Style Profile…" in the Messages menu → `InboxModel.loadMyMessages` → new `myMessages(limit:)` provider query: my outgoing text across every chat, live via a narrow `is_from_me = 1` scan, no per-thread hydration). The global scan is mine-only, so bursts/reply-latency are suppressed there (no turn boundaries). The AI happens downstream, on the user's side. |
+| **Style-aware tab completion** | Ghost-text completions in the composer, written in your voice to *this* person (BYOK, opt-in) | L | ⚠️ | **Next slate.** The send-side counterpart, and the one feature that must send message content off-device — so it's a loud, off-by-default BYOK setting (user's own Anthropic/OpenAI key), with an on-device model (Apple Foundation Models / local MLX) as the promise-consistent fallback. Latency discipline is the hard part: steal pounce's QuickAnswer contract — never block a keystroke on I/O; completions come from a debounced background call rendered as ghost-text alongside the existing `/`-trigger picker, never inside it. Cost is a non-issue at the right tier: with prompt-caching + debounce, a fast model (Haiku/Sonnet) runs ~$0.60–1.50/mo at ~100 completions/day; SOTA (Opus) is the wrong tool here — too slow for inline, not worth the tokens. **The shipped style profile is this feature's cached system prompt** — build order compounds. Surface the exact data flow in the Data-transparency panel. |
+| **BYOK settings + data-transparency panel** | One place to enable AI features, paste a key, and see exactly what would leave the device | S–M | ✅ | Precondition for the completion feature — pairs with the *Data transparency panel* idea in Privacy & trust. Off by default; nothing networks until the user opts in and pastes a key. |
+
 ## Organization & triage
 
 | Idea | What | Effort | Feas. | Notes |
@@ -211,3 +226,17 @@ if it's a VIP (muting is a deliberate override; VIP "always-notify" only outrank
 the default). All migrations are now `CREATE TABLE IF NOT EXISTS` so a shared
 overlay DB collided across worktrees can still advance instead of failing `init`
 and silently dropping to a throwaway temp store.
+
+## Writing-style profile landed (2026-07-19)
+
+The first **AI & style** item shipped — and notably it ships *no* AI in the app:
+the "scan your writing style" feature is pure on-device counting that produces a
+Markdown document you paste into a model yourself, so it stays inside the
+local-first, zero-network promise with no key and no egress. Per-thread
+(`signature` header button) and global (Messages menu → new `myMessages(limit:)`
+provider query) scopes share one `StyleScope`-parameterized type. New files:
+`StyleProfile.swift` (builder), `StyleProfileExport.swift` (Markdown exporter),
+`StyleProfileView.swift` (sheet). No `AppDatabase` migration — read-only
+throughout. Next on this lane is **style-aware tab completion** (BYOK, opt-in),
+which reuses this profile as its cached system prompt; it needs the BYOK
+settings + data-transparency panel first.

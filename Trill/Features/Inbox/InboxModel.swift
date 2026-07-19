@@ -116,6 +116,9 @@ final class InboxModel: ObservableObject {
     @Published var isComposePresented = false
     /// The Universal Library (⌘⇧L) overlay — all-conversations media browser.
     @Published var isLibraryPresented = false
+    /// The global writing-style profile sheet — scans your own messages across
+    /// every conversation into a document you can hand to an AI model.
+    @Published var isStyleProfilePresented = false
     /// The keyboard cheat-sheet (⌘/) overlay — every keybinding at a glance.
     @Published var isShortcutsPresented = false
     /// Drives the create/edit folder sheet. Set from the sidebar's folder rows,
@@ -1147,6 +1150,16 @@ final class InboxModel: ObservableObject {
     /// the thread isn't in the currently-loaded list.
     func conversationName(for id: ConversationID) -> String? {
         conversations.first(where: { $0.id == id })?.displayName
+    }
+
+    // MARK: - Writing-style profile
+
+    /// My own text messages across every conversation, newest-first, for the
+    /// global writing-style profile. Bounded so a huge history can't stall the
+    /// sheet; a few thousand recent messages is ample to characterize a voice.
+    /// Read-only; returns whatever it gathered on error rather than throwing.
+    func loadMyMessages(limit: Int = 4_000) async -> [Message] {
+        (try? await repository.myMessages(limit: limit)) ?? []
     }
 
     // MARK: - Bulk export

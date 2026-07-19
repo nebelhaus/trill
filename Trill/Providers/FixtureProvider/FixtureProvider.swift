@@ -184,6 +184,15 @@ actor FixtureProvider: MessagesProvider {
         return history.map { MessageStatSample(date: $0.createdAt, isFromMe: $0.isOutgoing) }
     }
 
+    func myMessages(limit: Int) async throws -> [Message] {
+        fixture.messages.values
+            .flatMap { $0 }
+            .filter { $0.isOutgoing && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .sorted { $0.createdAt > $1.createdAt }
+            .prefix(limit)
+            .map { $0 }
+    }
+
     func emit(_ event: ProviderEvent) {
         for continuation in continuations.values {
             continuation.yield(event)

@@ -25,6 +25,10 @@ protocol MessagesProvider: Sendable {
     func libraryItems(kind: LibraryKind, limit: Int) async throws -> [LibraryItem]
     func statSamples(in conversation: ConversationID) async throws -> [MessageStatSample]
     func exportMessages(in conversation: ConversationID) async throws -> [Message]
+    /// My own text messages across *every* conversation, newest-first, bounded by
+    /// `limit`. Backs the global writing-style profile: only outgoing text is
+    /// needed, so providers can skip the per-thread handle/reaction hydration.
+    func myMessages(limit: Int) async throws -> [Message]
 }
 
 extension MessagesProvider {
@@ -48,6 +52,8 @@ extension MessagesProvider {
     func messages(ids: [MessageID]) async throws -> [Message] { [] }
 
     func statSamples(in conversation: ConversationID) async throws -> [MessageStatSample] { [] }
+
+    func myMessages(limit: Int) async throws -> [Message] { [] }
 
     /// Full-thread read for conversation export. The default pages through
     /// `messages(in:page:)` until the history is exhausted — correct for any
