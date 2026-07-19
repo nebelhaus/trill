@@ -52,6 +52,7 @@ Everything below respects these.
 | **On this day** | Surface messages from today's date in prior years | M | ✅ 🚫 | Declined — not something I want to build for now. |
 | **Attachment search** | Find attachments by filename, type, or size across chats | S–M | ✅ 🚫 | Declined — the shipped Universal Library + advanced search operators (`has:image`, `from:`) cover this need well enough. |
 | **Conversation export** | Export a thread (or date range) to Markdown / plain text / HTML | M | ✅ 🚢 | Shipped. A pure, tested `ConversationExporter` (mirrors `ConversationStatsBuilder`) turns `Message` values into a Markdown / plain-text / HTML document — chronological, day-grouped, with sender labels, attachment/reaction lines, HTML escaping, and an optional inclusive date-range clip. `ConversationModel.loadAllForExport` pages the whole thread off the shared timeline state so exporting a long history never disturbs what's scrolled into view. The `square.and.arrow.up` header button opens `ConversationExportView`: format picker + date-range toggle + live preview, then Copy or Save… (`NSSavePanel`, format-typed with a sanitized filename stem). Read-only throughout; chat.db is never touched. |
+| **Writing-style export ("voice profile")** | A Markdown profile that characterizes *how you write* — cadence, greetings, emoji/tapback habits, sign-offs — to hand to an LLM so it can draft in your voice | M | ✅ ⚠️ | Backlog (from notes). The corpus already ships: `BulkExport` (per-thread Markdown → zip + `index.md`) and `ConversationExport` produce exactly the LLM-ready Markdown — `ExportSettingsView` literally frames the bulk export as "ready to hand to an LLM." Net-new is the *analysis* pass that distills that corpus into one compact style profile: one long "creation" task, the profile then reused anywhere. Read-only throughout; chat.db is never touched. **Gate:** any on-device/LLM analysis is subject to the separate privacy/design review the PRD (§8) and `ARCHITECTURE.md §22` require for AI features — nothing sent off-device without an explicit decision. |
 
 ## Insight & analytics — impossible in Apple Messages
 
@@ -176,13 +177,16 @@ Delight pairing when a lighter turn is wanted: **send/receive sounds** +
 A second wave chosen for **parallel-safety** — four distinct subsystems that
 share no view or query surface, so they can be built at once without collisions:
 
-1. **Universal Library (⌘⇧L)** — 🔨 in progress. Retrieval lane (media query +
+1. ~~**Universal Library (⌘⇧L)**~~ — ✅ shipped. Retrieval lane (media query +
    new browser). The loudest "we beat Messages" surface.
 2. ~~**Conversation stats panel**~~ — ✅ shipped (`b28906a`). Analytics lane.
-3. **Folders / tags** — 🔨 in progress. Organization lane (`AppDatabase`
+3. ~~**Folders / tags**~~ — ✅ shipped. Organization lane (`AppDatabase`
    overlay + sidebar `visibleConversations`). PRD-core.
-4. **Canned responses / snippets** — 🔨 in progress. Composition lane
+4. ~~**Canned responses / snippets**~~ — ✅ shipped. Composition lane
    (composer-only).
+
+All four of this wave have since landed (see the feature tables above for
+per-feature detail); kept here as the historical slate.
 
 Coordination note: 3 and 4 both add tables to `AppDatabase`; give their
 migrations distinct, ordered version numbers so they merge cleanly. Second

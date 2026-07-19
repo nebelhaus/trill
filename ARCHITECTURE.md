@@ -665,8 +665,8 @@ Use a dedicated test conversation/account where practical. Validate sending manu
 
 ### Milestone E: organization and digests — in progress
 
-- Shipped: tags/folders, snooze, archive, mute, VIP, service filters.
-- Remaining: conversation tabs, notification rules, quiet hours, burst batching and scheduled digests.
+- Shipped: tags/folders, snooze, archive, mute, VIP, service filters, conversation tabs.
+- Remaining: notification rules, quiet hours, burst batching and scheduled digests.
 
 ### Milestone F: optional relay — future
 
@@ -706,7 +706,7 @@ Native live provider (read-only `chat.db` + AppleScript send), WAL-driven live u
 
 ### Next — power-user organization (completing PRD §7.2/§7.5)
 
-- Conversation tabs and multi-window restoration.
+- Multiple conversation windows and window-state restoration (conversation tabs shipped).
 - Saved searches and richer search-filter UI.
 - Attachment/library refinements.
 - Accessibility audit (VoiceOver, Dynamic Type, high-contrast theme).
