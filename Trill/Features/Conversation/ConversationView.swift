@@ -29,9 +29,13 @@ struct ConversationView: View {
     @State private var isSelectionExportPresented = false
     /// Live height of the whole thread pane; the composer caps its growth at half.
     @State private var paneHeight: CGFloat = 0
+    /// Measured width of the trailing action group in the centered (sidebar-hidden)
+    /// header. Drives the symmetric title reserve so the count of icons and the
+    /// zoom level can't push them under the centered name.
+    @State private var headerActionsWidth: CGFloat = Self.centeredReserve
 
-    /// Symmetric reserve for the centered (sidebar-hidden) header so the
-    /// centered title can't slide under the trailing actions.
+    /// Fallback reserve for the centered (sidebar-hidden) header before the
+    /// trailing actions have been measured.
     private static let centeredReserve: CGFloat = 150
 
     var body: some View {
@@ -227,12 +231,24 @@ struct ConversationView: View {
                 ZStack {
                     titleBlock
                         .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.horizontal, Self.centeredReserve)
+                        // Reserve the real icon-group width on both sides so the
+                        // centered name truncates instead of sliding under the
+                        // actions — robust to icon count and zoom level.
+                        .padding(.horizontal, headerActionsWidth + 12)
                     HStack(spacing: 10) {
                         Spacer()
                         headerActions(showsChip: true)
+                            .background(
+                                GeometryReader { proxy in
+                                    Color.clear.preference(
+                                        key: HeaderActionsWidthKey.self,
+                                        value: proxy.size.width
+                                    )
+                                }
+                            )
                     }
                 }
+                .onPreferenceChange(HeaderActionsWidthKey.self) { headerActionsWidth = $0 }
             } else {
                 // Sidebar open: drop the service chip before the name truncates.
                 // ViewThatFits measures the rendered row, so it stays correct at
@@ -1066,5 +1082,14 @@ private struct ReactionBadges: View {
                 if left.count != right.count { return left.count > right.count }
                 return left.glyph < right.glyph
             }
+    }
+}
+
+/// Width of the centered header's trailing action group, reported up so the
+/// title's symmetric reserve can track it exactly.
+private struct HeaderActionsWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
