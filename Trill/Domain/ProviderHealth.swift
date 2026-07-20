@@ -38,6 +38,13 @@ struct ProviderHealth: Hashable, Codable, Sendable {
     var contacts: HealthState
     var notifications: HealthState
     var remoteRelay: HealthState?
+    /// Readiness of the write-backed advanced actions (tapbacks, and later
+    /// replies/edits/mark-read) delegated to a vetted third-party library over an
+    /// Accessibility surface — a permission dimension distinct from `sending`
+    /// (Apple Events text send). `nil` for providers with no such backend (the
+    /// default), so the read-only baseline is unchanged. Defaulted so existing
+    /// memberwise-init call sites keep compiling.
+    var advancedActions: HealthState? = nil
 
     static let fixture = ProviderHealth(
         messagesDatabase: .fixture,
@@ -80,6 +87,14 @@ struct ProviderCapabilities: Hashable, Codable, Sendable {
 enum CapabilityGate {
     static func canSend(capabilities: ProviderCapabilities, health: ProviderHealth) -> Bool {
         capabilities.supports(.sendText) && health.sending.availability == .available
+    }
+
+    /// Tapbacks enable only when the provider advertises the capability AND the
+    /// write-backed advanced-actions surface is live — the same capability+health
+    /// pairing `canSend` uses, but keyed to the Accessibility-backed dimension.
+    static func canReact(capabilities: ProviderCapabilities, health: ProviderHealth) -> Bool {
+        capabilities.supports(.sendStandardReactions)
+            && health.advancedActions?.availability == .available
     }
 }
 
