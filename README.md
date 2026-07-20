@@ -28,10 +28,11 @@ available for development.
 brew install --cask nebelhaus/tap/trill
 ```
 
-The app is ad-hoc signed (not notarized). The cask clears the Gatekeeper
-quarantine flag on install, so it opens straight away. If macOS still blocks it
-— or if you built/copied the app yourself instead of via the cask — clear the
-flag by hand: `xattr -dr com.apple.quarantine /Applications/Trill.app`.
+The app is signed with our Apple Developer ID and notarized by Apple, so the cask
+installs it and it opens straight away — no Gatekeeper prompt, no quarantine hack.
+(If you build or copy the app by hand instead of installing the cask, macOS may
+still quarantine your copy; clear it with
+`xattr -dr com.apple.quarantine /Applications/Trill.app`.)
 
 Trill is part of the [nebelhaus](https://github.com/nebelhaus) family and ships by
 default in the rice, but it stands alone — install the cask above on any Mac.
