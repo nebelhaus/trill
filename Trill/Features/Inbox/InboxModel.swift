@@ -288,10 +288,21 @@ final class InboxModel: ObservableObject {
         snoozeWakeTask?.cancel()
     }
 
+    /// Hidden opt-in for the write-backed advanced actions. Off by default: only a
+    /// Developer-ID-signed host that has passed the ADR 0001 signed-host vetting
+    /// checklist flips this to layer platform-imessage's tapbacks over the
+    /// read-only baseline. While off, `.messages` is the plain read-only provider
+    /// and `PlatformAPI` is never constructed.
+    static let platformWritesEnabledKey = "platformWritesEnabled"
+
     private static func makeProvider(_ mode: ProviderMode) -> any MessagesProvider {
         switch mode {
-        case .fixture: FixtureProvider()
-        case .messages: LiveIMessageProvider()
+        case .fixture:
+            return FixtureProvider()
+        case .messages:
+            let base = LiveIMessageProvider()
+            guard UserDefaults.standard.bool(forKey: platformWritesEnabledKey) else { return base }
+            return CompositeMessagesProvider(base: base)
         }
     }
 
@@ -806,6 +817,61 @@ final class InboxModel: ObservableObject {
 
     var canCompose: Bool {
         CapabilityGate.canSend(capabilities: capabilities, health: health)
+    }
+
+    /// Whether tapbacks can be sent: the provider advertises the capability and
+    /// the write-backed advanced-actions surface is live. False everywhere the
+    /// composite write overlay isn't active, so the tapback UI simply doesn't show.
+    var canReact: Bool {
+        CapabilityGate.canReact(capabilities: capabilities, health: health)
+    }
+
+    /// Transient banner for a tapback that didn't cleanly confirm. `.unknown` (the
+    /// automation ran but confirmation was ambiguous) is surfaced, never presented
+    /// as success and never auto-retried — mirroring send-once text semantics.
+    @Published var reactionFeedback: String?
+
+    /// Send a tapback on `messageID` in `conversationID`. Fire-and-forget from the
+    /// bubble context menu; the live poller reflects the applied reaction.
+    func react(to messageID: MessageID, in conversationID: ConversationID, kind: ReactionKind) {
+        guard canReact else { return }
+        let repository = repository
+        Task { @MainActor in
+            let outcome: ReactionOutcome
+            do {
+                outcome = try await repository.react(ReactionRequest(
+                    operationID: UUID(),
+                    conversationID: conversationID,
+                    messageID: messageID,
+                    kind: kind
+                ))
+            } catch {
+                AppLog.repository.error("React threw error=\(String(describing: type(of: error)), privacy: .public)")
+                reactionFeedback = "Couldn't send the tapback."
+                return
+            }
+            switch outcome {
+            case .confirmed:
+                reactionFeedback = nil
+            case let .rejected(_, reason):
+                reactionFeedback = Self.reactionFeedback(for: reason)
+            case .unknown:
+                // Send-once: the tapback may already have applied — surface it,
+                // don't retry.
+                reactionFeedback = "Tapback sent, but couldn't confirm it landed."
+            }
+        }
+    }
+
+    private static func reactionFeedback(for reason: UserFacingSendError) -> String {
+        switch reason {
+        case .permissionDenied:
+            "Grant Trill Accessibility access to send tapbacks."
+        case .unsupported:
+            "That tapback isn't supported yet."
+        case .invalidRequest, .providerUnavailable, .manualVerificationRequired:
+            "Couldn't send the tapback."
+        }
     }
 
     func contactSuggestions(matching term: String) async -> [ContactSuggestion] {

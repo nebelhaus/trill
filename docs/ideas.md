@@ -29,7 +29,7 @@ layer could unlock them (see [ARCHITECTURE §6.3](../ARCHITECTURE.md#63-advanced
 
 | Wish | Why it's blocked on the native path |
 |------|------------------|
-| Send a tapback / react to a message | ⛔ 🔓 Messages.app exposes no automation surface for tapbacks; unlockable via `platform-imessage`. |
+| Send a tapback / react to a message | 🔨 Unlocked (gated) via the `platform-imessage` composite write overlay — `PlatformWriteBackend.react` drives the Messages.app tapback UI over Accessibility. Behind the `platformWritesEnabled` flag + Accessibility health gate, pending the ADR 0001 signed-host validation pass. The *native* AppleScript path still exposes no tapback surface. |
 | Send a threaded/inline reply | ⛔ 🔓 AppleScript `send` has no reply-target parameter; unlockable via `platform-imessage`. |
 | Edit or unsend a sent message | ⛔ 🔓 Read-only DB + no automation verb; unlockable via `platform-imessage`. |
 | Mark a conversation read upstream | ⛔ 🔓 Needs a `chat.db` write; unlockable via `platform-imessage` (we keep a local read-mark overlay meanwhile). |

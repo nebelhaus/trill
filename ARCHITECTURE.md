@@ -58,7 +58,7 @@ flowchart TD
 Keep the dependency set deliberately small:
 
 - The shipping live provider has **no third-party read/send dependency**: it is our own `ChatDatabaseReader` (direct `SQLITE_OPEN_READONLY` SQL over `chat.db`) plus `MessagesSender` (AppleScript via `osascript`). See §6.
-- `beeper/platform-imessage` is pinned and compiled for DTO-contract mapping tests, but its `PlatformAPI` is not instantiated in the shipping app; it is the intended future vetted library for write-backed advanced actions (§6.3).
+- `beeper/platform-imessage` is pinned and compiled for DTO-contract mapping tests. Its `PlatformAPI` is instantiated **only** through `PlatformWriteBackend` behind the composite write overlay (§6.3), and **only** when the `platformWritesEnabled` flag is set on a vetted signed host — for write-backed advanced actions (currently tapbacks). It is never on the read path, and by default the flag is off and it is never constructed.
 - A SQLite layer for the app-owned store. The app uses a small direct SQLite wrapper (`AppDatabase`); GRDB or SQLite.swift remain options if richer needs appear.
 - No networking framework beyond `URLSession` until the remote relay phase.
 - No analytics SDK.
@@ -718,9 +718,9 @@ Native live provider (read-only `chat.db` + AppleScript send), WAL-driven live u
 - Scheduled and rule-based digests with custom presentation.
 - Optional on-device summarization only after a separate privacy/design review.
 
-### Later — write-backed advanced actions
+### In progress — write-backed advanced actions
 
-Adopt a vetted `platform-imessage` layer (§6.3) to unlock tapback/reply sending, edits/unsends and mark-as-read, gated on the signed-host vetting/validation pass in [ADR 0001](architecture-decisions/0001-messages-provider.md). Each capability is independently probed and user-enabled; the native read-only provider remains the stable baseline.
+The vetted `platform-imessage` layer (§6.3) is being adopted as a **composite write overlay**: `CompositeMessagesProvider` keeps `LiveIMessageProvider` as the read + text-send baseline and delegates only write-backed actions to `PlatformWriteBackend` (which drives `PlatformAPI`). The first action, **sending tapbacks**, is implemented behind the hidden `platformWritesEnabled` flag and an Accessibility health gate (`CapabilityGate.canReact`); it stays off until the signed-host vetting/validation pass in [ADR 0001](architecture-decisions/0001-messages-provider.md) is completed on a Developer-ID-signed build. Reply sending, edits/unsends and mark-as-read follow the same pattern. Each capability is independently probed and user-enabled; the native read-only provider remains the stable baseline.
 
 ### Optional — remote relay and push (PRD §7.6 remote push)
 

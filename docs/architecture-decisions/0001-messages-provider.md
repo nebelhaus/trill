@@ -60,3 +60,14 @@ If upstream cannot provide this boundary, maintain a narrowly reviewed fork that
 ## Consequences
 
 The app is useful and testable with synthetic data now, and the third-party contract is exercised at compile/test time. Real inbox data is intentionally unavailable until the safety invariant is provable. Future providers, including the BlueBubbles relay described in [ARCHITECTURE.md](../../ARCHITECTURE.md), continue to fit behind `MessagesProvider`.
+
+## Update 2026-07-19: composite write-overlay activation (tapbacks)
+
+With a Developer-ID signing identity now available, the write path is being activated the way §6.3 sequenced it — **layering** `platform-imessage` over the read-only baseline rather than replacing it. The first write-backed action is **sending tapbacks**.
+
+- **`CompositeMessagesProvider`** (`Trill/Providers/Composite/`) wraps `LiveIMessageProvider`: every read, search, event, and text send forwards to the vetted read-only baseline unchanged, and **only `react(_:)`** is delegated to **`PlatformWriteBackend`**, which constructs and drives `PlatformAPI`. Reads never route through the write-capable library.
+- `PlatformAPI`'s tapback (`addReaction(threadID:messageID:reactionKey:)`) is **Accessibility UI-automation of Messages.app**, not a `chat.db` write. It targets by raw `chat.db` thread + message GUID — exactly the identifiers the read-only reader already produces, so no ID translation is needed. The only `chat.db` write in the path is `PlatformAPI`'s own `IMDatabase(createIndexes: true)` index creation at construction — the sanctioned vetted-library exception, no longer forbidden (see the amendment banner).
+- **Gated OFF by default.** The composite is wired in only when the hidden `platformWritesEnabled` `UserDefaults` flag is set (`InboxModel.makeProvider`); with it off, `.messages` is the plain read-only provider and `PlatformAPI` is never constructed. Even with the flag on, tapback UI stays hidden until the runtime **Accessibility** health probe (`AXIsProcessTrusted`) passes — capability + health, fail-closed, via `CapabilityGate.canReact`.
+- **Send-once, no auto-retry.** A confirmed `addReaction` → `.confirmed`; not Accessibility-trusted → `.rejected(.permissionDenied)`; a thrown result after a trusted attempt → `.unknown` (surfaced, never presented as success, never retried).
+
+The unit-testable subset of the safe-enablement criteria is covered by `CompositeWriteOverlayTests` (routing, capability/health merge, fail-closed gating, reaction-key mapping). Criteria **2, 3, and 5** still require the **signed-host validation pass** below and remain the gate before the flag is flipped on for real use.

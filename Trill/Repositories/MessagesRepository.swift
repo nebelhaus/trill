@@ -67,6 +67,14 @@ actor MessagesRepository {
         return outcome
     }
 
+    func react(_ request: ReactionRequest) async throws -> ReactionOutcome {
+        let outcome = try await provider.react(request)
+        // Operation id + reaction kind only — never the target message or handle,
+        // per docs/security.md's no-sensitive-data-in-logs rule.
+        AppLog.repository.info("React completed operation=\(request.operationID, privacy: .public) kind=\(request.kind.rawValue, privacy: .public)")
+        return outcome
+    }
+
     func contactSuggestions(matching term: String) async -> [ContactSuggestion] {
         await provider.contactSuggestions(matching: term)
     }

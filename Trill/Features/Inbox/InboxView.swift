@@ -258,10 +258,34 @@ struct InboxView: View {
                     onToggleVIP: model.toggleSelectedVIP,
                     savedMessageIDs: model.savedMessageIDs,
                     onToggleSaved: model.toggleSaved,
+                    canReact: model.canReact,
+                    onReact: { messageID, kind in
+                        if let conversationID = model.selectedConversationID {
+                            model.react(to: messageID, in: conversationID, kind: kind)
+                        }
+                    },
                     isCompact: isCompact,
                     onBack: { model.select(nil) }
                 )
                 .environment(\.linkPreviewLoader, model.linkPreviewLoader)
+                .overlay(alignment: .top) {
+                    if let feedback = model.reactionFeedback {
+                        Text(feedback)
+                            .riceFont(11)
+                            .foregroundStyle(Rice.red)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(Rice.mantle, in: Capsule())
+                            .padding(.top, 8)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                            .task(id: feedback) {
+                                // Auto-dismiss; a stale tapback banner shouldn't linger.
+                                try? await Task.sleep(for: .seconds(4))
+                                model.reactionFeedback = nil
+                            }
+                    }
+                }
+                .animation(.easeOut(duration: 0.2), value: model.reactionFeedback)
             }
         }
     }
