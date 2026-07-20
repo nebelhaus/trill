@@ -314,7 +314,20 @@ final class InboxModel: ObservableObject {
     /// error/empty screen; it exists so health-gated affordances reflect a grant
     /// the moment it lands, not on next launch.
     private func refreshHealthOnForeground() {
-        guard providerMode == .messages, state == .loaded else { return }
+        guard providerMode == .messages else { return }
+        // While parked on a permission-recovery screen, the user has just been in
+        // System Settings — re-drive the full load so a live-updatable grant
+        // (Automation, Contacts) clears the screen without a manual Recheck. FDA
+        // still needs a relaunch (see `relaunch()`), but re-loading is harmless.
+        switch state {
+        case .permissionMissing, .providerUnavailable, .unsupportedSchema:
+            load()
+            return
+        case .loaded:
+            break
+        default:
+            return
+        }
         healthRefreshTask?.cancel()
         let repository = repository
         healthRefreshTask = Task { [weak self] in
@@ -1240,6 +1253,20 @@ final class InboxModel: ObservableObject {
     func openFullDiskAccessSettings() {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    /// Quit and re-exec Trill. Full Disk Access is bound to the process at launch,
+    /// so a running instance that started without it can't gain read access to
+    /// `chat.db` until it relaunches — no amount of in-app rechecking helps. This
+    /// collapses the manual quit-and-reopen into one click. `open -n` waits out our
+    /// termination and starts a fresh instance that inherits the new grant.
+    func relaunch() {
+        let bundleURL = Bundle.main.bundleURL
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        task.arguments = ["-n", bundleURL.path]
+        try? task.run()
+        NSApp.terminate(nil)
     }
 
     func toggleSidebar() {

@@ -201,9 +201,10 @@ struct InboxView: View {
         case .permissionMissing:
             ProviderRecoveryView(
                 title: "Messages Access Needed",
-                message: "Native Messages cannot read the Messages database. Allow Full Disk Access in System Settings, return here, and recheck.",
+                message: "Native Messages cannot read the Messages database. Allow Full Disk Access in System Settings, then relaunch — macOS only applies a new Full Disk Access grant to a freshly launched app.",
                 primaryTitle: "Open Full Disk Access",
                 primaryAction: model.openFullDiskAccessSettings,
+                relaunchAction: model.relaunch,
                 retry: model.load
             )
         case .unsupportedSchema:
@@ -1134,6 +1135,7 @@ private struct ProviderRecoveryView: View {
     let message: String
     let primaryTitle: String?
     let primaryAction: (() -> Void)?
+    var relaunchAction: (() -> Void)? = nil
     let retry: () -> Void
 
     var body: some View {
@@ -1153,6 +1155,10 @@ private struct ProviderRecoveryView: View {
                 if let primaryTitle, let primaryAction {
                     Button(primaryTitle, action: primaryAction)
                         .buttonStyle(RiceProminentButtonStyle())
+                }
+                if let relaunchAction {
+                    Button("Relaunch Trill", action: relaunchAction)
+                        .buttonStyle(RiceSubtleButtonStyle())
                 }
                 Button("Recheck", action: retry)
                     .buttonStyle(RiceSubtleButtonStyle())
