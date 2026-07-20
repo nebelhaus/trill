@@ -617,11 +617,26 @@ actor LiveIMessageProvider: MessagesProvider {
             || row.uti == "com.apple.messages.url.balloonprovider"
     }
 
-    private static func attachment(_ row: ChatDatabaseReader.AttachmentRow) -> MessageAttachment {
+    static func attachment(_ row: ChatDatabaseReader.AttachmentRow) -> MessageAttachment {
         let expandedPath = row.filename.map { NSString(string: $0).expandingTildeInPath }
         let url = expandedPath.map { URL(fileURLWithPath: $0) }
         let exists = expandedPath.map { FileManager.default.fileExists(atPath: $0) } ?? false
         let mime = row.mimeType ?? ""
+        // When Messages offloads an attachment to iCloud, the chat.db row keeps
+        // its path and byte count but the file on disk is gone. A row that named
+        // a real received file (path + non-zero size) but has no local copy is
+        // almost certainly offloaded/fetchable — surface that as its own state
+        // rather than the same red "unavailable" we show for genuinely-missing
+        // rows (no path or zero bytes). We can't trigger the transfer ourselves
+        // from the read-only path, so this is display-only.
+        let availability: AttachmentAvailability
+        if exists {
+            availability = .available
+        } else if row.filename != nil && row.totalBytes > 0 {
+            availability = .downloadRequired
+        } else {
+            availability = .missing
+        }
         return MessageAttachment(
             id: row.guid,
             displayName: row.transferName?.nonEmpty
@@ -631,7 +646,7 @@ actor LiveIMessageProvider: MessagesProvider {
             uniformTypeIdentifier: row.uti,
             byteCount: row.totalBytes > 0 ? row.totalBytes : nil,
             localURL: exists ? url : nil,
-            availability: exists ? .available : .missing,
+            availability: availability,
             isImage: mime.hasPrefix("image/") || (row.uti?.contains("image") ?? false)
         )
     }

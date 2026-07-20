@@ -466,7 +466,11 @@ private struct LibraryFileRow: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 4)
-                if item.attachment?.availability != .available {
+                if item.attachment?.availability == .downloadRequired {
+                    Text("In iCloud")
+                        .riceFont(9)
+                        .foregroundStyle(Rice.overlay0)
+                } else if item.attachment?.availability != .available {
                     Text("Unavailable")
                         .riceFont(9)
                         .foregroundStyle(Rice.overlay0)
