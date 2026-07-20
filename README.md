@@ -1,6 +1,7 @@
 <div align="center">
 
-# trill
+<!-- identity banner — sky wordmark on grey (assets/trill-banner.png) -->
+<img src="./assets/trill-banner.png" alt="trill" width="420">
 
 **your Messages, native**
 
@@ -109,6 +110,21 @@ Never disable SIP for this project. Full Disk Access, when eventually used, belo
 - [Testing guide](docs/testing.md)
 - [Security boundaries](docs/security.md)
 - [Ideas & feature backlog](docs/ideas.md)
+
+## Brand assets
+
+The logo set lives in [`assets/`](assets/) — the mark is a cat-eared speech
+bubble in Nebelung sky (`#9be0d5`-ish teal) on the house grey.
+
+| File | Use |
+|---|---|
+| [`trill-icon.png`](assets/trill-icon.png) | app icon — sky bubble on grey (primary) |
+| [`trill-icon-sky.png`](assets/trill-icon-sky.png) | app icon — grey bubble on sky (inverted) |
+| [`trill-banner.png`](assets/trill-banner.png) | wordmark banner, sky on grey (the header above) |
+| [`trill-banner-sky.png`](assets/trill-banner-sky.png) | wordmark banner, grey on sky, with the "your Messages, native" line |
+| [`trill-repo-banner.png`](assets/trill-repo-banner.png) | 1280×640 repo header / GitHub social-preview + OG image |
+
+`trill-repo-banner.png` is the one to upload under **Settings → Social preview**.
 
 ## Future BlueBubbles relay
 
