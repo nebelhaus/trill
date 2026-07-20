@@ -196,6 +196,8 @@ BlueBubbles is not an MVP dependency. Preserve it as a future provider and relay
 
 The app should consume BlueBubbles through `BlueBubblesProvider`, mapping REST resources and webhook events into the same domain models and `ProviderEvent` stream used by local providers.
 
+**The server must be a *separate*, always-on Mac — bundling it locally is a non-goal.** BlueBubbles does not eliminate the automation/permission surface; the server *is* the thing that drives Messages.app (Full Disk Access + Accessibility + Automation) to perform sends and other write-backed actions. Its entire value is that it **offloads that automation onto another (server) Mac**, so the client can be a different device, be non-Apple, or run while the client's own machine is asleep. Shipping the server inside every Trill client to run locally in the background would defeat the purpose: on the same host the relay topology is unnecessary (§11.2), and you would hand every user an always-on, permission-hungry REST server plus its runtime for a network boundary that never leaves `localhost` — while still riding the same broad Messages automation you appeared to escape. For write-backed actions *on the local Mac*, the intended mechanism is the in-process `platform-imessage` library (§6.3), **not** a bundled BlueBubbles server. The server earns its keep only across a device boundary, and someone has to run and keep it alive.
+
 ## 7. Domain model
 
 Use stable provider-qualified identifiers. Numeric `chat.db` row IDs are useful cursors but are not globally stable identity.
@@ -423,7 +425,7 @@ flowchart TD
     Push --> Client
 ```
 
-For a Mac-only client on the same host, this topology is unnecessary. It is a Phase 4 option.
+For a Mac-only client on the same host, this topology is unnecessary. It is a Phase 4 option. Bundling the server to run locally alongside every client is a **non-goal** for the same reason: it reintroduces all of §11.5's cost — an always-on authenticated socket, a stored secret, a background runtime — for a boundary confined to loopback, and does not avoid the Messages automation it appears to replace. The server exists to **offload that automation onto a separate, always-on Mac** (see §6.4); if you only need richer actions on the *local* Mac, use the in-process `platform-imessage` library instead.
 
 ### 11.3 Adapter responsibilities
 
