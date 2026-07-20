@@ -33,7 +33,7 @@ layer could unlock them (see [ARCHITECTURE §6.3](../ARCHITECTURE.md#63-advanced
 | Send a threaded/inline reply | ⛔ 🔓 AppleScript `send` has no reply-target parameter; unlockable via `platform-imessage`. |
 | Edit or unsend a sent message | ⛔ 🔓 Read-only DB + no automation verb; unlockable via `platform-imessage`. |
 | Mark a conversation read upstream | ⛔ 🔓 Needs a `chat.db` write; unlockable via `platform-imessage` (we keep a local read-mark overlay meanwhile). |
-| Typing indicators (send or receive) | ⛔ Not durably recorded in `chat.db`; no automation to emit. |
+| Typing indicators (send or receive) | ⛔ 🔓 Not in `chat.db` and no automation verb on the native path. `platform-imessage` *can* surface incoming typing/presence — but only by scraping Messages.app's live AX tree via its `MessagesController` (needs a coordinated foreground window + continuous polling), which can't be instantiated without the full gated live provider **and** a new Accessibility grant. So it rides the *same* gate as the send-side 🔓 rows, not a cheaper "observe" exception — assessed 2026-07-19, not worth it standalone. |
 | Message effects, polls, group admin | ⛔ Out of scope per PRD non-goals. |
 | Trill's own SQL writing `chat.db` | ⛔ Hard rule — *our* code never hand-writes that database. (A vetted third-party library managing its own schema-correct writes is now policy-permitted; see [security.md](security.md).) User-owned state (stars, tags, snoozes, notes, read marks) lives in our `AppDatabase` overlay regardless — a pattern already proven by pins and read marks. |
 
