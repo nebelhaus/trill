@@ -81,21 +81,43 @@ jobs:
             OTHER_CODE_SIGN_FLAGS="--timestamp" \
             build
 
+      - name: Re-sign with Developer ID (hardened runtime, clean entitlements)
+        run: |
+          # Explicit re-sign so notarization can't trip on an xcodebuild quirk:
+          # guarantees the hardened runtime, a secure timestamp, and exactly the
+          # apple-events entitlement (no get-task-allow, which notarization rejects).
+          APP="dd/Build/Products/Release/Trill.app"
+          IDENTITY="$(security find-identity -v -p codesigning "$RUNNER_TEMP/signing.keychain-db" \
+            | awk -F'"' '/Developer ID Application/{print $2; exit}')"
+          echo "signing with: $IDENTITY"
+          codesign --force --options runtime --timestamp \
+            --entitlements Trill/Config/Trill.entitlements \
+            --sign "$IDENTITY" \
+            "$APP"
+          codesign --verify --strict --verbose=2 "$APP"
+
       - name: Notarize + staple
         env:
           NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
         run: |
+          set -euo pipefail
           APP="dd/Build/Products/Release/Trill.app"
           echo "$NOTARY_KEY_P8" | base64 -d > "$RUNNER_TEMP/notary.p8"
+          CREDS=(--key "$RUNNER_TEMP/notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID")
           # notarytool needs an archive; this zip is only for submission.
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/notarize.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
-            --key "$RUNNER_TEMP/notary.p8" \
-            --key-id "$NOTARY_KEY_ID" \
-            --issuer "$NOTARY_ISSUER_ID" \
-            --wait
+          # `submit --wait` exits 0 even when the verdict is Invalid, so check the
+          # status ourselves and dump Apple's per-file reasons before failing.
+          JSON="$(xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" "${CREDS[@]}" --wait --output-format json)"
+          echo "$JSON"
+          read -r ID STATUS < <(echo "$JSON" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("id",""),d.get("status",""))')
+          if [ "$STATUS" != "Accepted" ]; then
+            echo "::error::notarization $STATUS — Apple's log:"
+            xcrun notarytool log "$ID" "${CREDS[@]}" || true
+            exit 1
+          fi
           # Staple the ticket onto the .app so it verifies offline.
           xcrun stapler staple "$APP"
           rm -f "$RUNNER_TEMP/notary.p8"
