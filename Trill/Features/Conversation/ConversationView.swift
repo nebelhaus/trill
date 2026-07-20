@@ -1,27 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// A sendable tapback offered in the message context menu: the domain reaction
-/// kind plus its glyph and label. `sendable` is the six standard iMessage
-/// tapbacks in Messages.app order — the only kinds the write backend can issue
-/// (`.custom` emoji reactions aren't wired yet). Kept `internal` (not nested in a
-/// private view) so the vetting tests can assert it never drifts from
-/// `PlatformWriteBackend.reactionKey`.
-struct Tapback: Equatable {
-    let kind: ReactionKind
-    let glyph: String
-    let label: String
-
-    static let sendable: [Tapback] = [
-        Tapback(kind: .love, glyph: "❤️", label: "Love"),
-        Tapback(kind: .like, glyph: "👍", label: "Like"),
-        Tapback(kind: .dislike, glyph: "👎", label: "Dislike"),
-        Tapback(kind: .laugh, glyph: "😂", label: "Laugh"),
-        Tapback(kind: .emphasis, glyph: "‼️", label: "Emphasize"),
-        Tapback(kind: .question, glyph: "❓", label: "Question"),
-    ]
-}
-
 struct ConversationView: View {
     @ObservedObject var model: ConversationModel
     @ObservedObject var composer: ComposerModel
@@ -38,11 +17,6 @@ struct ConversationView: View {
     /// bubble for the star glyph + Save context action. Owned by `InboxModel`.
     var savedMessageIDs: Set<MessageID> = []
     var onToggleSaved: (MessageID) -> Void = { _ in }
-    /// Whether tapbacks can be sent (provider capability + Accessibility health).
-    /// Off → the per-message "React" submenu is absent, so the feature stays
-    /// invisible everywhere the write overlay isn't active. Owned by `InboxModel`.
-    var canReact = false
-    var onReact: (MessageID, ReactionKind) -> Void = { _, _ in }
     /// Single-column layout: the header grows a leading back button that pops
     /// to the conversation list, mobile-nav-bar style.
     var isCompact = false
@@ -82,9 +56,7 @@ struct ConversationView: View {
                 model: model,
                 density: density,
                 savedMessageIDs: savedMessageIDs,
-                onToggleSaved: onToggleSaved,
-                canReact: canReact,
-                onReact: onReact
+                onToggleSaved: onToggleSaved
             )
             RiceDivider()
             ComposerView(model: composer, maxHeight: paneHeight * 0.5)
@@ -408,8 +380,6 @@ private struct MessageTimelineView: View {
     let density: DisplayDensity
     let savedMessageIDs: Set<MessageID>
     let onToggleSaved: (MessageID) -> Void
-    var canReact = false
-    var onReact: (MessageID, ReactionKind) -> Void = { _, _ in }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -467,9 +437,7 @@ private struct MessageTimelineView: View {
                                         }
                                     },
                                     onToggleSaved: { onToggleSaved(message.id) },
-                                    onToggleSelection: { model.toggleSelection(message.id) },
-                                    canReact: canReact,
-                                    onReact: { kind in onReact(message.id, kind) }
+                                    onToggleSelection: { model.toggleSelection(message.id) }
                                 )
                                 .id(message.id)
                             }
@@ -819,8 +787,6 @@ private struct MessageRow: View {
     var onJump: (MessageID) -> Void = { _ in }
     var onToggleSaved: () -> Void = {}
     var onToggleSelection: () -> Void = {}
-    var canReact = false
-    var onReact: (ReactionKind) -> Void = { _ in }
 
     @Environment(\.riceAccent) private var accent
     @State private var isRevealed = false
@@ -909,17 +875,6 @@ private struct MessageRow: View {
                         Button("Copy Text") {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(message.text, forType: .string)
-                        }
-                    }
-                    if canReact {
-                        Menu("React") {
-                            ForEach(Tapback.sendable, id: \.kind) { tapback in
-                                Button {
-                                    onReact(tapback.kind)
-                                } label: {
-                                    Text("\(tapback.glyph)  \(tapback.label)")
-                                }
-                            }
                         }
                     }
                     Button {

@@ -86,7 +86,7 @@ A technical macOS power user who handles many personal and professional iMessage
 - Trill hand-writing to, repairing or migrating Apple's Messages database.
 - Replacing FaceTime.
 - Implementing a public internet relay (BlueBubbles remains an optional future self-hosted path).
-- **Creating** edits, unsends, typing indicators, threaded replies, effects, polls or group administration. Trill *displays* tapbacks, replies, read receipts, delivery state and edited/unsent markers where the data exists, but the native send path (driving Messages.app) has no automation surface to create them. **Sending tapbacks is the first exception**: it is implemented via the vetted `platform-imessage` composite write overlay, but stays gated off (hidden `platformWritesEnabled` flag + Accessibility health gate) until the ADR 0001 signed-host validation pass. The remaining create-actions could follow the same layer; until then they are display-only.
+- **Creating** edits, unsends, typing indicators, tapbacks, threaded replies, effects, polls or group administration. Trill *displays* tapbacks, replies, read receipts, delivery state and edited/unsent markers where the data exists, but the native send path (driving Messages.app) has no automation surface to create them. A future vetted `platform-imessage` layer could unlock some of these; until then they are display-only.
 
 ## 7. Product requirements
 
@@ -141,8 +141,7 @@ These are durable requirements a build must satisfy. Their sequencing (what ship
 | Preserve drafts per conversation | Drafts are stored only in the app's database. |
 | Configurable Return/Command-Return send behavior | Setting is immediately reflected in the composer. |
 | Start a new direct chat | Validate phone/email and confirm routing. |
-| Standard tapback reactions | Sent via the vetted `platform-imessage` composite write overlay; capability + Accessibility-health gated and off by default until the ADR 0001 signed-host validation pass. Unsupported/ungranted states hide the action. |
-| Inline replies | Out of reach on the native send path; gated on the same `platform-imessage` layer, not yet implemented. Capability-gated; unsupported actions are hidden or explained. |
+| Standard tapback reactions and inline replies | Out of reach on the native send path; gated on a future vetted `platform-imessage` layer. Capability-gated; unsupported actions are hidden or explained. |
 | Scheduled sending | Deferred until a server component exists; do not emulate silently unless reliability can be guaranteed. |
 | Advanced replies, edits and unsend | Provider capability; never require SIP disablement. |
 

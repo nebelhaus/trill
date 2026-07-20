@@ -16,9 +16,7 @@ The app-owned `app.sqlite3` under Application Support is a separate database. It
 
 ## Third-party boundary
 
-`platform-imessage` 0.24.4 is present for compilation, DTO contract mapping, and — behind the gate described next — sending tapbacks. Its `PlatformAPI` is instantiated only through `PlatformWriteBackend`, and only for **write-backed advanced actions** (currently tapbacks). Reads never route through it: `CompositeMessagesProvider` forwards every read, search, event, and text send to the read-only `LiveIMessageProvider` baseline and delegates only `react(_:)` to the write backend. The tapback itself is Accessibility UI-automation of Messages.app, not a `chat.db` write; the sole `chat.db` write in the path is `PlatformAPI`'s own `IMDatabase(createIndexes: true)` index creation at construction — the sanctioned vetted-library exception.
-
-This write path is **gated off by default**: `PlatformAPI` is constructed only when the hidden `platformWritesEnabled` flag is set on a host that has passed the signed-host validation pass, and tapback actions additionally require a live Accessibility grant (`AXIsProcessTrusted`) via `CapabilityGate.canReact` — capability + health, fail-closed. With the flag off, `PlatformAPI` is never constructed and behavior is byte-identical to the read-only baseline. See [ADR 0001](architecture-decisions/0001-messages-provider.md).
+`platform-imessage` 0.24.4 is present for compilation and DTO contract mapping. Its `PlatformAPI` is not instantiated yet — not because its `IMDatabase(createIndexes: true)` write is categorically forbidden (a vetted, well-maintained library managing its own `chat.db` writes is now allowed), but because the library still owes a signed-host vetting/validation pass before we trust it live. Until then live capabilities stay empty and calls fail closed. See [ADR 0001](architecture-decisions/0001-messages-provider.md).
 
 Third-party DTOs are confined to `Providers/PlatformIMessageProvider`. Domain, repositories, persistence, features, and views do not import them.
 
@@ -26,8 +24,7 @@ Third-party DTOs are confined to `Providers/PlatformIMessageProvider`. Domain, r
 
 - Fixture mode: no sensitive permission required.
 - Messages database: Full Disk Access, requested only after explanation and only for the signed app identity.
-- Sending text: Apple Events Automation permission to control Messages.app, prompted on first send. No Accessibility permission is required on the native text-send path.
-- Sending tapbacks (gated write overlay): macOS **Accessibility** permission, since `platform-imessage` drives the Messages.app tapback UI via `AXUIElement`. This is a distinct dimension from text-send Automation, surfaced as `ProviderHealth.advancedActions`; without it the tapback UI stays hidden and calls fail closed.
+- Sending: Apple Events Automation permission to control Messages.app, prompted on first send. No Accessibility permission is required on the native send path.
 - Contacts and notifications: independent health dimensions; not requested at launch.
 - Remote relay: absent from this milestone.
 

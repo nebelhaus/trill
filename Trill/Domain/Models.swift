@@ -365,10 +365,6 @@ enum SendOutcome: Sendable {
 
 struct ReactionRequest: Sendable {
     let operationID: UUID
-    /// The thread the target message lives in. Carried explicitly because the
-    /// write-backed tapback path targets by thread GUID + message GUID, and the
-    /// caller (an open conversation) always knows it.
-    let conversationID: ConversationID
     let messageID: MessageID
     let kind: ReactionKind
 }

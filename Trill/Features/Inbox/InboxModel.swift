@@ -238,14 +238,6 @@ final class InboxModel: ObservableObject {
     /// Fires when the next-to-wake snoozed thread is due, so it resurfaces
     /// without a poll. Rescheduled whenever the snooze set changes.
     private var snoozeWakeTask: Task<Void, Never>?
-    /// Re-probes provider health when the app returns to the foreground, so a
-    /// permission granted in System Settings while away (e.g. Accessibility for
-    /// tapbacks) reflects in capability-gated UI without a relaunch.
-    private var healthRefreshTask: Task<Void, Never>?
-    /// `nonisolated(unsafe)` so the nonisolated `deinit` can remove it: the token
-    /// is a non-`Sendable` `NSObjectProtocol`, but it's only ever assigned on the
-    /// main actor and `NotificationCenter.removeObserver` is thread-safe.
-    nonisolated(unsafe) private var foregroundObserver: NSObjectProtocol?
     private static let providerModeKey = "providerMode"
     private static let filterKey = "inboxFilter"
     private static let selectedFolderKey = "selectedFolderID"
@@ -288,57 +280,18 @@ final class InboxModel: ObservableObject {
         notifications.sendReply = { [weak self] id, text in
             self?.quickReply(to: id, text: text)
         }
-        foregroundObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didBecomeActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.refreshHealthOnForeground() }
-        }
     }
 
     deinit {
         loadTask?.cancel()
         eventTask?.cancel()
         snoozeWakeTask?.cancel()
-        healthRefreshTask?.cancel()
-        if let foregroundObserver {
-            NotificationCenter.default.removeObserver(foregroundObserver)
-        }
     }
-
-    /// Re-read provider health on foreground. Only the live provider's runtime
-    /// permission state can change while away (Accessibility, Automation, Full
-    /// Disk Access), so this is a no-op in fixture mode or before the first load.
-    /// It updates only `health` — never `state` — so it can't disturb an active
-    /// error/empty screen; it exists so capability+health-gated affordances like
-    /// the tapback menu light up the moment a grant lands, not on next launch.
-    private func refreshHealthOnForeground() {
-        guard providerMode == .messages, state == .loaded else { return }
-        healthRefreshTask?.cancel()
-        let repository = repository
-        healthRefreshTask = Task { [weak self] in
-            let refreshed = await repository.health()
-            guard !Task.isCancelled else { return }
-            self?.health = refreshed
-        }
-    }
-
-    /// Hidden opt-in for the write-backed advanced actions. Off by default: only a
-    /// Developer-ID-signed host that has passed the ADR 0001 signed-host vetting
-    /// checklist flips this to layer platform-imessage's tapbacks over the
-    /// read-only baseline. While off, `.messages` is the plain read-only provider
-    /// and `PlatformAPI` is never constructed.
-    static let platformWritesEnabledKey = "platformWritesEnabled"
 
     private static func makeProvider(_ mode: ProviderMode) -> any MessagesProvider {
         switch mode {
-        case .fixture:
-            return FixtureProvider()
-        case .messages:
-            let base = LiveIMessageProvider()
-            guard UserDefaults.standard.bool(forKey: platformWritesEnabledKey) else { return base }
-            return CompositeMessagesProvider(base: base)
+        case .fixture: FixtureProvider()
+        case .messages: LiveIMessageProvider()
         }
     }
 
@@ -853,61 +806,6 @@ final class InboxModel: ObservableObject {
 
     var canCompose: Bool {
         CapabilityGate.canSend(capabilities: capabilities, health: health)
-    }
-
-    /// Whether tapbacks can be sent: the provider advertises the capability and
-    /// the write-backed advanced-actions surface is live. False everywhere the
-    /// composite write overlay isn't active, so the tapback UI simply doesn't show.
-    var canReact: Bool {
-        CapabilityGate.canReact(capabilities: capabilities, health: health)
-    }
-
-    /// Transient banner for a tapback that didn't cleanly confirm. `.unknown` (the
-    /// automation ran but confirmation was ambiguous) is surfaced, never presented
-    /// as success and never auto-retried — mirroring send-once text semantics.
-    @Published var reactionFeedback: String?
-
-    /// Send a tapback on `messageID` in `conversationID`. Fire-and-forget from the
-    /// bubble context menu; the live poller reflects the applied reaction.
-    func react(to messageID: MessageID, in conversationID: ConversationID, kind: ReactionKind) {
-        guard canReact else { return }
-        let repository = repository
-        Task { @MainActor in
-            let outcome: ReactionOutcome
-            do {
-                outcome = try await repository.react(ReactionRequest(
-                    operationID: UUID(),
-                    conversationID: conversationID,
-                    messageID: messageID,
-                    kind: kind
-                ))
-            } catch {
-                AppLog.repository.error("React threw error=\(String(describing: type(of: error)), privacy: .public)")
-                reactionFeedback = "Couldn't send the tapback."
-                return
-            }
-            switch outcome {
-            case .confirmed:
-                reactionFeedback = nil
-            case let .rejected(_, reason):
-                reactionFeedback = Self.reactionFeedback(for: reason)
-            case .unknown:
-                // Send-once: the tapback may already have applied — surface it,
-                // don't retry.
-                reactionFeedback = "Tapback sent, but couldn't confirm it landed."
-            }
-        }
-    }
-
-    private static func reactionFeedback(for reason: UserFacingSendError) -> String {
-        switch reason {
-        case .permissionDenied:
-            "Grant Trill Accessibility access to send tapbacks."
-        case .unsupported:
-            "That tapback isn't supported yet."
-        case .invalidRequest, .providerUnavailable, .manualVerificationRequired:
-            "Couldn't send the tapback."
-        }
     }
 
     func contactSuggestions(matching term: String) async -> [ContactSuggestion] {
