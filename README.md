@@ -77,7 +77,7 @@ Fixture mode does not need Full Disk Access, Contacts, Accessibility, Automation
 4. Select the **Trill** scheme and **My Mac** destination.
 5. Press **⌘R**. The app opens in **Synthetic Fixture** mode.
 
-Try selecting conversations, **Load Earlier Messages**, **⌘K** search, pinning from a sidebar context menu, editing a draft, zooming with **⌘+/⌘−/⌘0**, picking an accent in Settings, and opening the health popover from the sidebar footer. The composer is deliberately disabled and never fakes a send.
+Try selecting conversations, scrolling back through a thread (older pages load automatically as you near the top; **Load Earlier Messages** stays as a manual fallback), **⌘K** search, pinning from a sidebar context menu, editing a draft, zooming with **⌘+/⌘−/⌘0**, picking an accent in Settings, and opening the health popover from the sidebar footer. The composer is deliberately disabled and never fakes a send.
 
 Run tests with **⌘U**, or use Terminal:
 
@@ -97,7 +97,7 @@ If this checkout lives in an iCloud-synced folder (e.g. `~/Documents`), point `-
 
 ## Provider and permissions
 
-The provider picker offers **Synthetic Fixture** and **Messages (Safety-gated)**. Selecting Messages performs only a direct `SQLITE_OPEN_READONLY` probe. If Full Disk Access is absent, the app explains it and links to System Settings. If access exists, the provider still remains gated until `platform-imessage` has passed a signed-host vetting/validation pass. (Trill is now willing to let that vetted library manage its own `chat.db` writes, so it no longer requires a `createIndexes: false` construction path.)
+The provider picker offers **Synthetic Fixture** and **Messages (Safety-gated)**. Selecting Messages performs only a direct `SQLITE_OPEN_READONLY` probe. If Full Disk Access is absent, the app explains it and links to System Settings. If access exists, Messages mode reads live over `LiveIMessageProvider` — nothing further gates it. The vetting/signed-host gate applies only to the dormant `PlatformIMessageProvider`, which the UI never constructs (see [ADR 0002](docs/architecture-decisions/0002-live-imessage-provider.md)).
 
 Never disable SIP for this project. Full Disk Access, when eventually used, belongs to the built app's bundle identity—not Terminal—when launched from Xcode or Finder.
 

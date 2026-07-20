@@ -574,6 +574,7 @@ Do not collapse all failures into “Connection error.” Suggested user-facing 
 - Send rejected.
 - Send outcome unknown; check conversation before retrying.
 - Attachment unavailable.
+- Attachment offloaded to iCloud (file rows: “In iCloud — open in Messages to download”; gallery tiles: “In iCloud”).
 - Remote relay unreachable or authentication failed.
 
 ## 17. Testing strategy

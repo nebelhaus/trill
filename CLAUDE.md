@@ -136,8 +136,9 @@ accent is user-selectable at runtime; density and ⌘+/⌘−/⌘0 zoom are sett
 
 **CalVer, date-based** — same as the rest of the family. `bench release trill` (from
 the workshop) stamps today's date into `VERSION` (`YYYY.MM.DD`, `-N` on a same-day
-repeat), commits, tags `v<date>`; CI then builds the ad-hoc-signed `.app`, publishes
-the GitHub release, and bumps `homebrew-tap`'s `Casks/trill.rb` over a deploy key.
+repeat), commits, tags `v<date>`; CI then builds the `.app`, signs it with our Apple
+Developer ID (hardened runtime) and notarizes it with Apple, publishes the GitHub
+release, and bumps `homebrew-tap`'s `Casks/trill.rb` over a deploy key.
 Never hand-edit the cask's url/sha/version. `MARKETING_VERSION` in `project.pbxproj`
 is injected from `VERSION` at release time — keep the checked-in default roughly in
 sync so local dev builds don't report a stale version, but the release value is
