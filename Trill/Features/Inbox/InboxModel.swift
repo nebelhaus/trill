@@ -238,6 +238,14 @@ final class InboxModel: ObservableObject {
     /// Fires when the next-to-wake snoozed thread is due, so it resurfaces
     /// without a poll. Rescheduled whenever the snooze set changes.
     private var snoozeWakeTask: Task<Void, Never>?
+    /// Re-probes provider health when the app returns to the foreground, so a
+    /// permission granted in System Settings while away (e.g. Accessibility for
+    /// tapbacks) reflects in capability-gated UI without a relaunch.
+    private var healthRefreshTask: Task<Void, Never>?
+    /// `nonisolated(unsafe)` so the nonisolated `deinit` can remove it: the token
+    /// is a non-`Sendable` `NSObjectProtocol`, but it's only ever assigned on the
+    /// main actor and `NotificationCenter.removeObserver` is thread-safe.
+    nonisolated(unsafe) private var foregroundObserver: NSObjectProtocol?
     private static let providerModeKey = "providerMode"
     private static let filterKey = "inboxFilter"
     private static let selectedFolderKey = "selectedFolderID"
@@ -280,12 +288,40 @@ final class InboxModel: ObservableObject {
         notifications.sendReply = { [weak self] id, text in
             self?.quickReply(to: id, text: text)
         }
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.refreshHealthOnForeground() }
+        }
     }
 
     deinit {
         loadTask?.cancel()
         eventTask?.cancel()
         snoozeWakeTask?.cancel()
+        healthRefreshTask?.cancel()
+        if let foregroundObserver {
+            NotificationCenter.default.removeObserver(foregroundObserver)
+        }
+    }
+
+    /// Re-read provider health on foreground. Only the live provider's runtime
+    /// permission state can change while away (Accessibility, Automation, Full
+    /// Disk Access), so this is a no-op in fixture mode or before the first load.
+    /// It updates only `health` — never `state` — so it can't disturb an active
+    /// error/empty screen; it exists so capability+health-gated affordances like
+    /// the tapback menu light up the moment a grant lands, not on next launch.
+    private func refreshHealthOnForeground() {
+        guard providerMode == .messages, state == .loaded else { return }
+        healthRefreshTask?.cancel()
+        let repository = repository
+        healthRefreshTask = Task { [weak self] in
+            let refreshed = await repository.health()
+            guard !Task.isCancelled else { return }
+            self?.health = refreshed
+        }
     }
 
     /// Hidden opt-in for the write-backed advanced actions. Off by default: only a
