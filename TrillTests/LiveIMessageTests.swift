@@ -102,6 +102,56 @@ final class LiveIMessageTests: XCTestCase {
         XCTAssertEqual(winners.map(\.emoji), ["🔥"])
     }
 
+    private func attachmentRow(
+        filename: String?,
+        totalBytes: Int64,
+        guid: String = "a",
+        mime: String? = "image/jpeg"
+    ) -> ChatDatabaseReader.AttachmentRow {
+        ChatDatabaseReader.AttachmentRow(
+            messageRowID: 1, guid: guid, filename: filename, mimeType: mime,
+            uti: "public.jpeg", transferName: "photo.jpg", totalBytes: totalBytes
+        )
+    }
+
+    func testOffloadedAttachmentReportsDownloadRequired() {
+        // A row that named a real received file (path + non-zero size) whose
+        // local copy is gone reads as offloaded-to-iCloud, not plain missing.
+        let missingPath = "/tmp/trill-does-not-exist-\(UUID().uuidString).jpg"
+        let mapped = LiveIMessageProvider.attachment(
+            attachmentRow(filename: missingPath, totalBytes: 12_345)
+        )
+        XCTAssertEqual(mapped.availability, .downloadRequired)
+        XCTAssertNil(mapped.localURL)
+        XCTAssertEqual(mapped.byteCount, 12_345)
+    }
+
+    func testTrulyMissingAttachmentStaysMissing() {
+        // No path, or a zero-byte row — nothing to fetch, so plain missing.
+        let noPath = LiveIMessageProvider.attachment(
+            attachmentRow(filename: nil, totalBytes: 0)
+        )
+        XCTAssertEqual(noPath.availability, .missing)
+
+        let zeroBytes = LiveIMessageProvider.attachment(
+            attachmentRow(filename: "/tmp/trill-nope-\(UUID().uuidString).jpg", totalBytes: 0)
+        )
+        XCTAssertEqual(zeroBytes.availability, .missing)
+    }
+
+    func testExistingFileReportsAvailable() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("trill-attach-\(UUID().uuidString).jpg")
+        try Data([0xFF, 0xD8, 0xFF]).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let mapped = LiveIMessageProvider.attachment(
+            attachmentRow(filename: url.path, totalBytes: 3)
+        )
+        XCTAssertEqual(mapped.availability, .available)
+        XCTAssertEqual(mapped.localURL, url)
+    }
+
     func testDatabaseWatcherFiresOnWalWrite() throws {
         // Stand in for chat.db-wal with a temp file and confirm the watcher's
         // DispatchSource fires when it's written — no real database involved.

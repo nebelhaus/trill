@@ -102,7 +102,11 @@ private struct MediaTile: View {
                         Image(systemName: iconName)
                             .riceFont(18)
                             .foregroundStyle(Rice.overlay1)
-                        if item.attachment.availability != .available {
+                        if item.attachment.availability == .downloadRequired {
+                            Text("In iCloud")
+                                .riceFont(8)
+                                .foregroundStyle(Rice.overlay0)
+                        } else if item.attachment.availability != .available {
                             Text("Unavailable")
                                 .riceFont(8)
                                 .foregroundStyle(Rice.overlay0)

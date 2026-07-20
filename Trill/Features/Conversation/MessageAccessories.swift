@@ -129,7 +129,12 @@ struct AttachmentView: View {
             }
             return "Available"
         case .missing: return "Attachment unavailable"
-        case .downloadRequired: return "Download required"
+        case .downloadRequired:
+            if let byteCount = attachment.byteCount {
+                let size = ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file)
+                return "In iCloud · \(size) — open in Messages to download"
+            }
+            return "In iCloud — open in Messages to download"
         }
     }
 }
