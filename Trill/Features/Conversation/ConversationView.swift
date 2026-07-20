@@ -444,8 +444,22 @@ private struct MessageTimelineView: View {
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
+                        .background(
+                            // Tracks the content's top edge relative to the viewport
+                            // so we can pull older pages in automatically. Works on
+                            // macOS 14 (unlike onScrollGeometryChange) and, unlike an
+                            // onAppear sentinel, reports real scroll offset even with
+                            // the eager VStack, whose rows are all realized up front.
+                            GeometryReader { geo in
+                                Color.clear.preference(
+                                    key: TimelineTopOffsetKey.self,
+                                    value: geo.frame(in: .named(Self.timelineSpace)).minY
+                                )
+                            }
+                        )
                     }
                     .defaultScrollAnchor(.bottom)
+                    .coordinateSpace(.named(Self.timelineSpace))
                     .id(model.conversation?.id)
                     .onChange(of: model.revealTarget) { _, target in
                         guard let target else { return }
@@ -454,10 +468,41 @@ private struct MessageTimelineView: View {
                         }
                         model.consumeRevealTarget()
                     }
+                    .onPreferenceChange(TimelineTopOffsetKey.self) { minY in
+                        // minY ≈ 0 means the oldest loaded row sits at the viewport
+                        // top; a large negative value means we're down near the newest
+                        // (bottom-anchored) end. Prefetch once the top edge climbs
+                        // within a screen-and-a-half of the viewport, so back-scroll
+                        // never stalls waiting on a page.
+                        guard minY > -Self.prefetchDistance else { return }
+                        autoLoadOlder(proxy: proxy)
+                    }
                 }
             }
         }
         .accessibilityLabel("Message timeline")
+    }
+
+    /// Name for the timeline's scroll coordinate space, and how far above the
+    /// viewport the content's top edge may be before we prefetch the next older
+    /// page. ~1.5 screens of lead time keeps a fast back-scroll from ever hitting
+    /// an unloaded edge.
+    private static let timelineSpace = "conversationTimeline"
+    private static let prefetchDistance: CGFloat = 1_200
+
+    /// Fired by the scroll-offset tracker as the reader nears the top. `loadOlder`
+    /// is itself guarded (in-flight + end-of-history), so repeated calls collapse
+    /// to one fetch; we only re-pin the scroll position when a page actually landed,
+    /// keeping the reader's place instead of jumping as content grows upward.
+    private func autoLoadOlder(proxy: ScrollViewProxy) {
+        guard model.nextBefore != nil, !model.isLoadingOlder else { return }
+        let anchor = model.messages.first?.id
+        Task {
+            let didLoad = await model.loadOlder()
+            if didLoad, let anchor {
+                proxy.scrollTo(anchor, anchor: .top)
+            }
+        }
     }
 
     private func loadOlderButton(proxy: ScrollViewProxy) -> some View {
@@ -512,6 +557,15 @@ private struct MessageTimelineView: View {
     private func endsGroup(at index: Int) -> Bool {
         guard index + 1 < model.messages.count else { return true }
         return startsGroup(at: index + 1)
+    }
+}
+
+/// Carries the timeline content's top-edge offset (in the timeline coordinate
+/// space) up to the scroll container, which uses it to prefetch older pages.
+private struct TimelineTopOffsetKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 

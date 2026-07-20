@@ -115,7 +115,7 @@ final class ConversationModel: ObservableObject {
         loadTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let page = try await repository.messages(in: conversation.id, page: MessagePageRequest(limit: 36))
+                let page = try await repository.messages(in: conversation.id, page: MessagePageRequest(limit: Self.pageSize))
                 guard !Task.isCancelled, self.conversation?.id == conversation.id else { return }
                 messages = page.messages.sorted(by: Self.chronological)
                 nextBefore = page.nextBefore
@@ -220,7 +220,7 @@ final class ConversationModel: ObservableObject {
         loadTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await repository.messages(in: conversation.id, around: date, limit: 36)
+                let result = try await repository.messages(in: conversation.id, around: date, limit: Self.pageSize)
                 guard !Task.isCancelled, self.conversation?.id == conversation.id else { return }
                 messages = result.page.messages.sorted(by: Self.chronological)
                 nextBefore = result.page.nextBefore
@@ -397,25 +397,40 @@ final class ConversationModel: ObservableObject {
         return messages
     }
 
-    func loadOlder() async {
-        guard let conversation, let nextBefore, !isLoadingOlder else { return }
+    /// Pulls the next older page in and prepends it, returning whether any new
+    /// messages actually landed. The Bool lets the timeline skip its scroll-anchor
+    /// restore when the call was a no-op — the auto-prefetch fires this repeatedly
+    /// as the reader nears the top, and only a real prepend should re-pin position.
+    @discardableResult
+    func loadOlder() async -> Bool {
+        guard let conversation, let nextBefore, !isLoadingOlder else { return false }
         isLoadingOlder = true
         defer { isLoadingOlder = false }
         do {
             let page = try await repository.messages(
                 in: conversation.id,
-                page: MessagePageRequest(limit: 36, before: nextBefore)
+                page: MessagePageRequest(limit: Self.pageSize, before: nextBefore)
             )
-            guard self.conversation?.id == conversation.id else { return }
+            guard self.conversation?.id == conversation.id else { return false }
             let known = Set(messages.map(\.id))
             let older = page.messages.filter { !known.contains($0.id) }
             messages = (older + messages).sorted(by: Self.chronological)
             self.nextBefore = page.nextBefore
             if isFindPresented { recomputeFindMatches() }
+            return !older.isEmpty
         } catch {
             AppLog.ui.error("Older-message page failed error=\(String(describing: type(of: error)), privacy: .public)")
+            return false
         }
     }
+
+    /// Messages fetched per timeline page — the initial load, each older page the
+    /// infinite scroll pulls in, and the jump-to-date window. Bigger pages mean
+    /// fewer round-trips while scrolling back; the eager timeline still lays each
+    /// page out in one pass, and the reader-side prefetch loads the next one before
+    /// the edge is reached, so smoothness holds. (Refresh-on-write stays narrow —
+    /// it only needs to re-map the newest rows where edits/read-marks land.)
+    private static let pageSize = 100
 
     private static func chronological(_ left: Message, _ right: Message) -> Bool {
         if left.createdAt == right.createdAt { return left.id.id < right.id.id }
