@@ -108,8 +108,9 @@ xcodebuild -skipMacroValidation -project Trill.xcodeproj -scheme Trill \
   at launch.
 - **Migration renumber discipline (the merge trap).** Overlay features add
   `AppDatabase` migrations by number; parallel worktree branches routinely collide on
-  the same number. Rule: **whoever merges second renumbers** — in the `migrations`
-  array, `currentSchemaVersion`, and the `AppDatabaseTests` assertion. All migrations
+  the same number. Rule: **the second PR to land renumbers** (rebase before
+  merging) — in the `migrations` array, `currentSchemaVersion`, and the
+  `AppDatabaseTests` assertion. All migrations
   are `CREATE TABLE IF NOT EXISTS` so a shared overlay DB advanced by another branch
   still upgrades instead of failing `init` and dropping to a throwaway temp store. A
   migration numbered ≤ the DB's current version is silently skipped — that's the bug
