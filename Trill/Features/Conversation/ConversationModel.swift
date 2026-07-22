@@ -19,6 +19,12 @@ final class ConversationModel: ObservableObject {
     /// reply-quote jump across pages). The view consumes it.
     @Published private(set) var revealTarget: MessageID?
     @Published private(set) var highlightedMessageID: MessageID?
+    /// Set after a normal (non-reveal) load so the timeline pins to the newest
+    /// message on first appear. `.defaultScrollAnchor(.bottom)` alone
+    /// occasionally lays the ScrollView out at the top on initial layout (worst
+    /// when async thumbnails resize rows), which reads as "jumped to the top of
+    /// the thread." The view scrolls to this id on appear, then consumes it.
+    @Published private(set) var pendingBottomScroll: MessageID?
 
     // MARK: Jump to date (⌘J)
 
@@ -94,6 +100,7 @@ final class ConversationModel: ObservableObject {
         state = .idle
         revealTarget = nil
         highlightedMessageID = nil
+        pendingBottomScroll = nil
         exportCache = nil
         isJumpToDatePresented = false
         endSelection()
@@ -108,6 +115,7 @@ final class ConversationModel: ObservableObject {
         state = .loading
         revealTarget = nil
         highlightedMessageID = nil
+        pendingBottomScroll = nil
         isJumpToDatePresented = false
         endSelection()
         resetFind()
@@ -122,6 +130,8 @@ final class ConversationModel: ObservableObject {
                 state = messages.isEmpty ? .empty : .loaded
                 if let reveal {
                     await revealMessage(reveal)
+                } else {
+                    pendingBottomScroll = messages.last?.id
                 }
             } catch is CancellationError {
                 return
@@ -190,6 +200,10 @@ final class ConversationModel: ObservableObject {
 
     func consumeRevealTarget() {
         revealTarget = nil
+    }
+
+    func consumeBottomScroll() {
+        pendingBottomScroll = nil
     }
 
     // MARK: - Jump to date
