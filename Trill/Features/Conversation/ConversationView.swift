@@ -461,6 +461,18 @@ private struct MessageTimelineView: View {
                     .defaultScrollAnchor(.bottom)
                     .coordinateSpace(.named(Self.timelineSpace))
                     .id(model.conversation?.id)
+                    .onAppear {
+                        // `.defaultScrollAnchor(.bottom)` occasionally settles at
+                        // the top on first layout, so a fresh timeline explicitly
+                        // pins to its newest row. Deferred a tick so the eager
+                        // VStack's rows exist before scrollTo runs. Skipped when a
+                        // reveal is pending — that path positions the view itself.
+                        guard let target = model.pendingBottomScroll else { return }
+                        Task { @MainActor in
+                            proxy.scrollTo(target, anchor: .bottom)
+                            model.consumeBottomScroll()
+                        }
+                    }
                     .onChange(of: model.revealTarget) { _, target in
                         guard let target else { return }
                         withAnimation(.easeInOut(duration: 0.25)) {
