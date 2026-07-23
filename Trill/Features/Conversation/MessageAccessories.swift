@@ -140,15 +140,54 @@ struct AttachmentView: View {
 }
 
 /// Message text with URLs made clickable, tinted with the rice accent.
+/// Reports the widest natural (unwrapped) line width of a measuring twin so the
+/// selectable bubble text can hug its content instead of filling the row.
+private struct RichTextIdealWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct RichMessageText: View {
     let text: String
     @Environment(\.riceAccent) private var accent
+    @State private var idealWidth: CGFloat = 0
+
+    /// A bubble never grows wider than this; longer content wraps. On narrower
+    /// windows the parent's own width wins, so this is only an upper bound.
+    private let maxContentWidth: CGFloat = 560
 
     var body: some View {
         Text(attributed)
             .tint(accent)
             .foregroundStyle(Rice.text)
             .textSelection(.enabled)
+            // A selectable *multi-line* Text greedily fills the whole row on
+            // macOS, which is what leaves the big unclickable dead zone beside
+            // short lines. Clamp it to the text's own natural width so the
+            // bubble hugs its content — selection stays fully enabled.
+            .frame(
+                maxWidth: idealWidth > 0 ? min(idealWidth, maxContentWidth) : nil,
+                alignment: .leading
+            )
+            .background(alignment: .topLeading) {
+                // Hidden, non-wrapping twin: reports the widest line's width via
+                // preference. `fixedSize` makes it ignore the (clamped) primary
+                // width, so the measurement can't feed back on itself.
+                Text(attributed)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .hidden()
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(
+                                key: RichTextIdealWidthKey.self,
+                                value: geo.size.width
+                            )
+                        }
+                    )
+            }
+            .onPreferenceChange(RichTextIdealWidthKey.self) { idealWidth = $0 }
     }
 
     private var attributed: AttributedString {
