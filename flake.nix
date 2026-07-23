@@ -3,10 +3,21 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+
+    # Injection point for feel-testing a trill SOURCE branch through `bench try`.
+    # macOS 26 blocks a from-source Nix build (see nix/package.nix), so bench
+    # builds Trill.app from the branch in your login session and overrides this
+    # input to that built .app dir; the package then wraps your branch's app
+    # instead of the release. Default: the empty ./nix/dev-app placeholder →
+    # package fetches the release as normal. `flake = false`: it's a plain dir.
+    prebuilt = {
+      url = "path:./nix/dev-app";
+      flake = false;
+    };
   };
 
   outputs =
-    { self, nixpkgs }:
+    { self, nixpkgs, prebuilt }:
     let
       systems = [
         "aarch64-darwin"
@@ -22,7 +33,10 @@
       # Consume trill from anywhere: `overlays.default` puts `trill` into pkgs.
       # The rice adds this overlay and installs pkgs.trill in place of the cask.
       overlays.default = final: prev: {
-        trill = final.callPackage ./nix/package.nix { inherit (release) version sha256; };
+        trill = final.callPackage ./nix/package.nix {
+          inherit (release) version sha256;
+          prebuilt = prebuilt.outPath;
+        };
       };
 
       packages = forAll (
