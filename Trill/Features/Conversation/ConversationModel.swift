@@ -26,6 +26,13 @@ final class ConversationModel: ObservableObject {
     /// the thread." The view scrolls to this id on appear, then consumes it.
     @Published private(set) var pendingBottomScroll: MessageID?
 
+    /// Armed when the local user sends into this thread, so the timeline snaps to
+    /// the just-sent message as it lands. The send call returns before the row is
+    /// written to `chat.db`, so we can't pin to its id yet — instead we follow the
+    /// tail across the next arrival(s), re-anchoring `pendingBottomScroll` to the
+    /// newest row until our outgoing message shows up. See `followTailIfPinned`.
+    private var isFollowingSend = false
+
     // MARK: Jump to date (⌘J)
 
     /// Whether the "jump to date" picker popover is showing.
@@ -116,6 +123,7 @@ final class ConversationModel: ObservableObject {
         revealTarget = nil
         highlightedMessageID = nil
         pendingBottomScroll = nil
+        isFollowingSend = false
         isJumpToDatePresented = false
         endSelection()
         resetFind()
@@ -176,6 +184,7 @@ final class ConversationModel: ObservableObject {
         guard changed else { return }
         exportCache = nil
         messages = byID.values.sorted(by: Self.chronological)
+        followTailIfPinned()
         if state == .empty, !messages.isEmpty { state = .loaded }
         if nextBefore == nil { nextBefore = page.nextBefore }
         if isFindPresented { recomputeFindMatches() }
@@ -189,7 +198,28 @@ final class ConversationModel: ObservableObject {
         exportCache = nil
         messages = (messages + [message]).sorted(by: Self.chronological)
         state = .loaded
+        followTailIfPinned()
         if isFindPresented { recomputeFindMatches() }
+    }
+
+    /// Keeps the timeline glued to its newest row while a bottom-pin is live —
+    /// the open-pin (`pendingBottomScroll`) or a just-sent follow (`isFollowingSend`).
+    /// Called whenever a message lands so an async arrival (one we just sent, or one
+    /// that shows up right as the thread opens) re-anchors the pin to the true tail
+    /// instead of leaving it stranded on a now-older row. The send-follow releases
+    /// once it's caught the first arrival — the freshly-written outgoing row.
+    private func followTailIfPinned() {
+        guard isFollowingSend || pendingBottomScroll != nil else { return }
+        pendingBottomScroll = messages.last?.id
+        isFollowingSend = false
+    }
+
+    /// Snap the open timeline to its newest message and follow the tail as the
+    /// just-sent message lands from the provider. Called when the local user sends
+    /// into this thread so the reader is taken to the bottom to see it.
+    func scrollToBottom() {
+        isFollowingSend = true
+        if let last = messages.last?.id { pendingBottomScroll = last }
     }
 
     func reveal(_ id: MessageID) {

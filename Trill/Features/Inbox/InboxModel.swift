@@ -282,6 +282,12 @@ final class InboxModel: ObservableObject {
         composerModel.onDraftChanged = { [weak self] id, hasContent in
             self?.updateDraftMembership(id, hasContent: hasContent)
         }
+        composerModel.onSent = { [weak self] id in
+            // Take the reader to the bottom to see the message they just sent —
+            // it arrives asynchronously from chat.db, so the tab's timeline
+            // follows its tail until the new row lands.
+            self?.tabModels[id]?.scrollToBottom()
+        }
         notifications.openConversation = { [weak self] id in
             self?.select(id)
         }
