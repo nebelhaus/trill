@@ -400,25 +400,30 @@ private struct MessageTimelineView: View {
                         message: "The provider could not load this conversation."
                     )
                 case .loaded:
+                    // Inverted timeline. The newest message renders at the ScrollView's
+                    // natural scroll origin (offset 0) and the whole view is flipped
+                    // vertically, so the origin lands at the *visual bottom* — the
+                    // newest message, every time, with zero reliance on
+                    // `.defaultScrollAnchor(.bottom)` or a `scrollTo` (both of which
+                    // proved unreliable for real threads on macOS). Crucially, async
+                    // row growth up-thread — image thumbnails and link-preview cards
+                    // decoding seconds after open — happens *above* the origin and
+                    // physically cannot push the newest row off-screen. This is the
+                    // structural cure for "opens scrolled up" that no amount of
+                    // re-pinning (PRs #13/#15/#16/#20) could win.
+                    //
+                    // Rows are emitted newest-first and each is flipped back upright;
+                    // a day separator is emitted *after* its day's first message so
+                    // that, once the container flips, it lands above that message. The
+                    // "Load Earlier" control sits at the oldest end (emitted last =
+                    // visual top) and prefetches the next page when it scrolls in.
                     ScrollView {
-                        // Eager VStack, not Lazy: a page is only ~36 rows, and
-                        // LazyVStack + .defaultScrollAnchor(.bottom) leaves the
-                        // viewport blank until a scroll forces row realization —
-                        // the churn is worst in image-heavy threads whose async
-                        // thumbnails keep resizing rows during initial layout.
-                        VStack(spacing: density.timelineSpacing) {
-                            if model.nextBefore != nil {
-                                loadOlderButton(proxy: proxy)
-                            }
-
+                        LazyVStack(spacing: density.timelineSpacing) {
                             let latestOutgoingID = model.messages.last(where: \.isOutgoing)?.id
                             let replies = repliesByOrigin
                             let findMatches = model.findMatchSet
                             let currentFindMatch = model.currentFindMatchID
-                            ForEach(Array(model.messages.enumerated()), id: \.element.id) { index, message in
-                                if startsDay(at: index) {
-                                    DaySeparator(date: message.createdAt)
-                                }
+                            ForEach(Array(model.messages.enumerated()).reversed(), id: \.element.id) { index, message in
                                 MessageRow(
                                     message: message,
                                     startsGroup: startsGroup(at: index),
@@ -440,36 +445,24 @@ private struct MessageTimelineView: View {
                                     onToggleSelection: { model.toggleSelection(message.id) }
                                 )
                                 .id(message.id)
+                                .scaleEffect(x: 1, y: -1)
+                                if startsDay(at: index) {
+                                    DaySeparator(date: message.createdAt)
+                                        .scaleEffect(x: 1, y: -1)
+                                }
+                            }
+
+                            if model.nextBefore != nil {
+                                loadOlderButton()
+                                    .scaleEffect(x: 1, y: -1)
+                                    .onAppear { autoLoadOlder() }
                             }
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
-                        .background(
-                            // Tracks the content's top edge relative to the viewport
-                            // so we can pull older pages in automatically. Works on
-                            // macOS 14 (unlike onScrollGeometryChange) and, unlike an
-                            // onAppear sentinel, reports real scroll offset even with
-                            // the eager VStack, whose rows are all realized up front.
-                            GeometryReader { geo in
-                                Color.clear.preference(
-                                    key: TimelineTopOffsetKey.self,
-                                    value: geo.frame(in: .named(Self.timelineSpace)).minY
-                                )
-                            }
-                        )
                     }
-                    .defaultScrollAnchor(.bottom)
-                    .coordinateSpace(.named(Self.timelineSpace))
+                    .scaleEffect(x: 1, y: -1)
                     .id(model.conversation?.id)
-                    .onAppear {
-                        // `.defaultScrollAnchor(.bottom)` + the eager VStack open the
-                        // thread on its newest row and hold the bottom as up-thread
-                        // thumbnails/link cards grow — no live re-pin needed. This
-                        // one-shot only corrects the rare first-layout settle, then
-                        // clears itself so it never fights a scroll. Skipped when a
-                        // reveal is pending — that path positions the view itself.
-                        scrollToNewest(proxy: proxy)
-                    }
                     .onChange(of: model.revealTarget) { _, target in
                         guard let target else { return }
                         withAnimation(.easeInOut(duration: 0.25)) {
@@ -478,22 +471,15 @@ private struct MessageTimelineView: View {
                         model.consumeRevealTarget()
                     }
                     .onChange(of: model.pendingBottomScroll) { _, target in
-                        // Re-armed when the reader sends and again as the sent row
-                        // lands (`followTailIfPinned`): jump to the newest row once,
-                        // then clear. `.defaultScrollAnchor(.bottom)` keeps us there as
-                        // the row settles. Covers a send while the thread is already on
-                        // screen — the `onAppear` one-shot only fires at open.
-                        guard target != nil else { return }
-                        scrollToNewest(proxy: proxy)
-                    }
-                    .onPreferenceChange(TimelineTopOffsetKey.self) { minY in
-                        // minY ≈ 0 means the oldest loaded row sits at the viewport
-                        // top; a large negative value means we're down near the newest
-                        // (bottom-anchored) end. Prefetch once the top edge climbs
-                        // within a screen-and-a-half of the viewport, so back-scroll
-                        // never stalls waiting on a page.
-                        guard minY > -Self.prefetchDistance else { return }
-                        autoLoadOlder(proxy: proxy)
+                        // Open rests on the newest row for free (offset 0). This only
+                        // fires the send-jump: when the reader sends while scrolled up,
+                        // bring the newest row to the ScrollView's own origin — which
+                        // the flip renders at the visual bottom — then clear the pin.
+                        guard let target else { return }
+                        Task { @MainActor in
+                            proxy.scrollTo(target, anchor: .top)
+                            model.consumeBottomScroll()
+                        }
                     }
                 }
             }
@@ -501,54 +487,18 @@ private struct MessageTimelineView: View {
         .accessibilityLabel("Message timeline")
     }
 
-    /// Name for the timeline's scroll coordinate space, and how far above the
-    /// viewport the content's top edge may be before we prefetch the next older
-    /// page. ~1.5 screens of lead time keeps a fast back-scroll from ever hitting
-    /// an unloaded edge.
-    private static let timelineSpace = "conversationTimeline"
-    private static let prefetchDistance: CGFloat = 1_200
-
-    /// Scrolls once to the pinned newest row (`pendingBottomScroll`) and clears the
-    /// pin, deferred a tick so the eager VStack's rows exist before `scrollTo` runs.
-    /// A one-shot, never a live pin: `.defaultScrollAnchor(.bottom)` already holds the
-    /// bottom as async thumbnails/link cards grow rows up-thread, so re-anchoring on
-    /// every height change (the old approach) only fought the framework and stranded
-    /// the view at the top. This just corrects the rare first-layout settle and the
-    /// send-jump, then releases so it never reads a later scroll as a re-pin. No-op
-    /// (leaving the scroll where it is) when no pin is pending — a reveal/search jump
-    /// positions itself.
-    private func scrollToNewest(proxy: ScrollViewProxy) {
-        guard let target = model.pendingBottomScroll else { return }
-        Task { @MainActor in
-            proxy.scrollTo(target, anchor: .bottom)
-            model.consumeBottomScroll()
-        }
-    }
-
-    /// Fired by the scroll-offset tracker as the reader nears the top. `loadOlder`
-    /// is itself guarded (in-flight + end-of-history), so repeated calls collapse
-    /// to one fetch; we only re-pin the scroll position when a page actually landed,
-    /// keeping the reader's place instead of jumping as content grows upward.
-    private func autoLoadOlder(proxy: ScrollViewProxy) {
+    /// Loads the next older page as the reader nears the oldest end. `loadOlder` is
+    /// guarded (in-flight + end-of-history), so repeated `onAppear`s collapse to one
+    /// fetch. In the inverted timeline the older rows land at the far end, away from
+    /// the scroll origin, so the reader's position holds without any manual re-anchor.
+    private func autoLoadOlder() {
         guard model.nextBefore != nil, !model.isLoadingOlder else { return }
-        let anchor = model.messages.first?.id
-        Task {
-            let didLoad = await model.loadOlder()
-            if didLoad, let anchor {
-                proxy.scrollTo(anchor, anchor: .top)
-            }
-        }
+        Task { await model.loadOlder() }
     }
 
-    private func loadOlderButton(proxy: ScrollViewProxy) -> some View {
+    private func loadOlderButton() -> some View {
         Button {
-            let anchor = model.messages.first?.id
-            Task {
-                await model.loadOlder()
-                if let anchor {
-                    proxy.scrollTo(anchor, anchor: .top)
-                }
-            }
+            Task { await model.loadOlder() }
         } label: {
             if model.isLoadingOlder {
                 ProgressView()
@@ -592,15 +542,6 @@ private struct MessageTimelineView: View {
     private func endsGroup(at index: Int) -> Bool {
         guard index + 1 < model.messages.count else { return true }
         return startsGroup(at: index + 1)
-    }
-}
-
-/// Carries the timeline content's top-edge offset (in the timeline coordinate
-/// space) up to the scroll container, which uses it to prefetch older pages.
-private struct TimelineTopOffsetKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
     }
 }
 
