@@ -500,6 +500,15 @@ private struct MessageTimelineView: View {
                         }
                         model.consumeRevealTarget()
                     }
+                    .onChange(of: model.pendingBottomScroll) { _, target in
+                        // The pin gets (re-)armed after first layout too — e.g. a
+                        // send follows the timeline to its newest row as the sent
+                        // message lands. `onAppear`/height-change cover the open
+                        // case; this covers a pin set while the thread is already
+                        // on screen (the reader was scrolled up when they sent).
+                        guard target != nil else { return }
+                        repinToBottom(proxy: proxy)
+                    }
                     .onPreferenceChange(TimelineTopOffsetKey.self) { minY in
                         // minY ≈ 0 means the oldest loaded row sits at the viewport
                         // top; a large negative value means we're down near the newest

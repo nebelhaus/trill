@@ -47,6 +47,12 @@ final class ComposerModel: ObservableObject {
     /// needing to know the prior state.
     var onDraftChanged: ((ConversationID, _ hasContent: Bool) -> Void)?
 
+    /// Called on the main actor once a send is accepted (or maybe-sent), with the
+    /// conversation it went to. Lets the open timeline snap to the newly-sent
+    /// message as it lands from the provider — the send call returns before the
+    /// row shows up in `chat.db`, so the timeline follows the tail until it does.
+    var onSent: ((ConversationID) -> Void)?
+
     private let database: AppDatabase
     private let snippets: SnippetStore
     private var sendAction: ((String, [URL]) async throws -> SendOutcome)?
@@ -286,6 +292,7 @@ final class ComposerModel: ObservableObject {
                 saveTask?.cancel()
                 try? await database.saveDraft("", conversationID: conversationID)
                 onDraftChanged?(conversationID, false)
+                onSent?(conversationID)
             case let .rejected(_, reason):
                 sendFeedback = Self.feedback(for: reason)
             case .unknown:
@@ -298,6 +305,7 @@ final class ComposerModel: ObservableObject {
                 saveTask?.cancel()
                 try? await database.saveDraft("", conversationID: conversationID)
                 onDraftChanged?(conversationID, false)
+                onSent?(conversationID)
                 sendFeedback = "Some of the message may not have sent — check Messages.app."
             }
         } catch {
