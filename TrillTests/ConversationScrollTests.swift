@@ -68,8 +68,9 @@ final class ConversationScrollTests: XCTestCase {
         XCTAssertEqual(model.pendingBottomScroll, sent.id)
     }
 
-    /// The 400ms open-pin settle can fire (clearing `pendingBottomScroll`) before
-    /// the sent row lands — the follow must survive it and still catch the arrival.
+    /// The open-pin can be released (clearing `pendingBottomScroll`) before the
+    /// sent row lands — e.g. the reader scrolls up right after sending. The
+    /// send-follow must survive that and still catch the arrival.
     @MainActor
     func testFollowSurvivesPinSettleUntilSentRowLands() async throws {
         let model = try await loadedModel()
