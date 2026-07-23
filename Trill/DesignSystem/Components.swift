@@ -191,6 +191,34 @@ extension View {
     }
 }
 
+/// Floating in-app notification surface — the shared chrome for transient
+/// toasts (currently the undo-send countdown). Deliberately quiet: a rounded
+/// panel on the app's raised surface, a hairline border, and a soft shadow so
+/// it reads as *above* the content without a loud backdrop. Content supplies
+/// its own padding so a toast can bleed a progress bar to the panel's edge.
+struct ToastCard<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .background(Rice.surface0, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Rice.surface1, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .shadow(color: .black.opacity(0.32), radius: 16, y: 7)
+    }
+}
+
+/// The slide-up-and-fade transition every toast enters and leaves on, so
+/// dismissal reads as the notification retreating, not blinking out.
+extension AnyTransition {
+    static var toast: AnyTransition {
+        .move(edge: .bottom).combined(with: .opacity)
+    }
+}
+
 /// 1px flat divider.
 struct RiceDivider: View {
     var axis: Axis = .horizontal

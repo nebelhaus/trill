@@ -8,10 +8,11 @@ final class ComposerModel: ObservableObject {
     @Published private(set) var isSendEnabled = false
     @Published private(set) var canSendAttachments = false
     @Published private(set) var isSending = false
-    /// Non-nil while a just-sent message is held in the undo window, counting
-    /// down the seconds before it actually dispatches. Drives the composer's
-    /// locked state and the Undo affordance.
-    @Published private(set) var undoSecondsRemaining: Int?
+    /// Non-nil while a just-sent message is held in the undo window. The box is
+    /// cleared the instant a send begins — the message now lives in a floating
+    /// toast that counts down and dispatches on its own — so this drives that
+    /// toast (preview + progress bar), not any composer-locked state.
+    @Published private(set) var pendingSendPresentation: PendingSendPresentation?
     @Published private(set) var sendFeedback: String?
     @Published private(set) var disabledExplanation = "Select a conversation to write a draft."
 
@@ -75,6 +76,18 @@ final class ComposerModel: ObservableObject {
         let send: (String, [URL]) async throws -> SendOutcome
     }
 
+    /// The view-facing shape of a held send: what the undo-send toast shows and
+    /// how long its progress bar runs. `token` bumps on every new held send so
+    /// the toast restarts its countdown animation even if one is already up.
+    struct PendingSendPresentation: Equatable {
+        let preview: String
+        let attachmentCount: Int
+        let duration: Double
+        let token: Int
+    }
+
+    private var pendingSendToken = 0
+
     private static var undoSendEnabled: Bool {
         UserDefaults.standard.object(forKey: "undoSend") == nil
             ? true
@@ -113,7 +126,7 @@ final class ComposerModel: ObservableObject {
             undoTimerTask?.cancel()
             undoTimerTask = nil
             pendingSend = nil
-            undoSecondsRemaining = nil
+            pendingSendPresentation = nil
             dispatchDetached(pending)
         }
         // Persist the outgoing draft now instead of dropping its pending
@@ -180,15 +193,15 @@ final class ComposerModel: ObservableObject {
     }
 
     func send() async {
-        // A second send while one is already held simply dispatches it now.
-        if pendingSend != nil {
-            await flushPendingSend()
-            return
-        }
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let files = pendingAttachments
         guard isSendEnabled, !isSending, !body.isEmpty || !files.isEmpty,
               let sendAction, let conversationID else { return }
+        // A fresh send while one is still held supersedes it: dispatch the held
+        // message now (it's had its window), then start a window for this one.
+        if pendingSend != nil {
+            await flushPendingSend()
+        }
         guard Self.undoSendEnabled else {
             await performSend(body: body, files: files, conversationID: conversationID, sendAction: sendAction)
             return
@@ -196,13 +209,19 @@ final class ComposerModel: ObservableObject {
         beginUndoWindow(body: body, files: files, conversationID: conversationID, sendAction: sendAction)
     }
 
-    /// Cancel a held send and hand the message back to the composer, untouched,
-    /// so the user can edit it or drop it.
+    /// Cancel a held send and hand the message back to the composer so the user
+    /// can edit it or drop it. Restores into the box it came from; a held send
+    /// for a thread we've since left was already dispatched on the switch, so
+    /// there's nothing to undo there.
     func undoPendingSend() {
         undoTimerTask?.cancel()
         undoTimerTask = nil
+        pendingSendPresentation = nil
+        guard let pending = pendingSend else { return }
         pendingSend = nil
-        undoSecondsRemaining = nil
+        guard pending.conversationID == conversationID else { return }
+        text = pending.body
+        pendingAttachments = pending.files
     }
 
     /// Dispatch a held send immediately, skipping the rest of the window.
@@ -219,57 +238,94 @@ final class ComposerModel: ObservableObject {
         sendAction: @escaping (String, [URL]) async throws -> SendOutcome
     ) {
         pendingSend = PendingSend(body: body, files: files, conversationID: conversationID, send: sendAction)
-        undoSecondsRemaining = Self.undoWindowSeconds
-        sendFeedback = nil
+        // Clear the composer the instant the send begins — the box feels sent
+        // and stays live for the next message. The message itself is safe in
+        // `pendingSend`; the toast now owns the countdown and the Undo.
+        text = ""
+        pendingAttachments = []
         clearCompletions()
+        endFillSession()
+        sendFeedback = nil
+        saveTask?.cancel()
+        Task { [database] in try? await database.saveDraft("", conversationID: conversationID) }
+        onDraftChanged?(conversationID, false)
+
+        pendingSendToken &+= 1
+        pendingSendPresentation = PendingSendPresentation(
+            preview: Self.preview(body: body, files: files),
+            attachmentCount: files.count,
+            duration: Double(Self.undoWindowSeconds),
+            token: pendingSendToken
+        )
         undoTimerTask = Task { [weak self] in
-            for remaining in stride(from: Self.undoWindowSeconds - 1, through: 0, by: -1) {
-                do {
-                    try await Task.sleep(for: .seconds(1))
-                } catch {
-                    return // cancelled by undo/flush, which owns the state
-                }
-                guard let self, !Task.isCancelled else { return }
-                if remaining == 0 {
-                    await self.firePendingSend()
-                } else {
-                    self.undoSecondsRemaining = remaining
-                }
+            do {
+                try await Task.sleep(for: .seconds(Self.undoWindowSeconds))
+            } catch {
+                return // cancelled by undo/flush, which owns the state
             }
+            guard let self, !Task.isCancelled else { return }
+            await self.firePendingSend()
         }
     }
 
     private func firePendingSend() async {
         guard let pending = pendingSend else { return }
         pendingSend = nil
-        undoSecondsRemaining = nil
+        pendingSendPresentation = nil
         undoTimerTask = nil
-        await performSend(
-            body: pending.body,
-            files: pending.files,
-            conversationID: pending.conversationID,
-            sendAction: pending.send
-        )
+        await dispatch(pending)
     }
 
     /// Fire a held send for a conversation the composer is navigating away from.
-    /// Runs without touching the visible composer (which is loading a different
-    /// thread); on failure the draft is restored so the message is never lost.
+    /// Fire-and-forget so switching threads never blocks on the send.
     private func dispatchDetached(_ pending: PendingSend) {
-        Task { [database, weak self] in
-            do {
-                switch try await pending.send(pending.body, pending.files) {
-                case .accepted, .confirmed, .unknown:
+        Task { [weak self] in await self?.dispatch(pending) }
+    }
+
+    /// Send a held message and reconcile the outcome without disturbing the live
+    /// composer. The box was already cleared when the window opened and may now
+    /// hold a fresh draft (same thread) or another thread entirely — so the
+    /// composer's `text` is never touched here; only the stored draft and the
+    /// send feedback are updated, and only when they belong to this send.
+    private func dispatch(_ pending: PendingSend) async {
+        do {
+            switch try await pending.send(pending.body, pending.files) {
+            case .accepted, .confirmed, .unknown:
+                onSent?(pending.conversationID)
+                // Leave a fresh draft the user has since typed into this thread
+                // alone; only clear the stored draft if nothing has replaced it.
+                if !(pending.conversationID == conversationID && !text.isEmpty) {
+                    saveTask?.cancel()
                     try? await database.saveDraft("", conversationID: pending.conversationID)
-                    self?.onDraftChanged?(pending.conversationID, false)
-                case .rejected:
-                    try? await database.saveDraft(pending.body, conversationID: pending.conversationID)
-                    self?.onDraftChanged?(pending.conversationID, !pending.body.isEmpty)
+                    onDraftChanged?(pending.conversationID, false)
                 }
-            } catch {
+            case let .rejected(_, reason):
+                // Preserve the text so a rejected send is never lost, and say why
+                // when it's the thread still on screen.
                 try? await database.saveDraft(pending.body, conversationID: pending.conversationID)
-                self?.onDraftChanged?(pending.conversationID, !pending.body.isEmpty)
+                onDraftChanged?(pending.conversationID, !pending.body.isEmpty)
+                if pending.conversationID == conversationID {
+                    sendFeedback = Self.feedback(for: reason)
+                }
             }
+        } catch {
+            try? await database.saveDraft(pending.body, conversationID: pending.conversationID)
+            onDraftChanged?(pending.conversationID, !pending.body.isEmpty)
+            if pending.conversationID == conversationID {
+                sendFeedback = error.localizedDescription
+            }
+        }
+    }
+
+    /// A short, content-free label for the toast — the message text if there is
+    /// any, otherwise the attachment(s). Never empty.
+    private static func preview(body: String, files: [URL]) -> String {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { return trimmed }
+        switch files.count {
+        case 0: return "Message"
+        case 1: return files[0].lastPathComponent
+        default: return "\(files.count) attachments"
         }
     }
 
