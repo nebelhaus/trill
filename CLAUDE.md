@@ -48,7 +48,7 @@ Trill/
   Domain/                  # provider-neutral models (Message, Conversation, IDs, capabilities)
   Providers/
     MessagesProvider.swift # the protocol: IDs, models, capabilities, pagination, events, send outcomes
-    LiveIMessage/          # SHIPPING provider — read-only chat.db + AppleScript send
+    LiveIMessage/          # SHIPPING provider — read-only chat.db + AppleScript send (ADR 0002)
       ChatDatabaseReader.swift    # read-only SELECTs over chats/messages/handles/reactions/attachments
       ChatDatabaseWatcher.swift   # chat.db-wal watcher (live updates) + polling fallback
       TypedstreamText.swift       # decode NULL text bodies from the attributedBody blob
@@ -61,8 +61,12 @@ Trill/
   Features/                # Inbox, Conversation, Composer, CommandPalette, Search, Library,
                            #   MenuBar, Settings, Shortcuts, Compose
   Notifications/           # local notifications + inline reply
-  Platform/Permissions/    # read-only FDA/schema probe; health states
+  Platform/
+    Permissions/           # read-only FDA/schema probe; health states
+    Logging/               # AppLog.swift — OSLog, non-content only (see Gotchas)
   DesignSystem/            # Rice.swift (the nebelung palette) + shared views
+  Config/                  # Trill.entitlements
+  Assets.xcassets          # app icon + asset catalog
 ```
 
 **Two databases, never confused:** Apple's `chat.db` (read-only, providers only) and
@@ -79,8 +83,8 @@ This is an acceptance criterion (`ARCHITECTURE.md §20`), not a style preference
 
 ## Build / test
 
-It's an Xcode project (Swift 6.2 / Xcode 26.2, min macOS 14), no SPM manifest of its
-own; it pins `beeper/platform-imessage` as a package.
+It's an Xcode project (Swift 6.0 language mode / Xcode 26.2, min macOS 14), no SPM
+manifest of its own; it pins `beeper/platform-imessage` as a package.
 
 ```sh
 # Xcode: open Trill.xcodeproj, Trill scheme, My Mac, ⌘R — opens in Synthetic Fixture mode.
