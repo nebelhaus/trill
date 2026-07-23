@@ -381,6 +381,11 @@ private struct MessageTimelineView: View {
     let savedMessageIDs: Set<MessageID>
     let onToggleSaved: (MessageID) -> Void
 
+    /// Debounces release of the open-pin: each row-resize restarts it, so the
+    /// pin outlives a burst of thumbnail decodes and lets go shortly after the
+    /// last one. See `repinToBottom`.
+    @State private var pinSettleTask: Task<Void, Never>?
+
     var body: some View {
         ScrollViewReader { proxy in
             Group {
@@ -450,11 +455,19 @@ private struct MessageTimelineView: View {
                             // macOS 14 (unlike onScrollGeometryChange) and, unlike an
                             // onAppear sentinel, reports real scroll offset even with
                             // the eager VStack, whose rows are all realized up front.
+                            // Also reports the content's total height so the open-pin
+                            // can re-anchor to the newest row as async thumbnails
+                            // resize rows (see `repinToBottom`).
                             GeometryReader { geo in
-                                Color.clear.preference(
-                                    key: TimelineTopOffsetKey.self,
-                                    value: geo.frame(in: .named(Self.timelineSpace)).minY
-                                )
+                                Color.clear
+                                    .preference(
+                                        key: TimelineTopOffsetKey.self,
+                                        value: geo.frame(in: .named(Self.timelineSpace)).minY
+                                    )
+                                    .preference(
+                                        key: TimelineContentHeightKey.self,
+                                        value: geo.size.height
+                                    )
                             }
                         )
                     }
@@ -464,14 +477,21 @@ private struct MessageTimelineView: View {
                     .onAppear {
                         // `.defaultScrollAnchor(.bottom)` occasionally settles at
                         // the top on first layout, so a fresh timeline explicitly
-                        // pins to its newest row. Deferred a tick so the eager
-                        // VStack's rows exist before scrollTo runs. Skipped when a
-                        // reveal is pending — that path positions the view itself.
-                        guard let target = model.pendingBottomScroll else { return }
-                        Task { @MainActor in
-                            proxy.scrollTo(target, anchor: .bottom)
-                            model.consumeBottomScroll()
-                        }
+                        // pins to its newest row. Skipped when a reveal is pending —
+                        // that path positions the view itself.
+                        repinToBottom(proxy: proxy)
+                    }
+                    .onPreferenceChange(TimelineContentHeightKey.self) { _ in
+                        // A manual `scrollTo` leaves the ScrollView holding an
+                        // explicit offset instead of honoring
+                        // `.defaultScrollAnchor(.bottom)`, so an async thumbnail
+                        // decoding *up-thread* grows its row and shoves the newest
+                        // message below the fold — the thread reads as "opened
+                        // scrolled way up." While the open-pin is still live,
+                        // re-anchor to the newest row on every content-height change
+                        // (row resize), releasing it once heights settle.
+                        guard model.pendingBottomScroll != nil else { return }
+                        repinToBottom(proxy: proxy)
                     }
                     .onChange(of: model.revealTarget) { _, target in
                         guard let target else { return }
@@ -501,6 +521,26 @@ private struct MessageTimelineView: View {
     /// an unloaded edge.
     private static let timelineSpace = "conversationTimeline"
     private static let prefetchDistance: CGFloat = 1_200
+
+    /// Pins the timeline to its newest row for the open-pin (`pendingBottomScroll`),
+    /// deferred a tick so the eager VStack's rows exist before `scrollTo` runs.
+    /// Re-invoked on each content-height change so async thumbnails resizing rows
+    /// up-thread can't push the newest message below the fold. A debounced task
+    /// releases the pin once heights stop changing — until then a stray resize
+    /// re-anchors instead of stranding the reader mid-thread. No-op (leaving the
+    /// scroll where it is) when no pin is pending, e.g. a reveal/search jump.
+    private func repinToBottom(proxy: ScrollViewProxy) {
+        guard let target = model.pendingBottomScroll else { return }
+        Task { @MainActor in
+            proxy.scrollTo(target, anchor: .bottom)
+        }
+        pinSettleTask?.cancel()
+        pinSettleTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            model.consumeBottomScroll()
+        }
+    }
 
     /// Fired by the scroll-offset tracker as the reader nears the top. `loadOlder`
     /// is itself guarded (in-flight + end-of-history), so repeated calls collapse
@@ -575,6 +615,16 @@ private struct MessageTimelineView: View {
 /// Carries the timeline content's top-edge offset (in the timeline coordinate
 /// space) up to the scroll container, which uses it to prefetch older pages.
 private struct TimelineTopOffsetKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+/// Carries the timeline content's total height up to the scroll container, which
+/// re-pins to the newest row while the open-pin is live so async thumbnails
+/// resizing rows can't strand the reader up-thread.
+private struct TimelineContentHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
