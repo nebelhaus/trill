@@ -54,15 +54,17 @@ final class ComposerUndoSendTests: XCTestCase {
         model.text = "on my way"
         await model.send()
 
-        // Held, not dispatched: the message is still in the box and counting down.
+        // Held, not dispatched: the box clears immediately and the message rides
+        // in the toast, counting down.
         XCTAssertEqual(recorder.sends, [])
-        XCTAssertNotNil(model.undoSecondsRemaining)
-        XCTAssertEqual(model.text, "on my way")
+        XCTAssertNotNil(model.pendingSendPresentation)
+        XCTAssertEqual(model.pendingSendPresentation?.preview, "on my way")
+        XCTAssertEqual(model.text, "")
 
-        // Flushing dispatches it now and clears the composer.
+        // Flushing dispatches it now and drops the toast.
         await model.flushPendingSend()
         XCTAssertEqual(recorder.sends, ["on my way"])
-        XCTAssertNil(model.undoSecondsRemaining)
+        XCTAssertNil(model.pendingSendPresentation)
         XCTAssertEqual(model.text, "")
     }
 
@@ -73,13 +75,14 @@ final class ComposerUndoSendTests: XCTestCase {
 
         model.text = "oops wrong chat"
         await model.send()
-        XCTAssertNotNil(model.undoSecondsRemaining)
+        XCTAssertNotNil(model.pendingSendPresentation)
+        XCTAssertEqual(model.text, "")
 
         model.undoPendingSend()
 
-        // Nothing sent; the draft is handed back untouched and editable.
+        // Nothing sent; the message is handed back into the box, editable again.
         XCTAssertEqual(recorder.sends, [])
-        XCTAssertNil(model.undoSecondsRemaining)
+        XCTAssertNil(model.pendingSendPresentation)
         XCTAssertEqual(model.text, "oops wrong chat")
     }
 
@@ -91,9 +94,9 @@ final class ComposerUndoSendTests: XCTestCase {
         model.text = "ship it"
         await model.send()
 
-        // No window: dispatched on the spot, no undo state, box cleared.
+        // No window: dispatched on the spot, no toast, box cleared.
         XCTAssertEqual(recorder.sends, ["ship it"])
-        XCTAssertNil(model.undoSecondsRemaining)
+        XCTAssertNil(model.pendingSendPresentation)
         XCTAssertEqual(model.text, "")
     }
 
@@ -131,7 +134,7 @@ final class ComposerUndoSendTests: XCTestCase {
 
         model.text = "don't lose me"
         await model.send()
-        XCTAssertNotNil(model.undoSecondsRemaining)
+        XCTAssertNotNil(model.pendingSendPresentation)
 
         // Navigating away dispatches the held send in the background.
         model.select(
@@ -144,7 +147,7 @@ final class ComposerUndoSendTests: XCTestCase {
             }()
         ) { _, _ in .accepted(operationID: UUID()) }
 
-        XCTAssertNil(model.undoSecondsRemaining)
+        XCTAssertNil(model.pendingSendPresentation)
         try await Task.sleep(for: .milliseconds(50))
         XCTAssertEqual(recorder.sends, ["don't lose me"])
     }

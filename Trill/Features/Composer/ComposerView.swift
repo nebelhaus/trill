@@ -15,6 +15,9 @@ struct ComposerView: View {
     /// Measured height of the completion popover, so it can be offset fully above
     /// the box regardless of how many rows it has.
     @State private var completionPickerHeight: CGFloat = 0
+    /// Measured height of the undo-send toast, so it can be offset fully above
+    /// the box the same way the completion popover is.
+    @State private var toastHeight: CGFloat = 0
 
     /// Floor used only until the first real measurement lands, kept below a
     /// true single line so it never forces the box taller than one row.
@@ -113,6 +116,27 @@ struct ComposerView: View {
                 .transition(.opacity)
             }
         }
+        // Float the undo-send toast above the box, same anchoring as the picker:
+        // it lives over the timeline, never pushing the input around. The two are
+        // mutually exclusive — starting a send clears any open completions.
+        .overlay(alignment: .top) {
+            if let pending = model.pendingSendPresentation {
+                UndoSendToast(
+                    presentation: pending,
+                    onUndo: { model.undoPendingSend() },
+                    onSendNow: { Task { await model.flushPendingSend() } }
+                )
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: ToastHeightKey.self, value: proxy.size.height)
+                    }
+                )
+                .offset(y: -(toastHeight + 8))
+                .onPreferenceChange(ToastHeightKey.self) { toastHeight = $0 }
+                .transition(.toast)
+            }
+        }
+        .animation(.spring(response: 0.34, dampingFraction: 0.82), value: model.pendingSendPresentation?.token)
     }
 
     private var editor: some View {
@@ -120,7 +144,7 @@ struct ComposerView: View {
             text: $model.text,
             measuredHeight: $measuredHeight,
             fontSize: 13 * scale,
-            isEnabled: model.conversationID != nil && model.undoSecondsRemaining == nil,
+            isEnabled: model.conversationID != nil,
             sendOnReturn: sendOnReturn,
             isScrollable: measuredHeight >= ceiling - 0.5,
             isCompletionPickerActive: model.isCompletionPickerActive,
@@ -159,24 +183,8 @@ struct ComposerView: View {
                 .riceFont(14)
         }
         .buttonStyle(RiceIconButtonStyle())
-        .disabled(!model.canSendAttachments || model.undoSecondsRemaining != nil)
+        .disabled(!model.canSendAttachments)
         .help("Attach files")
-    }
-
-    private var undoButton: some View {
-        Button {
-            model.undoPendingSend()
-        } label: {
-            Image(systemName: "arrow.uturn.backward")
-                .riceFont(13, .bold)
-                .foregroundStyle(Rice.crust)
-                .frame(width: controlDiameter, height: controlDiameter)
-                .background(accent, in: Circle())
-        }
-        .buttonStyle(.plain)
-        .keyboardShortcut(.cancelAction)
-        .help("Undo send")
-        .accessibilityLabel("Undo send")
     }
 
     private var sendButton: some View {
@@ -209,32 +217,19 @@ struct ComposerView: View {
         if stacksControls {
             VStack(spacing: 7) {
                 attachButton
-                primaryControl
+                sendButton
             }
         } else {
             HStack(spacing: 8) {
                 attachButton
-                primaryControl
+                sendButton
             }
-        }
-    }
-
-    /// The round button below the editor: a send arrow normally, an undo arrow
-    /// while a just-sent message is held in its cancel window.
-    @ViewBuilder private var primaryControl: some View {
-        if model.undoSecondsRemaining != nil {
-            undoButton
-        } else {
-            sendButton
         }
     }
 
     private var footnote: some View {
         Group {
-            if let remaining = model.undoSecondsRemaining {
-                Text("Sending in \(remaining)s — press Esc to undo")
-                    .foregroundStyle(accent)
-            } else if let feedback = model.sendFeedback {
+            if let feedback = model.sendFeedback {
                 Text(feedback)
                     .foregroundStyle(Rice.red)
             } else if !model.disabledExplanation.isEmpty {
@@ -352,6 +347,13 @@ struct ComposerView: View {
 }
 
 private struct CompletionPickerHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct ToastHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
