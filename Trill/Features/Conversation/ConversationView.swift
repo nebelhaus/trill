@@ -381,15 +381,6 @@ private struct MessageTimelineView: View {
     let savedMessageIDs: Set<MessageID>
     let onToggleSaved: (MessageID) -> Void
 
-    /// Measured viewport height of the scroll container and the timeline's total
-    /// (padded) content height, plus when that height last changed. Together they
-    /// tell how far the newest row sits below the fold, and let us distinguish
-    /// async row growth from a deliberate scroll — the open-pin is released on the
-    /// latter, never the former. See `releasePinIfScrolledAway`.
-    @State private var viewportHeight: CGFloat = 0
-    @State private var lastContentHeight: CGFloat = 0
-    @State private var lastHeightChangeAt = Date()
-
     var body: some View {
         ScrollViewReader { proxy in
             Group {
@@ -459,58 +450,25 @@ private struct MessageTimelineView: View {
                             // macOS 14 (unlike onScrollGeometryChange) and, unlike an
                             // onAppear sentinel, reports real scroll offset even with
                             // the eager VStack, whose rows are all realized up front.
-                            // Also reports the content's total height so the open-pin
-                            // can re-anchor to the newest row as async thumbnails
-                            // resize rows (see `repinToBottom`).
                             GeometryReader { geo in
-                                Color.clear
-                                    .preference(
-                                        key: TimelineTopOffsetKey.self,
-                                        value: geo.frame(in: .named(Self.timelineSpace)).minY
-                                    )
-                                    .preference(
-                                        key: TimelineContentHeightKey.self,
-                                        value: geo.size.height
-                                    )
+                                Color.clear.preference(
+                                    key: TimelineTopOffsetKey.self,
+                                    value: geo.frame(in: .named(Self.timelineSpace)).minY
+                                )
                             }
                         )
                     }
                     .defaultScrollAnchor(.bottom)
                     .coordinateSpace(.named(Self.timelineSpace))
-                    .background(
-                        // The scroll container's own frame is the viewport; its
-                        // height feeds the "how far below the fold is the newest
-                        // row?" math in `releasePinIfScrolledAway`.
-                        GeometryReader { geo in
-                            Color.clear.preference(
-                                key: TimelineViewportHeightKey.self,
-                                value: geo.size.height
-                            )
-                        }
-                    )
                     .id(model.conversation?.id)
-                    .onPreferenceChange(TimelineViewportHeightKey.self) { viewportHeight = $0 }
                     .onAppear {
-                        // `.defaultScrollAnchor(.bottom)` occasionally settles at
-                        // the top on first layout, so a fresh timeline explicitly
-                        // pins to its newest row. Skipped when a reveal is pending —
-                        // that path positions the view itself.
-                        repinToBottom(proxy: proxy)
-                    }
-                    .onPreferenceChange(TimelineContentHeightKey.self) { height in
-                        // A manual `scrollTo` leaves the ScrollView holding an
-                        // explicit offset instead of honoring
-                        // `.defaultScrollAnchor(.bottom)`, so an async thumbnail or
-                        // link-preview card resolving *up-thread* grows its row and
-                        // shoves the newest message below the fold — the thread reads
-                        // as "opened scrolled way up." While the open-pin is live,
-                        // re-anchor to the newest row on every content-height change,
-                        // however late it lands (a network-fetched link card can be
-                        // seconds behind first layout — far past any fixed settle).
-                        lastContentHeight = height
-                        lastHeightChangeAt = Date()
-                        guard model.pendingBottomScroll != nil else { return }
-                        repinToBottom(proxy: proxy)
+                        // `.defaultScrollAnchor(.bottom)` + the eager VStack open the
+                        // thread on its newest row and hold the bottom as up-thread
+                        // thumbnails/link cards grow — no live re-pin needed. This
+                        // one-shot only corrects the rare first-layout settle, then
+                        // clears itself so it never fights a scroll. Skipped when a
+                        // reveal is pending — that path positions the view itself.
+                        scrollToNewest(proxy: proxy)
                     }
                     .onChange(of: model.revealTarget) { _, target in
                         guard let target else { return }
@@ -520,18 +478,15 @@ private struct MessageTimelineView: View {
                         model.consumeRevealTarget()
                     }
                     .onChange(of: model.pendingBottomScroll) { _, target in
-                        // The pin gets (re-)armed after first layout too — e.g. a
-                        // send follows the timeline to its newest row as the sent
-                        // message lands. `onAppear`/height-change cover the open
-                        // case; this covers a pin set while the thread is already
-                        // on screen (the reader was scrolled up when they sent).
+                        // Re-armed when the reader sends and again as the sent row
+                        // lands (`followTailIfPinned`): jump to the newest row once,
+                        // then clear. `.defaultScrollAnchor(.bottom)` keeps us there as
+                        // the row settles. Covers a send while the thread is already on
+                        // screen — the `onAppear` one-shot only fires at open.
                         guard target != nil else { return }
-                        repinToBottom(proxy: proxy)
+                        scrollToNewest(proxy: proxy)
                     }
                     .onPreferenceChange(TimelineTopOffsetKey.self) { minY in
-                        // Release the open-pin the moment the reader scrolls up off
-                        // the newest row (never on async growth — see below).
-                        releasePinIfScrolledAway(minY: minY)
                         // minY ≈ 0 means the oldest loaded row sits at the viewport
                         // top; a large negative value means we're down near the newest
                         // (bottom-anchored) end. Prefetch once the top edge climbs
@@ -553,40 +508,19 @@ private struct MessageTimelineView: View {
     private static let timelineSpace = "conversationTimeline"
     private static let prefetchDistance: CGFloat = 1_200
 
-    /// How far (pts) the reader must scroll up off the newest row before the
-    /// open-pin lets go, and how long content height must hold still first. The
-    /// settle window keeps a burst of async row growth (which also moves the
-    /// offset) from ever being mistaken for a deliberate scroll.
-    private static let pinReleaseThreshold: CGFloat = 48
-    private static let heightSettleInterval: TimeInterval = 0.35
-
-    /// Pins the timeline to its newest row for the open-pin (`pendingBottomScroll`),
-    /// deferred a tick so the eager VStack's rows exist before `scrollTo` runs.
-    /// Re-invoked on each content-height change so async thumbnails/link cards
-    /// resizing rows up-thread can't push the newest message below the fold. The
-    /// pin is *not* released on a timer — it stays live, gluing the view to the
-    /// tail, until the reader scrolls up (`releasePinIfScrolledAway`), so even a
-    /// link preview that resolves seconds after open still re-anchors correctly.
-    /// No-op (leaving the scroll where it is) when no pin is pending, e.g. a
-    /// reveal/search jump.
-    private func repinToBottom(proxy: ScrollViewProxy) {
+    /// Scrolls once to the pinned newest row (`pendingBottomScroll`) and clears the
+    /// pin, deferred a tick so the eager VStack's rows exist before `scrollTo` runs.
+    /// A one-shot, never a live pin: `.defaultScrollAnchor(.bottom)` already holds the
+    /// bottom as async thumbnails/link cards grow rows up-thread, so re-anchoring on
+    /// every height change (the old approach) only fought the framework and stranded
+    /// the view at the top. This just corrects the rare first-layout settle and the
+    /// send-jump, then releases so it never reads a later scroll as a re-pin. No-op
+    /// (leaving the scroll where it is) when no pin is pending — a reveal/search jump
+    /// positions itself.
+    private func scrollToNewest(proxy: ScrollViewProxy) {
         guard let target = model.pendingBottomScroll else { return }
         Task { @MainActor in
             proxy.scrollTo(target, anchor: .bottom)
-        }
-    }
-
-    /// Releases the open-pin once the reader deliberately scrolls up from the
-    /// newest row. Async row growth (a thumbnail decoding, a link card resolving)
-    /// also shifts the offset, so releases are suppressed until the content height
-    /// has held still briefly — otherwise the snap-back growth would read as a
-    /// scroll and strand the reader up-thread, the very bug this guards against.
-    /// `distanceFromBottom` is 0 at the tail and grows as older rows come into view.
-    private func releasePinIfScrolledAway(minY: CGFloat) {
-        guard model.pendingBottomScroll != nil, viewportHeight > 0 else { return }
-        guard Date().timeIntervalSince(lastHeightChangeAt) > Self.heightSettleInterval else { return }
-        let distanceFromBottom = lastContentHeight + minY - viewportHeight
-        if distanceFromBottom > Self.pinReleaseThreshold {
             model.consumeBottomScroll()
         }
     }
@@ -664,25 +598,6 @@ private struct MessageTimelineView: View {
 /// Carries the timeline content's top-edge offset (in the timeline coordinate
 /// space) up to the scroll container, which uses it to prefetch older pages.
 private struct TimelineTopOffsetKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
-/// Carries the timeline content's total height up to the scroll container, which
-/// re-pins to the newest row while the open-pin is live so async thumbnails
-/// resizing rows can't strand the reader up-thread.
-private struct TimelineContentHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
-/// Carries the scroll container's viewport height up so the pin-release math can
-/// tell how far the newest row sits below the fold.
-private struct TimelineViewportHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()

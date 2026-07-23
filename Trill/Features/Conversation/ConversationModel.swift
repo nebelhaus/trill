@@ -19,11 +19,12 @@ final class ConversationModel: ObservableObject {
     /// reply-quote jump across pages). The view consumes it.
     @Published private(set) var revealTarget: MessageID?
     @Published private(set) var highlightedMessageID: MessageID?
-    /// Set after a normal (non-reveal) load so the timeline pins to the newest
-    /// message on first appear. `.defaultScrollAnchor(.bottom)` alone
-    /// occasionally lays the ScrollView out at the top on initial layout (worst
-    /// when async thumbnails resize rows), which reads as "jumped to the top of
-    /// the thread." The view scrolls to this id on appear, then consumes it.
+    /// A one-shot "jump to newest row" request the view consumes after a single
+    /// `scrollTo`. Set after a normal (non-reveal) load and again when the reader
+    /// sends. `.defaultScrollAnchor(.bottom)` + the timeline's eager VStack do the
+    /// steady-state work — open on the newest row and hold the bottom as async
+    /// thumbnails grow rows up-thread; this only corrects the rare first-layout
+    /// settle and takes the reader to a just-sent message.
     @Published private(set) var pendingBottomScroll: MessageID?
 
     /// Armed when the local user sends into this thread, so the timeline snaps to
