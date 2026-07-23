@@ -162,10 +162,20 @@ from-source Nix build dies at package resolution. Instead the flake **wraps the
 CI-built release ZIP** — already Developer-ID signed + notarized, exactly what a
 durable Full Disk Access grant needs — pinned by `nix/release.nix` (version + sha256,
 CI-owned; see Release above). The rice's `modules/trill` places that bundle at a
-fixed `/Applications` path so the FDA grant survives rebuilds. Consequence: the flake
-tracks *releases*, not `main`, so `bench try`/`try-batch` can't feel-test an unmerged
-trill source branch through a rebuild — test those the app's own way
-(`xcodebuild … test`, then the built `.app`) before releasing, same as always.
+fixed `/Applications` path so the FDA grant survives rebuilds.
+
+**Feel-testing a source branch** (`bench try` / `try-batch`) still works, it just
+doesn't go through the Nix build. The flake exposes a `prebuilt` input (default: the
+empty `nix/dev-app` placeholder → wrap the release). When bench has local trill
+source to test, it builds `Trill.app` from the branch **in your login session**
+(where xcodebuild works), signs it with a stable identity under the
+`com.nebelhaus.trill.dev` bundle id, and overrides `prebuilt` to that build — so the
+package wraps your branch's app (tagged `<version>-dev`) instead of the release. The
+distinct `.dev` bundle id means: grant that dev build Full Disk Access **once** and
+it sticks across rebuilds (macOS keys FDA to the signature, and the identity is
+stable), your real trill's grant is never disturbed, and the dev build gets its own
+overlay DB so test runs don't touch real state. A later plain rebuild restores the
+notarized release app. Fixture mode (the dev default) needs no permissions at all.
 
 ## Conventions
 
