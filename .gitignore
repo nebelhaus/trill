@@ -5,3 +5,5 @@ build/
 xcuserdata/
 *.xcuserstate
 
+result
+result-*

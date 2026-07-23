@@ -172,3 +172,39 @@ jobs:
           git config user.email "haus-release@users.noreply.github.com"
           git commit -am "trill ${VER}"
           git push
+
+  bump-flake:
+    name: bump nix/release.nix
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # Trill is also a flake input of the rice (nebelhaus/nebelhaus), which
+      # installs the app through Nix instead of Homebrew. That flake wraps this
+      # release ZIP, pinned by version + sha256 in nix/release.nix — the exact
+      # same pair the cask carries. Keep the two in lockstep: rewrite the pin on
+      # main so a downstream `bench ship` ripples the new release into the rice's
+      # lock. The version/sha lines are CI-owned; humans never bump them.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Point nix/release.nix at the new release
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          VER="${TAG#v}"
+          curl -fsSL --retry 5 --retry-delay 5 -o /tmp/trill.zip \
+            "https://github.com/nebelhaus/trill/releases/download/$TAG/trill-$TAG-macos.zip"
+          SHA="$(sha256sum /tmp/trill.zip | cut -d' ' -f1)"
+          sed -i -E \
+            -e "s#^  version = \".*\";#  version = \"$VER\";#" \
+            -e "s#^  sha256 = \".*\";#  sha256 = \"$SHA\";#" \
+            nix/release.nix
+          if git diff --quiet; then
+            echo "nix/release.nix already current"
+            exit 0
+          fi
+          git config user.name "haus-release[bot]"
+          git config user.email "haus-release@users.noreply.github.com"
+          git commit -am "trill ${VER} (nix release pin)"
+          git push

@@ -15,9 +15,10 @@ it's launched, themed at the source, or packaged.
 | Want to change… | Repo |
 |---|---|
 | the trill app (UI, providers, inbox/conversation/search/library) | `~/code/nebelhaus/trill` ← **you are here** |
-| how trill is *installed* on the system (the `nebelhaus.trill.enable` cask wiring) | `~/code/nebelhaus/nebelhaus` → `modules/trill` |
+| how trill is *installed* on the system (the `nebelhaus.trill.enable` flake wiring) | `~/code/nebelhaus/nebelhaus` → `modules/trill` |
 | the palette trill is themed with (the source hex) | `~/code/nebelhaus/nebelung` |
-| trill's Homebrew cask (`Casks/trill.rb`) | `~/code/nebelhaus/homebrew-tap` — **CI-owned**; never hand-bump url/sha/version |
+| trill's Homebrew cask (`Casks/trill.rb`) — for standalone `brew` installs | `~/code/nebelhaus/homebrew-tap` — **CI-owned**; never hand-bump url/sha/version |
+| the flake's release pin (`nix/release.nix`) | this repo — **CI-owned**; never hand-bump version/sha (see below) |
 | user-facing docs / guides (nebelhaus.com) | `~/code/nebelhaus/workshop` (`web/`, Astro Starlight) |
 
 > **Claude: enforce this.** If a request is about launching/signing trill, its cask,
@@ -143,11 +144,28 @@ accent is user-selectable at runtime; density and ⌘+/⌘−/⌘0 zoom are sett
 the workshop) stamps today's date into `VERSION` (`YYYY.MM.DD`, `-N` on a same-day
 repeat), commits, tags `v<date>`; CI then builds the `.app`, signs it with our Apple
 Developer ID (hardened runtime) and notarizes it with Apple, publishes the GitHub
-release, and bumps `homebrew-tap`'s `Casks/trill.rb` over a deploy key.
-Never hand-edit the cask's url/sha/version. `MARKETING_VERSION` in `project.pbxproj`
-is injected from `VERSION` at release time — keep the checked-in default roughly in
-sync so local dev builds don't report a stale version, but the release value is
-authoritative.
+release, then updates **two** CI-owned pins to that release: `homebrew-tap`'s
+`Casks/trill.rb` (for `brew install`) and this repo's `nix/release.nix` (for the
+flake). Never hand-edit either — both carry the same version + sha256 and CI keeps
+them in lockstep. `MARKETING_VERSION` in `project.pbxproj` is injected from `VERSION`
+at release time — keep the checked-in default roughly in sync so local dev builds
+don't report a stale version, but the release value is authoritative.
+
+## Nix flake (how the rice installs trill)
+
+Trill is a flake, so the rice ingests it through the flake-lock chain (like pounce)
+instead of Homebrew — `nix build .#trill` gives a `$out/Applications/Trill.app`.
+It does **not** compile from source: trill is an Xcode project with ~15 SwiftPM
+packages, and macOS 26 refuses to let Nix's session-less `_nixbld` user apply
+SwiftPM's manifest sandbox (a plain `swiftc` app like pounce never trips this), so a
+from-source Nix build dies at package resolution. Instead the flake **wraps the
+CI-built release ZIP** — already Developer-ID signed + notarized, exactly what a
+durable Full Disk Access grant needs — pinned by `nix/release.nix` (version + sha256,
+CI-owned; see Release above). The rice's `modules/trill` places that bundle at a
+fixed `/Applications` path so the FDA grant survives rebuilds. Consequence: the flake
+tracks *releases*, not `main`, so `bench try`/`try-batch` can't feel-test an unmerged
+trill source branch through a rebuild — test those the app's own way
+(`xcodebuild … test`, then the built `.app`) before releasing, same as always.
 
 ## Conventions
 
