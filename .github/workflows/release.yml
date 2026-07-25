@@ -60,6 +60,13 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PW" "$KEYCHAIN" >/dev/null
           # Put our keychain first on the search list so the identity resolves.
           security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" \
+            | awk -F'"' '/Developer ID Application/{print $2; exit}')"
+          [ -n "$IDENTITY" ]
+          SIGNER_NAME="${IDENTITY#Developer ID Application: }"
+          SIGNER_NAME="${SIGNER_NAME% (*}"
+          echo "::add-mask::$IDENTITY"
+          echo "::add-mask::$SIGNER_NAME"
           rm -f "$RUNNER_TEMP/cert.p12"
 
       - name: Build Release Trill.app (Developer ID, hardened runtime)
@@ -69,6 +76,7 @@ jobs:
             -project Trill.xcodeproj \
             -scheme Trill \
             -configuration Release \
+            -quiet \
             -destination 'platform=macOS' \
             -derivedDataPath dd \
             -skipMacroValidation \
@@ -89,7 +97,6 @@ jobs:
           APP="dd/Build/Products/Release/Trill.app"
           IDENTITY="$(security find-identity -v -p codesigning "$RUNNER_TEMP/signing.keychain-db" \
             | awk -F'"' '/Developer ID Application/{print $2; exit}')"
-          echo "signing with: $IDENTITY"
           codesign --force --options runtime --timestamp \
             --entitlements Trill/Config/Trill.entitlements \
             --sign "$IDENTITY" \
@@ -134,7 +141,7 @@ jobs:
         run: |
           APP="dd/Build/Products/Release/Trill.app"
           codesign --verify --deep --strict --verbose=2 "$APP"
-          spctl -a -vvv -t exec "$APP"
+          spctl --assess --type execute "$APP"
 
       - name: Create GitHub release
         run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes
