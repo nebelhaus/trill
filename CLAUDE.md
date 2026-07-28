@@ -8,18 +8,18 @@ nebelhaus/tap/trill` on any Mac.
 
 ## Am I in the right repo? (routing)
 
-**This repo (`~/code/nebelhaus/trill`) owns THE MESSAGES CLIENT** — the SwiftUI app,
+**This repo (`~/code/workshop/trill`) owns THE MESSAGES CLIENT** — the SwiftUI app,
 its providers over `chat.db`, and its own local overlay database. Nothing about how
 it's launched, themed at the source, or packaged.
 
 | Want to change… | Repo |
 |---|---|
-| the trill app (UI, providers, inbox/conversation/search/library) | `~/code/nebelhaus/trill` ← **you are here** |
-| how trill is *installed* on the system (the `nebelhaus.trill.enable` flake wiring) | `~/code/nebelhaus/nebelhaus` → `modules/trill` |
-| the palette trill is themed with (the source hex) | `~/code/nebelhaus/nebelung` |
-| trill's Homebrew cask (`Casks/trill.rb`) — for standalone `brew` installs | `~/code/nebelhaus/homebrew-tap` — **CI-owned**; never hand-bump url/sha/version |
+| the trill app (UI, providers, inbox/conversation/search/library) | `~/code/workshop/trill` ← **you are here** |
+| how trill is *installed* on the system (the `nebelhaus.trill.enable` flake wiring) | `~/code/workshop/nebelhaus` → `modules/trill` |
+| the palette trill is themed with (the source hex) | `~/code/workshop/nebelung` |
+| trill's Homebrew cask (`Casks/trill.rb`) — for standalone `brew` installs | `~/code/workshop/homebrew-tap` — **CI-owned**; never hand-bump url/sha/version |
 | the flake's release pin (`nix/release.nix`) | this repo — **CI-owned**; never hand-bump version/sha (see below) |
-| user-facing docs / guides (nebelhaus.com) | `~/code/nebelhaus/workshop` (`web/`, Astro Starlight) |
+| user-facing docs / guides (nebelhaus.com) | `~/code/workshop` (`web/`, Astro Starlight) |
 
 > **Claude: enforce this.** If a request is about launching/signing trill, its cask,
 > or the palette's source values, STOP and point at the right repo before editing here.
