@@ -5,8 +5,8 @@
 
 **your Messages, native**
 
-a fast, flat, provider-neutral Messages client for macOS — iMessage, SMS, and RCS
-in a real native window, reading straight from `chat.db` (always read-only).
+the messages — iMessage, SMS, and RCS in a real macOS window, read straight from
+`chat.db`.
 
 ![part of nebelhaus](https://img.shields.io/badge/part_of-nebelhaus-f2c4e5?labelColor=202020)
 ![themed by nebelung](https://img.shields.io/badge/themed_by-nebelung-c9a8f1?labelColor=202020)
@@ -17,112 +17,79 @@ in a real native window, reading straight from `chat.db` (always read-only).
 
 ---
 
-Trill is a provider-neutral macOS Messages client in SwiftUI. The live provider reads
-your real conversations straight from Apple's `chat.db` (always read-only) and sends by
-driving Messages.app over Apple Events; a deterministic synthetic provider remains
-available for development.
+Trill is a fast, flat, provider-neutral Messages client in SwiftUI. It reads your
+real conversations directly from Apple's `chat.db` — **always read-only** — and
+sends by driving Messages.app over Apple Events.
 
-## Install
+Your messages stay on your Mac. Nothing is relayed, uploaded, or phoned home.
+
+## why trill
+
+- **read-only, by construction** — every connection is `SQLITE_OPEN_READONLY`. Sends go through Messages.app, which owns its own persistence. Trill never writes to your message database.
+- **flat and fast** — a native macOS 14+ split view on the nebelung palette. no web view, no chat bubbles pretending to be a website.
+- **keyboard-first** — ⌘K search palette, ⌘[ / ⌘] through recently-viewed threads, ⌘N compose, ⌘+/−/0 zoom.
+- **provider-neutral** — the live reader is one provider behind a neutral interface. a deterministic synthetic provider ships alongside it for development.
+
+## install
 
 ```sh
-# Homebrew (nebelhaus tap)
 brew install --cask nebelhaus/tap/trill
 ```
 
-The app is signed with our Apple Developer ID and notarized by Apple, so the cask
-installs it and it opens straight away — no Gatekeeper prompt, no quarantine hack.
-(If you build or copy the app by hand instead of installing the cask, macOS may
-still quarantine your copy; clear it with
-`xattr -dr com.apple.quarantine /Applications/Trill.app`.)
+Signed with our Apple Developer ID and notarized, so it opens straight away — no
+Gatekeeper prompt, no quarantine hack.
 
-Trill is part of the [nebelhaus](https://github.com/nebelhaus) family and ships by
-default in the rice, but it stands alone — install the cask above on any Mac.
+Trill ships by default in the [nebelhaus](https://github.com/nebelhaus) rice, but
+it stands alone — the cask works on any Mac running macOS 14 or newer.
 
-## What works
+## the taste
 
-- Native macOS 14+ split-view app with conversation sidebar, paged timeline, ⌘K search palette, ⌘[ / ⌘] back/forward through recently-viewed threads, pins, draft persistence, health UI, keyboard commands, and accessibility labels.
-- Flat dark UI on the Nebelung palette (desaturated Catppuccin) with a selectable accent, display density, and ⌘+/⌘−/⌘0 zoom — see `Trill/DesignSystem/`.
-- **Live Messages provider** (`Providers/LiveIMessage/`): read-only SQL over `chat.db` for iMessage/SMS/RCS conversations, messages, reactions, replies, attachments, and search (including typedstream `attributedBody` decoding); sending via AppleScript to Messages.app; new-message polling for live updates; contact-name resolution via the Contacts framework.
-- Read receipts and delivery status on outgoing messages, inline image thumbnails, Quick Look previews on attachments, clickable links, edited markers, hidden unsent messages, sender avatars in group timelines, and a Dock badge with the total unread count.
-- Quoted reply bubbles with jump-to-original, reply-count links, and tapbacks grouped by emoji with counts and own-reaction tinting (display only — Messages.app has no automation surface for sending tapbacks or threaded replies).
-- macOS notifications for incoming messages (click opens the thread, or type an inline Reply to send straight from the banner), ⌘N compose to any contact with autocomplete (existing 1:1 threads open in place), attach via paperclip / drag-drop / paste, and search results that jump to the matched message with a highlight.
-- Synthetic iMessage, SMS, and group conversations with long history, reactions, replies, image/file metadata, and missing-attachment states.
-- Provider-neutral IDs, models, capabilities, pagination, events, and send outcomes.
-- App-owned SQLite migrations for pins, drafts, provider cursors, and local read marks.
-- Read-only Messages database permission/schema probe.
+Launch it and pick **Messages** in the provider picker. That's it — if Full Disk
+Access is granted, your threads are there. Without it, Trill explains what's
+missing and links you to the right System Settings pane.
 
-The live provider never writes to `chat.db` — every connection is `SQLITE_OPEN_READONLY` and sends go through Messages.app, which owns its own persistence. The older [`beeper/platform-imessage`](https://github.com/beeper/platform-imessage) adapter remains in the tree but unused by the UI: its public `PlatformAPI` opens `chat.db` read-write to create indexes. Trill's policy no longer forbids that outright — a vetted, well-maintained library may manage its own `chat.db` writes — so enabling the adapter is gated on vetting it plus a signed-host validation pass (see [ADR 0001](docs/architecture-decisions/0001-messages-provider.md)); this milestone simply ships the direct read-only reader instead.
+Two permissions matter:
 
-## Permissions
-
-- **Full Disk Access** — required to read `~/Library/Messages/chat.db`. Grant it to the built app bundle (not Terminal) in System Settings → Privacy & Security.
+- **Full Disk Access** — required, to read `~/Library/Messages/chat.db`. Grant it to the app bundle, not Terminal.
 - **Automation ("control Messages")** — prompted on first send.
-- **Contacts** — optional; grants names *and* contact photos via the Contacts framework. Without it, names still resolve by reading the local AddressBook store directly (covered by Full Disk Access); only photos are missing.
-- **Notifications** — optional; prompted on first launch with the live provider.
 
-Marking conversations as read upstream is not possible (that would require writing to `chat.db`); opening a thread clears its badge locally and the mark persists in the app's own database.
+Contacts and Notifications are both optional. Full detail in
+[`docs/permissions.md`](docs/permissions.md).
 
-## Requirements
+## what works
 
-- macOS 14 or newer
-- Xcode 26.2 or a compatible Swift 6.2 toolchain
-- System Integrity Protection enabled
+- Conversation sidebar, paged timeline that loads older messages as you scroll, pins, draft persistence, and a health popover.
+- Reactions grouped by emoji with counts, quoted reply bubbles with jump-to-original, edited markers, and hidden unsent messages.
+- Read receipts and delivery status, inline image thumbnails, Quick Look on attachments, clickable links, sender avatars in group threads, and a Dock badge for unread count.
+- Notifications for incoming messages — click to open the thread, or type an inline reply to send straight from the banner.
+- ⌘N compose to any contact with autocomplete; attach via paperclip, drag-drop, or paste.
+- Search across conversations that jumps to the matched message and highlights it, including typedstream `attributedBody` decoding.
+- Contact names and photos via the Contacts framework, falling back to the local AddressBook store when Contacts is denied.
 
-Fixture mode does not need Full Disk Access, Contacts, Accessibility, Automation, or a signed-in Messages account.
+Two things Messages.app gives no automation surface for, so Trill displays but
+cannot send: **tapbacks** and **threaded replies**. Marking conversations read
+upstream is likewise impossible — that would mean writing to `chat.db` — so
+opening a thread clears its badge locally, in Trill's own database.
 
-## Build and run in Xcode
+## more
 
-1. Open `Trill.xcodeproj`.
-2. Wait for Swift Package Manager to resolve dependencies.
-3. If Xcode asks whether to trust the `PlatformSDKMacros` build macro from the pinned package, review and approve it.
-4. Select the **Trill** scheme and **My Mac** destination.
-5. Press **⌘R**. The app opens in **Synthetic Fixture** mode.
+- [Reference](docs/reference.md) — building, testing, and the provider architecture
+- [Permissions](docs/permissions.md) — what Trill asks for, and why
+- [Product requirements](PRD.md) · [Architecture](ARCHITECTURE.md)
+- [Security boundaries](docs/security.md) · [Testing guide](docs/testing.md)
+- [The trill guide](https://nebelhaus.com/guides/trill/) on nebelhaus.com
 
-Try selecting conversations, scrolling back through a thread (older pages load automatically as you near the top; **Load Earlier Messages** stays as a manual fallback), **⌘K** search, pinning from a sidebar context menu, editing a draft, zooming with **⌘+/⌘−/⌘0**, picking an accent in Settings, and opening the health popover from the sidebar footer. The composer is deliberately disabled and never fakes a send.
+## the family
 
-Run tests with **⌘U**, or use Terminal:
+- 🏠 [**nebelhaus**](https://github.com/nebelhaus/nebelhaus) — the house. the whole rice, one Nix flake. start here.
+- 🐾 [**pounce**](https://github.com/nebelhaus/pounce) — the palette. keyboard-first launcher; every command a file.
+- 🐦 [**trill**](https://github.com/nebelhaus/trill) — the messages. native iMessage/SMS/RCS, read from `chat.db`. *(you are here)*
+- 🪺 [**perch**](https://github.com/nebelhaus/perch) — the shelf. files, caught in the notch.
+- 🌫️ [**nebelung**](https://github.com/nebelhaus/nebelung) — the theme. the silver-mist palette.
+- 🧰 [**workshop**](https://github.com/nebelhaus/workshop) — the bench. where the family is built.
 
-```sh
-xcodebuild -skipMacroValidation \
-  -project Trill.xcodeproj \
-  -scheme Trill \
-  -configuration Debug \
-  -destination 'platform=macOS' \
-  -derivedDataPath DerivedData \
-  CODE_SIGNING_ALLOWED=NO test
-```
+Each one stands alone. Together they're a house.
 
-`-skipMacroValidation` is for unattended command-line builds; it does not replace reviewing the macro trust prompt in Xcode.
+## license
 
-If this checkout lives in an iCloud-synced folder (e.g. `~/Documents`), point `-derivedDataPath` somewhere unsynced (or omit it to use Xcode's default). iCloud's file provider tags freshly built bundles with extended attributes, which fails codesign with "resource fork, Finder information, or similar detritus not allowed".
-
-## Provider and permissions
-
-The provider picker offers **Synthetic Fixture** and **Messages (Safety-gated)**. Selecting Messages performs only a direct `SQLITE_OPEN_READONLY` probe. If Full Disk Access is absent, the app explains it and links to System Settings. If access exists, Messages mode reads live over `LiveIMessageProvider` — nothing further gates it. The vetting/signed-host gate applies only to the dormant `PlatformIMessageProvider`, which the UI never constructs (see [ADR 0002](docs/architecture-decisions/0002-live-imessage-provider.md)).
-
-Never disable SIP for this project. Full Disk Access, when eventually used, belongs to the built app's bundle identity—not Terminal—when launched from Xcode or Finder.
-
-## Documentation
-
-- [Product requirements](PRD.md)
-- [Architecture](ARCHITECTURE.md)
-- [Provider decision](docs/architecture-decisions/0001-messages-provider.md)
-- [Testing guide](docs/testing.md)
-- [Security boundaries](docs/security.md)
-- [Ideas & feature backlog](docs/ideas.md)
-
-## Brand assets
-
-The logo set lives in [`assets/`](assets/) — the mark is a pair of cat-ears
-over a typing-indicator speech bubble in Nebelung sky (`#9be0d5`-ish teal) on
-the house grey.
-
-| File | Use |
-|---|---|
-| [`trill-icon.png`](assets/trill-icon.png) | app icon — cyan mark on grey (primary) |
-| [`trill-icon-sky.png`](assets/trill-icon-sky.png) | app icon — grey mark on sky (inverted) |
-| [`trill-banner.png`](assets/trill-banner.png) | wordmark banner, cyan on grey (the header above) |
-
-## Future BlueBubbles relay
-
-No relay or push networking is included. The provider interface preserves that option for a later milestone; see the [future BlueBubbles relay design in ARCHITECTURE.md](ARCHITECTURE.md#11-future-bluebubbles-relay-design).
+MIT © nebelhaus
