@@ -23,6 +23,8 @@ sends by driving Messages.app over Apple Events.
 
 Your messages stay on your Mac. Nothing is relayed, uploaded, or phoned home.
 
+📖 **[nebelhaus.com/trill](https://nebelhaus.com/trill)**
+
 ## why trill
 
 - **read-only, by construction** — every connection is `SQLITE_OPEN_READONLY`. Sends go through Messages.app, which owns its own persistence. Trill never writes to your message database.
@@ -73,11 +75,11 @@ opening a thread clears its badge locally, in Trill's own database.
 
 ## more
 
+- [nebelhaus.com/trill](https://nebelhaus.com/trill) — the product page
 - [Reference](docs/reference.md) — building, testing, and the provider architecture
 - [Permissions](docs/permissions.md) — what Trill asks for, and why
-- [Product requirements](PRD.md) · [Architecture](ARCHITECTURE.md)
-- [Security boundaries](docs/security.md) · [Testing guide](docs/testing.md)
-- [The trill guide](https://nebelhaus.com/guides/trill/) on nebelhaus.com
+- [Architecture](ARCHITECTURE.md) · [Security boundaries](docs/security.md) · [Testing guide](docs/testing.md)
+- [The trill guide](https://nebelhaus.com/guides/trill/) — using trill inside the rice
 
 ## the family
 
