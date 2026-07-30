@@ -25,7 +25,7 @@ struct CompletionPickerView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(Rice.surface1, lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+        .shadow(color: Rice.shadow(0.3), radius: 12, y: 4)
         .accessibilityLabel("Completion suggestions")
     }
 

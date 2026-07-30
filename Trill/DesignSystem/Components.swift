@@ -207,7 +207,7 @@ struct ToastCard<Content: View>: View {
                     .strokeBorder(Rice.surface1, lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .shadow(color: .black.opacity(0.32), radius: 16, y: 7)
+            .shadow(color: Rice.shadow(0.32), radius: 16, y: 7)
     }
 }
 

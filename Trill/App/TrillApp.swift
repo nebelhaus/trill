@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 @main
@@ -104,13 +105,45 @@ struct TrillApp: App {
 private struct RicedRoot<Content: View>: View {
     @AppStorage("uiScale") private var uiScale = 1.0
     @AppStorage("accentName") private var accentName = "mauve"
+    @AppStorage("themeAppearance") private var themeAppearance = RiceAppearance.system.rawValue
+    @AppStorage("themeDarkName") private var themeDarkName = ""
+    @AppStorage("themeLightName") private var themeLightName = ""
+    /// Mirrors the macOS light/dark switch. State, not a direct read, so the
+    /// system notification re-renders this wrapper.
+    @State private var systemIsLight = RiceThemeResolver.systemIsLight
     @ViewBuilder let content: Content
 
+    private var themeName: String {
+        RiceThemeResolver.resolve(
+            appearance: RiceAppearance(rawValue: themeAppearance) ?? .system,
+            darkPick: themeDarkName,
+            lightPick: themeLightName,
+            systemIsLight: systemIsLight
+        )
+    }
+
     var body: some View {
+        // Swap the palette before the subtree renders: children read the `Rice.*`
+        // statics during their own body evaluation, so `current` has to be the new
+        // palette by then. `.id(palette.name)` then rebuilds that subtree on a
+        // theme change — the static reads aren't observable, so a switch needs the
+        // identity change to take effect, and it only costs one rebuild per switch.
+        let palette = RicePalette.named(themeName)
+        let _ = Rice.apply(palette)
+
         content
             .environment(\.uiScale, uiScale)
             .environment(\.riceAccent, Rice.accent(named: accentName))
             .tint(Rice.accent(named: accentName))
-            .preferredColorScheme(.dark)
+            // Match AppKit's own polarity to the palette's, so text fields,
+            // scrollers, menus, and sheet chrome don't stay dark under a latte.
+            .preferredColorScheme(palette.isLight ? .light : .dark)
+            .id(palette.name)
+            .onReceive(
+                DistributedNotificationCenter.default()
+                    .publisher(for: RiceThemeResolver.systemAppearanceChanged)
+            ) { _ in
+                systemIsLight = RiceThemeResolver.systemIsLight
+            }
     }
 }

@@ -1,50 +1,72 @@
 import SwiftUI
 
-extension Color {
-    init(hex: UInt32) {
-        self.init(
-            .sRGB,
-            red: Double((hex >> 16) & 0xFF) / 255,
-            green: Double((hex >> 8) & 0xFF) / 255,
-            blue: Double(hex & 0xFF) / 255
-        )
-    }
-}
-
-/// Nebelung palette: the desaturated Catppuccin Mocha variant shared across the
+/// Nebelung palette: the desaturated Catppuccin variant shared across the
 /// nebelhaus rice (nebelung, pounce, …). Flat surfaces, grey neutrals, muted
 /// pastel accents, no shadows.
 ///
-/// These hex values are **hand-copied** from `nebelung/palette/nebelung.hex.json`
-/// (the family's single source of truth). Trill builds outside Nix, so unlike
-/// pounce it can't consume nebelung's generated `palette` output — a palette
-/// change in nebelung must be mirrored here by hand. (Trill uses a subset:
-/// `overlay2`, `rosewater`, and `flamingo` are intentionally omitted.)
+/// A static façade over the **active** palette, so every view keeps reading
+/// `Rice.text` / `Rice.base` while the colors themselves come from
+/// `RicePalette` — one of the four compiled-in nebelung variants, or a JSON file
+/// in `~/.config/trill/themes/`. The colors in a `RicePalette` are built once
+/// when it's applied, so a read here is a load and a field access, not a hex
+/// parse: no cost at the call site versus the `static let` this replaced.
 enum Rice {
-    static let crust = Color(hex: 0x121212)
-    static let mantle = Color(hex: 0x191919)
-    static let base = Color(hex: 0x202020)
-    static let surface0 = Color(hex: 0x343434)
-    static let surface1 = Color(hex: 0x494949)
-    static let surface2 = Color(hex: 0x5C5C5C)
-    static let overlay0 = Color(hex: 0x717171)
-    static let overlay1 = Color(hex: 0x858585)
-    static let text = Color(hex: 0xD7D7D7)
-    static let subtext1 = Color(hex: 0xC3C3C3)
-    static let subtext0 = Color(hex: 0xAEAEAE)
+    /// The palette everything paints with. Written only from the main actor
+    /// (`apply(_:)`, from `RicedRoot` as it renders); every read is a view body,
+    /// also on the main actor.
+    nonisolated(unsafe) private(set) static var current: RicePalette = .nebelung
 
-    static let mauve = Color(hex: 0xC9A8F1)
-    static let blue = Color(hex: 0x8DB4F3)
-    static let lavender = Color(hex: 0xB5BFF8)
-    static let sapphire = Color(hex: 0x7DC6E7)
-    static let sky = Color(hex: 0x91DBE8)
-    static let teal = Color(hex: 0x9BE0D5)
-    static let green = Color(hex: 0xABE1A6)
-    static let yellow = Color(hex: 0xF7E2B5)
-    static let peach = Color(hex: 0xF5B58E)
-    static let maroon = Color(hex: 0xE6A3AD)
-    static let red = Color(hex: 0xED8FA9)
-    static let pink = Color(hex: 0xF2C4E5)
+    /// Swap the active palette. Views don't observe this — `RicedRoot` rebuilds
+    /// its subtree on the theme name, which is what makes a switch visible.
+    @MainActor
+    static func apply(_ palette: RicePalette) {
+        current = palette
+    }
+
+    static var crust: Color { current.crust }
+    static var mantle: Color { current.mantle }
+    static var base: Color { current.base }
+    static var surface0: Color { current.surface0 }
+    static var surface1: Color { current.surface1 }
+    static var surface2: Color { current.surface2 }
+    static var overlay0: Color { current.overlay0 }
+    static var overlay1: Color { current.overlay1 }
+    static var text: Color { current.text }
+    static var subtext1: Color { current.subtext1 }
+    static var subtext0: Color { current.subtext0 }
+
+    static var mauve: Color { current.mauve }
+    static var blue: Color { current.blue }
+    static var lavender: Color { current.lavender }
+    static var sapphire: Color { current.sapphire }
+    static var sky: Color { current.sky }
+    static var teal: Color { current.teal }
+    static var green: Color { current.green }
+    static var yellow: Color { current.yellow }
+    static var peach: Color { current.peach }
+    static var maroon: Color { current.maroon }
+    static var red: Color { current.red }
+    static var pink: Color { current.pink }
+
+    /// Is the active palette light? Drives `preferredColorScheme` (so AppKit's
+    /// own text fields, scrollers, and menus match) and shadow weight.
+    static var isLight: Bool { current.isLight }
+
+    /// A drop shadow that works in both polarities. `alpha` is the dark-palette
+    /// value; on a light palette the same black at the same weight reads as
+    /// dirt, so it's pulled back to a third — light UI separates by hairline and
+    /// fill, not by depth.
+    static func shadow(_ alpha: Double) -> Color {
+        .black.opacity(current.isLight ? alpha * 0.35 : alpha)
+    }
+
+    /// The dim behind a modal panel (command palette, search, library, cheat
+    /// sheet). Same reasoning as `shadow(_:)` in reverse: 38% black over a latte
+    /// doesn't read as "the panel is in front", it reads as the window turning
+    /// grey, so a light palette gets a much thinner veil.
+    static func scrim(_ alpha: Double = 0.38) -> Color {
+        .black.opacity(current.isLight ? alpha * 0.45 : alpha)
+    }
 
     static let accentNames = [
         "mauve", "blue", "lavender", "sapphire", "sky", "teal",
@@ -85,7 +107,9 @@ private struct UIScaleKey: EnvironmentKey {
 }
 
 private struct RiceAccentKey: EnvironmentKey {
-    static let defaultValue = Rice.mauve
+    // Computed, not a `let`: a stored default would freeze whichever palette was
+    // active the first time it was touched.
+    static var defaultValue: Color { Rice.mauve }
 }
 
 extension EnvironmentValues {

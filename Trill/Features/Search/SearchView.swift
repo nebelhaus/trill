@@ -10,7 +10,7 @@ struct SearchView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            Color.black.opacity(0.38)
+            Rice.scrim()
                 .ignoresSafeArea()
                 .onTapGesture { dismiss() }
 

@@ -527,6 +527,20 @@ Use small `@Observable @MainActor` feature models:
 
 Inject use cases/repositories through `AppEnvironment`; do not use uncontrolled singletons.
 
+### Theming
+
+The palette is **data, not literals**. `Rice` is a static façade; the active
+`RicePalette` is one of the four compiled-in nebelung variants (dark/latte ×
+normal/high-contrast) or a runtime JSON palette from
+`~/.config/trill/themes/<name>.json`, where a file shadows a built-in of the same
+name. Resolution is Settings pick › `~/.config/trill/config.json`
+(`themeDark`/`themeLight`, machine-managed by the rice) › compiled-in default pair,
+with the appearance preference (follow macOS / dark / light) choosing within the
+pair. Polarity is *derived* from the luminance of `base` and drives
+`preferredColorScheme`, shadows, and modal scrims — nothing in the UI may assume a
+dark background. `RicedRoot` re-identifies its subtree on the palette name so a
+switch takes effect without a relaunch; steady-state reads are field accesses.
+
 ### Timeline rendering
 
 Start with a paged `LazyVStack` inside `ScrollView` only if profiling meets the performance target. Preserve an escape hatch to an `NSCollectionView` implementation for:
@@ -712,7 +726,7 @@ Native live provider (read-only `chat.db` + AppleScript send), WAL-driven live u
 - Multiple conversation windows and window-state restoration (conversation tabs shipped).
 - Saved searches and richer search-filter UI.
 - Attachment/library refinements.
-- Accessibility audit (VoiceOver, Dynamic Type, high-contrast theme).
+- Accessibility audit (VoiceOver, Dynamic Type; the high-contrast palettes shipped).
 
 ### Then — notification intelligence (PRD §7.6)
 
