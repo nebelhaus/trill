@@ -10,6 +10,11 @@ struct SettingsView: View {
     @AppStorage("privacyBlur") private var privacyBlur = false
     @AppStorage("showMenuBarItem") private var showMenuBarItem = true
     @AppStorage("linkPreviews") private var linkPreviews = false
+    @AppStorage("themeAppearance") private var themeAppearance = RiceAppearance.system.rawValue
+    @AppStorage("themeDarkName") private var themeDarkName = ""
+    @AppStorage("themeLightName") private var themeLightName = ""
+    /// Listed once rather than per body evaluation — it's a directory read.
+    @State private var themeNames = RicePalette.availableNames()
 
     var body: some View {
         ScrollView {
@@ -18,10 +23,30 @@ struct SettingsView: View {
         .frame(width: 420)
         .frame(maxHeight: 640)
         .background(Rice.base)
+        // A palette dropped in while Settings was open should show up on reopen.
+        .onAppear { themeNames = RicePalette.availableNames() }
     }
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Theme")
+                    .riceSectionHeader()
+                HStack(spacing: 6) {
+                    ForEach(RiceAppearance.allCases) { option in
+                        Button(option.title) { themeAppearance = option.rawValue }
+                            .buttonStyle(DensityChoiceStyle(isSelected: themeAppearance == option.rawValue))
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+                ThemeMenu(title: "Dark", selection: $themeDarkName, names: themeNames)
+                ThemeMenu(title: "Light", selection: $themeLightName, names: themeNames)
+                Text("Automatic follows the nebelung variant this Mac is set to, then falls back to built-in nebelung. Drop any nebelung or Catppuccin hex JSON into ~/.config/trill/themes/ and it shows up here — no rebuild.")
+                    .riceFont(10)
+                    .foregroundStyle(Rice.overlay0)
+            }
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("Accent")
                     .riceSectionHeader()
@@ -161,12 +186,54 @@ struct SettingsView: View {
 
             ExportSettingsView(inbox: inbox)
 
-            Text("Native Messages wears the Nebelung rice: flat, dark, desaturated Catppuccin.")
+            Text("Native Messages wears the Nebelung rice: flat, desaturated Catppuccin, in dark or latte.")
                 .riceFont(10)
                 .foregroundStyle(Rice.overlay0)
         }
         .padding(24)
         .frame(width: 420, alignment: .leading)
+    }
+}
+
+/// Which palette one polarity uses. "Automatic" means *unset* — resolution then
+/// falls through to `~/.config/trill/config.json` (what the rice writes) and
+/// finally to the compiled-in nebelung pair.
+private struct ThemeMenu: View {
+    let title: String
+    @Binding var selection: String
+    let names: [String]
+
+    private static let automatic = "Automatic"
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .riceFont(11)
+                .foregroundStyle(Rice.subtext0)
+                // Fixed width so the two menus line up; wide enough that the
+                // label survives ⌘+ zoom without wrapping mid-word.
+                .lineLimit(1)
+                .fixedSize()
+                .frame(width: 44, alignment: .leading)
+            Menu {
+                Button(Self.automatic) { selection = "" }
+                Divider()
+                ForEach(names, id: \.self) { name in
+                    Button(name) { selection = name }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(selection.isEmpty ? Self.automatic : selection)
+                        .riceFont(11, .medium)
+                    Image(systemName: "chevron.down")
+                        .riceFont(8)
+                }
+                .foregroundStyle(Rice.text)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .accessibilityLabel("\(title) palette")
+        }
     }
 }
 

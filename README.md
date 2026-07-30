@@ -29,6 +29,7 @@ Your messages stay on your Mac. Nothing is relayed, uploaded, or phoned home.
 
 - **read-only, by construction** — every connection is `SQLITE_OPEN_READONLY`. Sends go through Messages.app, which owns its own persistence. Trill never writes to your message database.
 - **flat and fast** — a native macOS 14+ split view on the nebelung palette. no web view, no chat bubbles pretending to be a website.
+- **themeable at runtime** — dark or latte, normal or high-contrast, following macOS or pinned; drop any nebelung/Catppuccin hex JSON into `~/.config/trill/themes/` and pick it in Settings. no rebuild.
 - **keyboard-first** — ⌘K search palette, ⌘[ / ⌘] through recently-viewed threads, ⌘N compose, ⌘+/−/0 zoom.
 - **provider-neutral** — the live reader is one provider behind a neutral interface. a deterministic synthetic provider ships alongside it for development.
 

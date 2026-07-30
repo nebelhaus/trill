@@ -131,12 +131,35 @@ xcodebuild -skipMacroValidation -project Trill.xcodeproj -scheme Trill \
 
 ## Theming
 
-Colors live in `DesignSystem/Rice.swift` (the **nebelung** palette). Because Trill
-builds outside Nix, it can't consume nebelung's generated `palette` flake output the
-way pounce does — the hex literals are **hand-copied** from
-`nebelung/palette/nebelung.hex.json`. A palette change in nebelung must be mirrored
-here by hand (Trill uses a subset — `overlay2`/`rosewater`/`flamingo` omitted). The
-accent is user-selectable at runtime; density and ⌘+/⌘−/⌘0 zoom are settings.
+`Rice` (`DesignSystem/Rice.swift`) is a **static façade over the active palette** —
+views keep reading `Rice.text` / `Rice.base`, and the colors come from a
+`RicePalette` (`DesignSystem/RicePalette.swift`). All four **nebelung** variants
+(dark/latte × normal/high-contrast) are compiled in, so a `brew` install with an
+empty `~/.config` can still switch flavor; anything else is a **runtime palette**
+read from `~/.config/trill/themes/<name>.json` — a flat catppuccin-style
+`role → "#hex"` map, i.e. nebelung's `*.hex.json` verbatim. **A file shadows a
+built-in of the same name**, which is how a nebelung palette bump reaches an
+already-installed Trill; a missing or malformed file falls back to compiled-in
+nebelung. Same model as pounce's `pkgs/pounce/Theme.swift`.
+
+- Because Trill builds outside Nix it can't consume nebelung's generated `palette`
+  flake output, so the compiled-in hex is still **hand-copied** from
+  `nebelung/palette/*.hex.json` and a palette change there must be mirrored here by
+  hand (Trill uses a subset — `overlay2`/`rosewater`/`flamingo` omitted).
+- **Which palette applies:** Settings pick › `~/.config/trill/config.json`
+  (`themeDark`/`themeLight`, written by the rice's `modules/trill` so
+  `nebelhaus.theme.flavor`/`.contrast` reach an app whose own settings live in
+  `UserDefaults`) › compiled-in nebelung. The appearance preference
+  (`Follow macOS`/`Dark`/`Light`) picks which of the pair applies.
+- **Polarity is derived, never declared** — `RicePalette.isLight` is the luminance of
+  `base`, and it drives `preferredColorScheme` (so AppKit's own fields/menus follow)
+  plus `Rice.shadow(_:)` / `Rice.scrim(_:)`, which are lighter on a light palette.
+  Never hard-code `.black.opacity(…)` for a shadow or modal dim — a latte turns it to
+  mud. Palette-relative fills (`Rice.surface0.opacity(0.55)`) are polarity-safe.
+- **A theme switch rebuilds the view tree** (`RicedRoot` puts `.id(palette.name)` on
+  its content) because static reads aren't observable. That's one rebuild per switch
+  and nothing at steady state — a `Rice.text` read is a field access, not a hex parse.
+- The accent is user-selectable at runtime; density and ⌘+/⌘−/⌘0 zoom are settings.
 
 ## Release
 

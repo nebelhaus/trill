@@ -16,7 +16,7 @@ struct CommandPaletteView: View {
         // a single source of truth for the keyboard handlers below.
         let items = PaletteRanking.items(query: model.paletteQuery, conversations: model.conversations, actions: actions)
         return ZStack(alignment: .top) {
-            Color.black.opacity(0.38)
+            Rice.scrim()
                 .ignoresSafeArea()
                 .onTapGesture { dismiss() }
 

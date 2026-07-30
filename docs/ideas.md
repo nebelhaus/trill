@@ -138,7 +138,7 @@ a model themselves; trill never makes a call and nothing leaves the Mac.
 | **Density modes** | Compact / comfortable spacing presets | S | ✅ | Extends existing `uiScale`. |
 | **Per-conversation accent** | Optional accent color or subtle wallpaper per thread | M | ✅ | Overlay-stored; fits the Rice system. |
 | **Insert/appear animations** | Smooth bubble entry, tapback pop matching iMessage | M | ✅ | Pure SwiftUI polish. |
-| **Light mode / theme variants** | Beyond the current dark Rice palette | M | ✅ | Theming plumbing (`riceAccent`) already exists. |
+| **Light mode / theme variants** | Beyond the current dark Rice palette | M | ✅ 🚢 | Shipped. `Rice` became a façade over `RicePalette`: all four nebelung variants (dark/latte × normal/high-contrast) compiled in, plus **runtime palettes** from `~/.config/trill/themes/<name>.json` (flat catppuccin `role → #hex`, i.e. nebelung's `*.hex.json` verbatim; a file shadows a built-in of the same name, malformed falls back). Settings gains `Follow macOS / Dark / Light` + a palette menu per polarity; resolution is Settings pick › `~/.config/trill/config.json` (rice-written `themeDark`/`themeLight`) › built-in. Polarity is derived from `base` luminance and drives `preferredColorScheme` + `Rice.shadow`/`Rice.scrim` (the four `.black.opacity(0.38)` modal dims and two shadows were dark-only). Live switch, no relaunch (`RicedRoot` re-ids on palette name). |
 | **Delivery timeline detail** | Tap a message to see the sent → delivered → read timeline | S | ✅ | We already read all three timestamps. |
 
 ## Privacy & trust (this app reads everything — earn it)
@@ -156,7 +156,7 @@ a model themselves; trill never makes a call and nothing leaves the Mac.
 |------|------|--------|-------|-------|
 | **VoiceOver pass** | Proper labels/roles across the timeline and sidebar | M | ✅ | Some `accessibility*` already present; needs a real audit. |
 | **Dynamic type** | Honor system text-size, extend beyond `uiScale` | M | ✅ | |
-| **High-contrast theme** | A legibility-first palette variant | S–M | ✅ | Pairs with theme variants. |
+| **High-contrast theme** | A legibility-first palette variant | S–M | ✅ 🚢 | Shipped with **Light mode / theme variants** above — `nebelung-high-contrast` and `nebelung-latte-high-contrast` are compiled in and selectable per polarity in Settings (or via the rice's `nebelhaus.theme.contrast`). The rest of the accessibility audit (VoiceOver, Dynamic Type) is still open. |
 
 ## Liveness & latency (largely done)
 
