@@ -38,6 +38,14 @@ struct AppCommands: Commands {
     let zoomReset: () -> Void
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates…") {
+                Task { @MainActor in
+                    UpdateCheck.shared.checkForUpdates(userInitiated: true)
+                }
+            }
+        }
+
         CommandGroup(replacing: .newItem) {
             Button("New Message", action: newMessage)
                 .keyboardShortcut("n", modifiers: .command)

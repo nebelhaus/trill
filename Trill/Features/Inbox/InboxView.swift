@@ -316,6 +316,7 @@ private struct SidebarView: View {
     /// "hide sidebar" toggle has nothing to reveal and is dropped.
     var isCompact = false
     @State private var isHealthPresented = false
+    @StateObject private var updateCheck = UpdateCheck.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -325,6 +326,12 @@ private struct SidebarView: View {
                 RiceDivider()
             }
             content
+            if updateCheck.pendingVersion != nil {
+                UpdateNudgeCard(check: updateCheck)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 4)
+                    .padding(.bottom, 6)
+            }
             RiceDivider()
             footer
         }
@@ -1249,6 +1256,85 @@ private extension HealthReason {
         case .disabled: "Disabled"
         case .notRequested: "Not requested"
         case .manualVerificationRequired: "Manual verification required"
+        }
+    }
+}
+
+// MARK: - Update Nudge Card
+
+private struct UpdateNudgeCard: View {
+    @ObservedObject var check: UpdateCheck
+    @Environment(\.riceAccent) private var accent
+
+    var body: some View {
+        if let pendingVersion = check.pendingVersion {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .riceFont(14)
+                        .foregroundStyle(accent)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Trill \(pendingVersion) available")
+                            .riceFont(12, .semibold)
+                            .foregroundStyle(Rice.text)
+
+                        Text(check.updateStatusMessage ?? check.installKind.actionHint)
+                            .riceFont(11)
+                            .foregroundStyle(Rice.subtext0)
+                            .lineLimit(2)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Button {
+                        check.dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .riceFont(10, .medium)
+                            .foregroundStyle(Rice.overlay0)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Dismiss until next release")
+                }
+
+                HStack {
+                    Spacer()
+                    if check.isUpdating {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Updating…")
+                                .riceFont(11, .medium)
+                                .foregroundStyle(Rice.subtext1)
+                        }
+                    } else {
+                        Button {
+                            check.performUpdate()
+                        } label: {
+                            Text(buttonLabel)
+                                .riceFont(11, .semibold)
+                        }
+                        .buttonStyle(RiceProminentButtonStyle())
+                    }
+                }
+            }
+            .padding(10)
+            .background(Rice.surface0.opacity(0.6))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Rice.surface1, lineWidth: 1)
+            )
+        }
+    }
+
+    private var buttonLabel: String {
+        switch check.installKind {
+        case .homebrew, .direct, .unknown:
+            return "Update Now"
+        case .rice, .nix:
+            return "Copy Command"
         }
     }
 }

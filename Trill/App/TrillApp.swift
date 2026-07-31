@@ -26,6 +26,10 @@ struct TrillApp: App {
         ) { _ in
             MainActor.assumeIsolated { inbox.composerModel.flushDraft() }
         }
+
+        Task { @MainActor in
+            UpdateCheck.shared.warm()
+        }
     }
 
     var body: some Scene {
