@@ -43,7 +43,9 @@ enum InboxLoadState: Equatable {
 
 @MainActor
 final class InboxModel: ObservableObject {
-    @Published private(set) var state: InboxLoadState = .idle
+    @Published private(set) var state: InboxLoadState = .idle {
+        didSet { syncSidebarWithState() }
+    }
     @Published private(set) var conversations: [Conversation] = []
     /// The active tab. Always an element of `openTabs`, or `nil` when nothing is
     /// open. Persisted so the active thread survives a relaunch.
@@ -125,6 +127,12 @@ final class InboxModel: ObservableObject {
     /// a conversation's Folders menu, or the command palette. `nil` = closed.
     @Published var folderEditor: FolderEditorMode?
     @Published var isSidebarVisible = true
+    /// `nil` outside a recovery episode. Inside one, whether the collapse was
+    /// ours to undo — set false the moment the user toggles the sidebar
+    /// themselves, so reopening it sticks (a Recheck won't slam it shut again)
+    /// and recovery won't re-open a sidebar they chose to close. See
+    /// `syncSidebarWithState`.
+    private var recoveryCollapseWasAutomatic: Bool?
     /// Active sidebar filter, persisted across launches. Migrates the legacy
     /// `showsUnreadOnly` bool the first time so an existing unread-only view is
     /// preserved. `showsUnreadOnly` / `showsNeedsReplyOnly` are convenience
@@ -1277,6 +1285,32 @@ final class InboxModel: ObservableObject {
 
     func toggleSidebar() {
         isSidebarVisible.toggle()
+        // Mid-episode the user has now overruled us; the sidebar is theirs until
+        // the provider recovers.
+        if recoveryCollapseWasAutomatic != nil { recoveryCollapseWasAutomatic = false }
+    }
+
+    /// In a recovery state the list has nothing to show, so the sidebar would only
+    /// repeat the detail pane's recovery view in a cramped mini-notice — collapse
+    /// it and let the full-width recovery screen own the window. Reopening is one
+    /// click on the floating toggle (or ⌘⌃S), and that choice sticks: the collapse
+    /// fires once per episode, not on every `Recheck`.
+    ///
+    /// `.idle`/`.loading` deliberately do nothing — every `load()` passes through
+    /// `.loading`, and reacting there would flash the sidebar on each refresh.
+    private func syncSidebarWithState() {
+        switch state {
+        case .permissionMissing, .unsupportedSchema, .providerUnavailable, .failed:
+            guard recoveryCollapseWasAutomatic == nil else { return }
+            recoveryCollapseWasAutomatic = isSidebarVisible
+            isSidebarVisible = false
+        case .loaded, .empty:
+            // Restore only what we collapsed — a sidebar the user closed stays closed.
+            if recoveryCollapseWasAutomatic == true { isSidebarVisible = true }
+            recoveryCollapseWasAutomatic = nil
+        case .idle, .loading:
+            break
+        }
     }
 
     private func sort(_ values: [Conversation]) -> [Conversation] {
