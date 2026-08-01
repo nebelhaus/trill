@@ -13,8 +13,22 @@ struct SettingsView: View {
     @AppStorage("themeAppearance") private var themeAppearance = RiceAppearance.system.rawValue
     @AppStorage("themeDarkName") private var themeDarkName = ""
     @AppStorage("themeLightName") private var themeLightName = ""
+    /// Read by `UpdateCheck.automaticChecksEnabled`; defaults to on.
+    @AppStorage("automaticUpdateChecks") private var automaticUpdateChecks = true
     /// Listed once rather than per body evaluation — it's a directory read.
     @State private var themeNames = RicePalette.availableNames()
+
+    /// Names how THIS install takes an update, so the toggle's copy matches
+    /// what the sidebar card will offer (`InstallKind`).
+    private var updateCohortNote: String {
+        switch UpdateCheck.shared.installKind {
+        case .homebrew: return "Installed with Homebrew — updates run brew upgrade --cask trill."
+        case .direct: return "Installed from the release ZIP — Trill can replace itself."
+        case .rice: return "Installed by the nebelhaus rice — updates come from haus update."
+        case .nix: return "Running from the Nix store — updates come from your flake input."
+        case .unknown: return "Updates open the GitHub release page."
+        }
+    }
 
     var body: some View {
         ScrollView {
@@ -178,6 +192,20 @@ struct SettingsView: View {
                         .buttonStyle(DensityChoiceStyle(isSelected: !linkPreviews))
                 }
                 Text("Fetches Open Graph titles, descriptions, and thumbnails for links in the Library (⌘⇧L). Networked — each link's host is contacted; results are cached.")
+                    .riceFont(10)
+                    .foregroundStyle(Rice.overlay0)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Updates")
+                    .riceSectionHeader()
+                HStack(spacing: 6) {
+                    Button("On") { automaticUpdateChecks = true }
+                        .buttonStyle(DensityChoiceStyle(isSelected: automaticUpdateChecks))
+                    Button("Off") { automaticUpdateChecks = false }
+                        .buttonStyle(DensityChoiceStyle(isSelected: !automaticUpdateChecks))
+                }
+                Text("\(updateCohortNote) Checks GitHub for a new release hourly — one request carrying nothing but an IP. ⌘-menu › Check for Updates… works either way.")
                     .riceFont(10)
                     .foregroundStyle(Rice.overlay0)
             }

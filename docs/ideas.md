@@ -241,3 +241,25 @@ provider query) scopes share one `StyleScope`-parameterized type. New files:
 throughout. Next on this lane is **style-aware tab completion** (BYOK, opt-in),
 which reuses this profile as its cached system prompt; it needs the BYOK
 settings + data-transparency panel first.
+
+## Cohort-aware update checking landed (2026-08-01)
+
+Trill now tells you when a release is out and, more to the point, tells you the
+*right* way to take it: `Platform/UpdateCheck.swift` polls the latest-release tag
+hourly, shows a card at the bottom of the sidebar, and posts at most one banner
+per version per day. Ported from pounce's `UpdateNudge` — same CalVer ordering,
+same per-version dismissal, same once-a-day banner ceiling.
+
+The interesting half is `InstallKind`. Pounce could tell its cohorts apart by
+path; trill can't, because the rice's activation script, a Homebrew cask, and a
+drag-install all end up at `/Applications/Trill.app`. Detection therefore leans
+on two out-of-band receipts — the rice's `trill.installed-from` marker and
+brew's `Caskroom/trill` directory — and only the two cohorts that own their own
+bytes are offered a button that installs. The self-update quits the app first,
+unpacks with `ditto`, and refuses a download whose signing identity differs from
+the running app's, because Full Disk Access is keyed to that identity.
+
+| Idea | What | Effort | Feas. | Notes |
+|------|------|--------|-------|-------|
+| **Update check + nudge card** | Hourly release poll, sidebar card, cohort-aware action | M | ✅ 🚢 | Shipped. Settings › Updates toggles the poll; ⌘-menu › Check for Updates always works. |
+| **Delta/background download** | Pre-fetch the ZIP so "Update" is instant | M | ⚠️ | Only worth it if releases get big; the current flow is ~10s on a normal connection. |

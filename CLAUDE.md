@@ -174,6 +174,22 @@ them in lockstep. `MARKETING_VERSION` in `project.pbxproj` is injected from `VER
 at release time — keep the checked-in default roughly in sync so local dev builds
 don't report a stale version, but the release value is authoritative.
 
+**The app checks for its own updates** (`Platform/UpdateCheck.swift`, ported from
+pounce's `UpdateNudge`) and the check is only as good as its **cohort detection**,
+which spans three repos. Trill's four install routes collapse onto two paths, so
+paths alone can't tell them apart: the rice copies the bundle to
+`/Applications/Trill.app` (`nebelhaus/modules/trill`) and a cask's `app` stanza
+*moves* it to exactly the same place. Two receipts break the tie — the rice's
+`/Library/Application Support/nebelhaus/trill.installed-from` marker and brew's
+`<prefix>/Caskroom/trill` directory. **If either of those moves, `InstallKind`
+moves with it**, or a rice user gets offered a self-update the next rebuild
+undoes. Only `direct` and `homebrew` installs self-update; the Nix cohorts are
+handed the command (`haus update` / a flake bump) instead. The updater also
+refuses any download whose signing identity differs from the running app's —
+Full Disk Access is keyed to that identity, and a mismatched swap would silently
+lose it. The download URL (`trill-v<version>-macos.zip`) is a convention shared
+with `release.yml` and the cask; `UpdateCheckTests` pins it.
+
 ## Nix flake (how the rice installs trill)
 
 Trill is a flake, so the rice ingests it through the flake-lock chain (like pounce)
