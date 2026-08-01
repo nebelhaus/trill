@@ -27,8 +27,10 @@ struct TrillApp: App {
             MainActor.assumeIsolated { inbox.composerModel.flushDraft() }
         }
 
+        // Poll for releases: now, hourly, and on every activation. No-ops in
+        // DEBUG builds and when the Settings toggle is off.
         Task { @MainActor in
-            UpdateCheck.shared.warm()
+            UpdateCheck.shared.start()
         }
     }
 

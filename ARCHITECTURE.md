@@ -689,6 +689,34 @@ Use a dedicated test conversation/account where practical. Validate sending manu
 
 - BlueBubbles provider spike, network threat model and push adapter.
 
+### In-app update checking — shipped
+
+`Platform/UpdateCheck.swift` polls the GitHub latest-release tag hourly (and on
+activation), compares CalVer against `CFBundleShortVersionString`, and surfaces a
+pending release as a card at the bottom of the sidebar plus one notification per
+version per day. Ported from pounce's `UpdateNudge`; the differences are the
+surface (a card, not a pinned palette row), the banner (UNUserNotificationCenter,
+so it's attributed to Trill), and that the updater scripts live in Swift rather
+than a shipped shell command.
+
+The load-bearing part is **cohort detection** (`InstallKind`), because trill has
+four install routes and three of them land on the same path:
+
+| Cohort | Detected by | Update action |
+|---|---|---|
+| `nix` | bundle under `/nix/store` | copies `nix flake update trill` |
+| `rice` | `/Library/Application Support/nebelhaus/trill.installed-from` exists (written by `nebelhaus/modules/trill` activation) | copies `haus update` |
+| `homebrew` | `<brew prefix>/Caskroom/trill` exists | `brew upgrade --cask trill` |
+| `direct` | `/Applications` or `~/Applications`, no receipt | downloads the release ZIP and swaps itself |
+| `unknown` | anything else (a DerivedData build) | opens the releases page |
+
+Only the two mutable cohorts self-update; a Nix-managed bundle would be reverted
+by the next rebuild, so it is told the command instead. The self-update quits the
+app first (so the composer draft flushes and the bundle is never replaced under a
+live process), unpacks with `ditto`, and refuses any download whose signature or
+signing identity differs from the running app's — a differently-signed bundle at
+the same path would silently lose the Full Disk Access grant.
+
 ## 20. Architectural acceptance criteria
 
 - No feature outside `Providers/` imports `platform-imessage`/`PlatformSDK` DTOs or BlueBubbles DTOs.

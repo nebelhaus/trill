@@ -68,6 +68,7 @@ Contacts and Notifications are both optional. Full detail in
 - ⌘N compose to any contact with autocomplete; attach via paperclip, drag-drop, or paste.
 - Search across conversations that jumps to the matched message and highlights it, including typedstream `attributedBody` decoding.
 - Contact names and photos via the Contacts framework, falling back to the local AddressBook store when Contacts is denied.
+- Update checking that knows how you installed it: a drag-install updates itself, a Homebrew cask defers to `brew`, and a rice/Nix install is told the command to run instead. Hourly, off by a Settings toggle, plus ⌘-menu › Check for Updates.
 
 Two things Messages.app gives no automation surface for, so Trill displays but
 cannot send: **tapbacks** and **threaded replies**. Marking conversations read

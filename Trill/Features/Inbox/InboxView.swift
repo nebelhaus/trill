@@ -326,7 +326,7 @@ private struct SidebarView: View {
                 RiceDivider()
             }
             content
-            if updateCheck.pendingVersion != nil {
+            if updateCheck.pendingVersion != nil || updateCheck.statusNote != nil {
                 UpdateNudgeCard(check: updateCheck)
                     .padding(.horizontal, 8)
                     .padding(.top, 4)
@@ -1262,13 +1262,17 @@ private extension HealthReason {
 
 // MARK: - Update Nudge Card
 
+/// The sidebar's update surface — pounce pins a palette row, trill shows this.
+/// Two shapes share one slot: a pending release (version, this install's action,
+/// the button), and the transient answer to a ⌘-menu "Check for Updates…" that
+/// found nothing, which would otherwise be a menu item with no visible effect.
 private struct UpdateNudgeCard: View {
     @ObservedObject var check: UpdateCheck
     @Environment(\.riceAccent) private var accent
 
     var body: some View {
         if let pendingVersion = check.pendingVersion {
-            VStack(alignment: .leading, spacing: 8) {
+            card {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "arrow.down.circle.fill")
                         .riceFont(14)
@@ -1279,10 +1283,13 @@ private struct UpdateNudgeCard: View {
                             .riceFont(12, .semibold)
                             .foregroundStyle(Rice.text)
 
-                        Text(check.updateStatusMessage ?? check.installKind.actionHint)
+                        // The note (download progress, a copied command) takes
+                        // over from the standing hint while it's live.
+                        Text(check.statusNote ?? check.installKind.actionHint)
                             .riceFont(11)
                             .foregroundStyle(Rice.subtext0)
                             .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Spacer(minLength: 0)
@@ -1295,7 +1302,7 @@ private struct UpdateNudgeCard: View {
                             .foregroundStyle(Rice.overlay0)
                     }
                     .buttonStyle(.plain)
-                    .help("Dismiss until next release")
+                    .help("Dismiss until the next release")
                 }
 
                 HStack {
@@ -1312,13 +1319,42 @@ private struct UpdateNudgeCard: View {
                         Button {
                             check.performUpdate()
                         } label: {
-                            Text(buttonLabel)
+                            Text(check.installKind.buttonLabel)
                                 .riceFont(11, .semibold)
                         }
                         .buttonStyle(RiceProminentButtonStyle())
+                        .help(check.installKind.bannerHint)
                     }
                 }
             }
+        } else if let note = check.statusNote {
+            card {
+                HStack(alignment: .center, spacing: 8) {
+                    Image(systemName: "checkmark.circle")
+                        .riceFont(12)
+                        .foregroundStyle(Rice.overlay0)
+                    Text(note)
+                        .riceFont(11)
+                        .foregroundStyle(Rice.subtext0)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button {
+                        check.clearNote()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .riceFont(10, .medium)
+                            .foregroundStyle(Rice.overlay0)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) { content() }
             .padding(10)
             .background(Rice.surface0.opacity(0.6))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -1326,15 +1362,5 @@ private struct UpdateNudgeCard: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(Rice.surface1, lineWidth: 1)
             )
-        }
-    }
-
-    private var buttonLabel: String {
-        switch check.installKind {
-        case .homebrew, .direct, .unknown:
-            return "Update Now"
-        case .rice, .nix:
-            return "Copy Command"
-        }
     }
 }
