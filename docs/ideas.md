@@ -282,5 +282,7 @@ and cuts at a watermark rather than interleaving fixed shares.
 |------|------|--------|-------|-------|
 | **Composite provider** | One inbox over N providers: routing, merged paging/search/events, partial failure | L | ✅ 🚢 | Shipped. Live mode runs it with a single child today. |
 | **Dynamic service/account identity** | `ServiceIdentity` replaces the closed `MessageServiceKind`; two accounts on one network filter independently | M | ✅ 🚢 | Shipped. Hidden-service filter migrates on read. |
-| **Beeper read-only adapter** | REST client against a headless Beeper Server for non-iMessage networks | L | 🔨 | Next. Needs a running Server to derive the contract from. |
+| **Beeper read-only adapter** | REST client against a headless Beeper Server for non-iMessage networks | L | ✅ 🚢 | Built against the official SDK's published types. **Never run against a live Server** — that validation is the remaining gate. |
+| **Beeper connection settings** | Paste a token, set the endpoint, see per-provider health | M | 🔨 | Next (§3). The token already has a Keychain home. |
+| **Beeper sends / WebSocket** | Send, react, mark-read gated per account; live socket ahead of the poll | L | 🔨 | §4. Deliberately out of the read-only adapter. |
 | **Partial-failure banner** | Surface `partialFailures` / `degraded` in the sidebar instead of only logging | S | 🔨 | Carried by the model already; the UI lands with the Beeper connection settings. |

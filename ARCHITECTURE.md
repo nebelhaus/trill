@@ -9,7 +9,7 @@ The architecture separates five concerns:
 1. Presentation and macOS interaction.
 2. Product-domain state and use cases.
 3. Provider-neutral repositories and event streams.
-4. Provider adapters for local Messages access and future BlueBubbles access.
+4. Provider adapters for local Messages access and for a headless Beeper Server, aggregated by a composite provider.
 5. App-owned persistence, notification policy and delivery.
 
 The initial app is a single local process. No relay, daemon or cloud service is required.
@@ -24,7 +24,7 @@ flowchart TD
     Provider --> Messages["Messages.app automation"]
     App --> LocalDB["App-owned SQLite"]
     App --> Notify["macOS notifications"]
-    Future["Future BlueBubbles relay"] -. optional .-> App
+    Beeper["Beeper Server — local REST"] -. optional .-> App
 ```
 
 ### Trust boundaries
@@ -89,9 +89,9 @@ Trill/
     MessagesProvider.swift
     Composite/               # CompositeMessagesProvider — one inbox over several children
     LiveIMessage/            # shipping provider: read-only chat.db SQL + AppleScript send
+    Beeper/                  # read-only REST adapter over a headless Beeper Server
     FixtureProvider/
     PlatformIMessageProvider/ # gated: compiled for DTO mapping, PlatformAPI not instantiated
-    BlueBubblesProvider/     # future placeholder only
   Persistence/
     AppDatabase.swift
     Migrations/
@@ -111,7 +111,7 @@ Trill/
     LocalNotificationDelivery.swift
   Platform/
     Permissions/
-    Keychain/
+    Keychain/                # KeychainStore — the app's only secret store
     Logging/
     QuickLook/
   Tests/
@@ -154,7 +154,7 @@ protocol MessagesProvider: Sendable {
 }
 ```
 
-Optional actions are represented through `ProviderCapabilities`; callers must not infer support from provider type. Anything gating an action on a *specific thread* must use `capabilities(for:)` — the whole-provider answer is a union across children under aggregation (§6.5), so a thread on a read-only provider would otherwise inherit a sibling's send capability.
+Optional actions are represented through `ProviderCapabilities`; callers must not infer support from provider type. Anything gating an action on a *specific thread* must use `capabilities(for:)` — the whole-provider answer is a union across children under aggregation (§6.4), so a thread on a read-only provider would otherwise inherit a sibling's send capability.
 
 The page types (`ConversationPage`, `MessagePage`, `MessageSearchPage`) each carry `failures: [ProviderFailure]`, empty on a whole page. Under aggregation one child failing must not fail the merged call, and a partial page must never be indistinguishable from a complete one.
 
@@ -199,20 +199,7 @@ Beeper's MIT-licensed `platform-imessage` is an embeddable Swift package (alread
 
 It is a real candidate, not a gated no-go — but it is not free. Its advanced actions ride a broad Accessibility + Apple Events permission and are more sensitive to Messages UI changes than plain DB reads, so each capability must be independently probed and user-enabled, and the whole library must clear a signed-host vetting/validation pass (see [ADR 0001](architecture-decisions/0001-messages-provider.md)) before we trust it live. The sensible sequencing is to keep shipping the native read-only provider as the stable baseline and layer `platform-imessage` in only for the richer write-backed actions once that vetting is done.
 
-### 6.4 Future provider: BlueBubbles
-
-BlueBubbles is not an MVP dependency. Preserve it as a future provider and relay because it offers:
-
-- A self-hosted Mac server.
-- REST endpoints.
-- Webhooks for new messages, message updates, errors, group changes, read-state changes, typing, and server changes.
-- Existing push workflows, including webhook-compatible UnifiedPush.
-
-The app should consume BlueBubbles through `BlueBubblesProvider`, mapping REST resources and webhook events into the same domain models and `ProviderEvent` stream used by local providers.
-
-**The server must be a *separate*, always-on Mac — bundling it locally is a non-goal.** BlueBubbles does not eliminate the automation/permission surface; the server *is* the thing that drives Messages.app (Full Disk Access + Accessibility + Automation) to perform sends and other write-backed actions. Its entire value is that it **offloads that automation onto another (server) Mac**, so the client can be a different device, be non-Apple, or run while the client's own machine is asleep. Shipping the server inside every Trill client to run locally in the background would defeat the purpose: on the same host the relay topology is unnecessary (§11.2), and you would hand every user an always-on, permission-hungry REST server plus its runtime for a network boundary that never leaves `localhost` — while still riding the same broad Messages automation you appeared to escape. For write-backed actions *on the local Mac*, the intended mechanism is the in-process `platform-imessage` library (§6.3), **not** a bundled BlueBubbles server. The server earns its keep only across a device boundary, and someone has to run and keep it alive.
-
-### 6.5 Aggregation: `CompositeMessagesProvider`
+### 6.4 Aggregation: `CompositeMessagesProvider`
 
 Live mode is a **composite** that conforms to `MessagesProvider` itself and owns an ordered list of children — see [ADR 0003](architecture-decisions/0003-provider-aggregation.md) for the full reasoning. It routes every per-conversation call by `ConversationID.provider`, merges conversation and search pages by timestamp behind one opaque cursor, merges child event streams with independent per-child cursors and reconnect policy, and fans out global reads. Because it *is* a `MessagesProvider`, `MessagesRepository`, `ConversationModel` and the feature layer need no multi-provider awareness.
 
@@ -223,6 +210,28 @@ Three rules matter more than the rest:
 - **Merged paging over-fetches.** Each active child is asked for the full limit and the merged page is cut at the earliest of the still-paging children's last-returned timestamps. Taking `limit / n` from each and interleaving loses items whenever the children's activity rates differ.
 
 Fixture mode stays a bare `FixtureProvider` — no composite, no network, no reachable path to one.
+
+### 6.5 Second provider: Beeper (read-only)
+
+`BeeperProvider` (`Trill/Providers/Beeper/`) is an HTTP client against a **headless Beeper Server** the user runs, supplying every enabled Beeper network *except* iMessage — Trill already has that natively, and Beeper's own iMessage bridge is not exposed as a connectable headless bridge anyway. It is read-only in its shipped form: reads, search, contacts, media and health, with `send`/`react` rejecting rather than silently no-opping. See [ADR 0004](architecture-decisions/0004-beeper-transport.md).
+
+> **Not to be confused with §6.3.** `Providers/PlatformIMessageProvider/` is *also* Beeper code — the `platform-imessage` local iMessage library, which opens `chat.db` read-write. `BeeperProvider` is a REST client and touches no database. They are never merged.
+
+Load-bearing details: `Chat.id` is the identifier (never the installation-specific `localChatID`); Beeper's iMessage accounts are excluded both via the request-time `accountIDs` allowlist and again at mapping time; `Message.text` is Matrix HTML and is flattened to plain text; the message stream carries non-messages (`REACTION`, `NOTICE`, deleted, hidden) which are filtered; attachments are `.downloadRequired` until streamed into an app-owned cache; the token lives in the Keychain and a non-loopback endpoint must be HTTPS.
+
+### 6.6 Alternative relay: BlueBubbles
+
+*BlueBubbles was previously written up here as **the** future second provider and the whole relay story. The Beeper adapter above now fills that role.* BlueBubbles remains worth preserving because it solves a genuinely different problem — Messages access across a **device** boundary, from a separate always-on Mac — which Beeper does not address. It is not an MVP dependency, and §11 should be read as a design sketch for that device-boundary case rather than as the plan of record. It offers:
+
+- A self-hosted Mac server.
+- REST endpoints.
+- Webhooks for new messages, message updates, errors, group changes, read-state changes, typing, and server changes.
+- Existing push workflows, including webhook-compatible UnifiedPush.
+
+The app should consume BlueBubbles through `BlueBubblesProvider`, mapping REST resources and webhook events into the same domain models and `ProviderEvent` stream used by local providers.
+
+**The server must be a *separate*, always-on Mac — bundling it locally is a non-goal.** BlueBubbles does not eliminate the automation/permission surface; the server *is* the thing that drives Messages.app (Full Disk Access + Accessibility + Automation) to perform sends and other write-backed actions. Its entire value is that it **offloads that automation onto another (server) Mac**, so the client can be a different device, be non-Apple, or run while the client's own machine is asleep. Shipping the server inside every Trill client to run locally in the background would defeat the purpose: on the same host the relay topology is unnecessary (§11.2), and you would hand every user an always-on, permission-hungry REST server plus its runtime for a network boundary that never leaves `localhost` — while still riding the same broad Messages automation you appeared to escape. For write-backed actions *on the local Mac*, the intended mechanism is the in-process `platform-imessage` library (§6.3), **not** a bundled BlueBubbles server. The server earns its keep only across a device boundary, and someone has to run and keep it alive.
+
 
 ## 7. Domain model
 
@@ -428,7 +437,9 @@ The receiving client authenticates to the relay and fetches the normalized event
 
 Digest generation occurs after authenticated fetch on the receiving device where possible. If server-side digests are later required, they need a separate data-retention and encryption decision.
 
-## 11. Future BlueBubbles relay design
+## 11. Alternative relay design: BlueBubbles
+
+> *Not the plan of record for a second provider — see §6.5 and [ADR 0004](architecture-decisions/0004-beeper-transport.md). Retained as the design for Messages access across a device boundary, which the Beeper adapter does not address. The credential, transport and threat-model requirements in §11.3–§11.5 apply to **any** remote provider, and the Beeper adapter already follows them.*
 
 ### 11.1 Why preserve it
 
@@ -451,7 +462,7 @@ flowchart TD
     Push --> Client
 ```
 
-For a Mac-only client on the same host, this topology is unnecessary. It is a Phase 4 option. Bundling the server to run locally alongside every client is a **non-goal** for the same reason: it reintroduces all of §11.5's cost — an always-on authenticated socket, a stored secret, a background runtime — for a boundary confined to loopback, and does not avoid the Messages automation it appears to replace. The server exists to **offload that automation onto a separate, always-on Mac** (see §6.4); if you only need richer actions on the *local* Mac, use the in-process `platform-imessage` library instead.
+For a Mac-only client on the same host, this topology is unnecessary. It is a Phase 4 option. Bundling the server to run locally alongside every client is a **non-goal** for the same reason: it reintroduces all of §11.5's cost — an always-on authenticated socket, a stored secret, a background runtime — for a boundary confined to loopback, and does not avoid the Messages automation it appears to replace. The server exists to **offload that automation onto a separate, always-on Mac** (see §6.6); if you only need richer actions on the *local* Mac, use the in-process `platform-imessage` library instead.
 
 ### 11.3 Adapter responsibilities
 
@@ -516,7 +527,7 @@ Do not request all permissions at launch. Request them in context and surface a 
 
 - SIP stays enabled; code must not instruct the user to disable it.
 - Open Apple's database read-only.
-- Store BlueBubbles credentials and future tokens in Keychain.
+- Store the Beeper access token, BlueBubbles credentials and any future tokens in Keychain — never in `UserDefaults`. A non-loopback endpoint must use HTTPS with normal certificate validation.
 - Use `OSLog` privacy annotations and default-private fields.
 - Never log message bodies, handles, attachment paths, access tokens or database rows.
 - Do not execute arbitrary shell commands or AppleScripts built from unescaped message content.
@@ -656,7 +667,8 @@ Every provider must pass the same behavioral suite:
 - Provider-to-domain mapping against `platform-imessage` DTO fixtures.
 - Sleep/wake and watcher restart simulation.
 - Notification scheduling using injected clock and delivery spy.
-- BlueBubbles REST/webhook mapping in Phase 4 using a local mock server.
+- Beeper REST mapping against synthesized contract fixtures and a stubbed `URLProtocol` — never a live Server, which holds the user's real messages.
+- BlueBubbles REST/webhook mapping using a local mock server, if that provider is ever pursued.
 
 ### UI tests
 
@@ -746,14 +758,14 @@ the same path would silently lose the Full Disk Access grant.
 
 ## 20. Architectural acceptance criteria
 
-- No feature outside `Providers/` imports `platform-imessage`/`PlatformSDK` DTOs or BlueBubbles DTOs.
+- No feature outside `Providers/` imports `platform-imessage`/`PlatformSDK` DTOs, Beeper DTOs, or BlueBubbles DTOs.
 - Trill's own code opens no write-capable connection to Apple's Messages database; any such write path is delegated to a vetted third-party library, never hand-rolled.
 - Fixture provider can run the primary UI without private user data.
 - Provider capabilities control action availability.
 - Message/event identity is provider-qualified and deduplicated.
 - Notification policy is independently testable without macOS notification delivery.
 - Remote push can be added as a delivery adapter without changing conversation views.
-- BlueBubbles can be added as a provider without changing domain models.
+- A second provider can be added without changing domain models (demonstrated by the Beeper adapter).
 - Permission and provider failures map to actionable health states.
 - Sending exposes unknown outcomes and never blindly retries.
 
@@ -778,7 +790,7 @@ Native live provider (read-only `chat.db` + AppleScript send), WAL-driven live u
 
 ### Next — a second provider (Beeper)
 
-The [Beeper client refactor](docs/beeper-client-refactor.md) makes live mode an aggregate of the native provider and a read-only Beeper adapter, so non-iMessage networks land in the same inbox. The aggregation foundation — composite provider, per-conversation capabilities/health, dynamic service/account identity, per-child event cursors ([ADR 0003](docs/architecture-decisions/0003-provider-aggregation.md)) — has shipped; the adapter, connection UI and writes follow. This supersedes the relay story below as the concrete second-provider plan.
+The [Beeper client refactor](docs/beeper-client-refactor.md) makes live mode an aggregate of the native provider and a read-only Beeper adapter, so non-iMessage networks land in the same inbox. The aggregation foundation ([ADR 0003](docs/architecture-decisions/0003-provider-aggregation.md)) and the read-only adapter itself ([ADR 0004](docs/architecture-decisions/0004-beeper-transport.md)) have landed. Remaining: connection settings and onboarding with partial-health UI (§3); then sends, reactions and mark-read gated on per-account capability, plus the WebSocket event stream behind the polling fallback (§4); then the ship gate (§5), which still needs a **validated Server version** — the adapter has never been run against a live Server. This supersedes the relay story below as the concrete second-provider plan.
 
 ### Next — power-user organization (completing PRD §7.2/§7.5)
 
@@ -800,4 +812,4 @@ Adopt a vetted `platform-imessage` layer (§6.3) to unlock tapback/reply sending
 
 ### Optional — remote relay and push (PRD §7.6 remote push)
 
-*Superseded as the primary second-provider plan by the Beeper adapter above; retained because it solves a different problem — Messages access across a device boundary.* BlueBubbles REST/webhook provider (§6.4, §11), Keychain-stored credentials, APNs and/or UnifiedPush delivery adapter, remote event fetch with cursor recovery, and an explicit network threat model. Only pursued if a concrete remote-client need justifies it.
+*Superseded as the primary second-provider plan by the Beeper adapter above; retained because it solves a different problem — Messages access across a device boundary.* BlueBubbles REST/webhook provider (§6.6, §11), Keychain-stored credentials, APNs and/or UnifiedPush delivery adapter, remote event fetch with cursor recovery, and an explicit network threat model. Only pursued if a concrete remote-client need justifies it.
