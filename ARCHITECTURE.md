@@ -87,6 +87,7 @@ Trill/
     NotificationRepository.swift
   Providers/
     MessagesProvider.swift
+    Composite/               # CompositeMessagesProvider — one inbox over several children
     LiveIMessage/            # shipping provider: read-only chat.db SQL + AppleScript send
     FixtureProvider/
     PlatformIMessageProvider/ # gated: compiled for DTO mapping, PlatformAPI not instantiated
@@ -127,8 +128,16 @@ The exact Swift API may evolve during the spike, but it should express these cap
 protocol MessagesProvider: Sendable {
     var id: ProviderID { get }
 
+    /// Providers whose event cursor is persisted independently — a composite's
+    /// children, or just `[id]`. Defaulted.
+    var eventCursorProviders: [ProviderID] { get }
+
     func health() async -> ProviderHealth
     func capabilities() async -> ProviderCapabilities
+    /// Per-thread lookup, defaulted to the whole-provider answer. A composite
+    /// routes these to the conversation's owning child.
+    func capabilities(for conversation: ConversationID) async -> ProviderCapabilities
+    func health(for conversation: ConversationID) async -> ProviderHealth
 
     func conversations(page: ConversationPageRequest) async throws -> ConversationPage
     func messages(in conversation: ConversationID,
@@ -136,13 +145,18 @@ protocol MessagesProvider: Sendable {
     func search(_ query: MessageSearchQuery) async throws -> MessageSearchPage
 
     func events(after cursor: EventCursor?) -> AsyncThrowingStream<ProviderEvent, Error>
+    /// Multi-cursor resume, defaulted to forwarding `cursors[id]` above.
+    func events(resumingFrom cursors: [ProviderID: EventCursor])
+        -> AsyncThrowingStream<ProviderEvent, Error>
 
     func send(_ request: SendRequest) async throws -> SendOutcome
     func react(_ request: ReactionRequest) async throws -> ReactionOutcome
 }
 ```
 
-Optional actions are represented through `ProviderCapabilities`; callers must not infer support from provider type.
+Optional actions are represented through `ProviderCapabilities`; callers must not infer support from provider type. Anything gating an action on a *specific thread* must use `capabilities(for:)` — the whole-provider answer is a union across children under aggregation (§6.5), so a thread on a read-only provider would otherwise inherit a sibling's send capability.
+
+The page types (`ConversationPage`, `MessagePage`, `MessageSearchPage`) each carry `failures: [ProviderFailure]`, empty on a whole page. Under aggregation one child failing must not fail the merged call, and a partial page must never be indistinguishable from a complete one.
 
 Example capabilities:
 
@@ -197,6 +211,18 @@ BlueBubbles is not an MVP dependency. Preserve it as a future provider and relay
 The app should consume BlueBubbles through `BlueBubblesProvider`, mapping REST resources and webhook events into the same domain models and `ProviderEvent` stream used by local providers.
 
 **The server must be a *separate*, always-on Mac — bundling it locally is a non-goal.** BlueBubbles does not eliminate the automation/permission surface; the server *is* the thing that drives Messages.app (Full Disk Access + Accessibility + Automation) to perform sends and other write-backed actions. Its entire value is that it **offloads that automation onto another (server) Mac**, so the client can be a different device, be non-Apple, or run while the client's own machine is asleep. Shipping the server inside every Trill client to run locally in the background would defeat the purpose: on the same host the relay topology is unnecessary (§11.2), and you would hand every user an always-on, permission-hungry REST server plus its runtime for a network boundary that never leaves `localhost` — while still riding the same broad Messages automation you appeared to escape. For write-backed actions *on the local Mac*, the intended mechanism is the in-process `platform-imessage` library (§6.3), **not** a bundled BlueBubbles server. The server earns its keep only across a device boundary, and someone has to run and keep it alive.
+
+### 6.5 Aggregation: `CompositeMessagesProvider`
+
+Live mode is a **composite** that conforms to `MessagesProvider` itself and owns an ordered list of children — see [ADR 0003](architecture-decisions/0003-provider-aggregation.md) for the full reasoning. It routes every per-conversation call by `ConversationID.provider`, merges conversation and search pages by timestamp behind one opaque cursor, merges child event streams with independent per-child cursors and reconnect policy, and fans out global reads. Because it *is* a `MessagesProvider`, `MessagesRepository`, `ConversationModel` and the feature layer need no multi-provider awareness.
+
+Three rules matter more than the rest:
+
+- **Identifiers pass through verbatim.** The composite's own `ProviderID` never appears inside a `ConversationID` or `MessageID`. `persistenceKey` is the primary key of every overlay table (§8.2), so re-qualifying an ID silently orphans that thread's pins, drafts, folder memberships, VIP mark, snooze, archive flag, saved messages, read marks and restored tabs.
+- **Health aggregates by policy, not by `min()`.** One child is **primary** (the native provider) and its health is reported verbatim for the dimensions §16 turns into a full-screen recovery view. Every other unwell child lands in `ProviderHealth.degraded` instead, so a remote provider being unreachable is structurally incapable of blanking the inbox.
+- **Merged paging over-fetches.** Each active child is asked for the full limit and the merged page is cut at the earliest of the still-paging children's last-returned timestamps. Taking `limit / n` from each and interleaving loses items whenever the children's activity rates differ.
+
+Fixture mode stays a bare `FixtureProvider` — no composite, no network, no reachable path to one.
 
 ## 7. Domain model
 
@@ -599,7 +625,8 @@ Do not collapse all failures into “Connection error.” Suggested user-facing 
 - Notification policy precedence.
 - Digest grouping and privacy rendering.
 - Event deduplication.
-- Cursor reconciliation.
+- Cursor reconciliation, including the composite's opaque merged cursor.
+- Composite routing, merged paging/search ordering, merged events and partial failure.
 - Send-outcome state machine.
 - Local database migrations.
 - Search query validation.
@@ -749,6 +776,10 @@ This is the forward sequencing for the [PRD](PRD.md)'s durable requirements. Cur
 
 Native live provider (read-only `chat.db` + AppleScript send), WAL-driven live updates and reconciliation, contacts, global + in-thread search with operators, command palette, pins/drafts/read marks, local notifications with inline reply, and the first wave of power-user organization (folders/tags, snooze, archive, mute, VIP, service filters, Universal Library, conversation stats, needs-reply triage).
 
+### Next — a second provider (Beeper)
+
+The [Beeper client refactor](docs/beeper-client-refactor.md) makes live mode an aggregate of the native provider and a read-only Beeper adapter, so non-iMessage networks land in the same inbox. The aggregation foundation — composite provider, per-conversation capabilities/health, dynamic service/account identity, per-child event cursors ([ADR 0003](docs/architecture-decisions/0003-provider-aggregation.md)) — has shipped; the adapter, connection UI and writes follow. This supersedes the relay story below as the concrete second-provider plan.
+
 ### Next — power-user organization (completing PRD §7.2/§7.5)
 
 - Multiple conversation windows and window-state restoration (conversation tabs shipped).
@@ -769,4 +800,4 @@ Adopt a vetted `platform-imessage` layer (§6.3) to unlock tapback/reply sending
 
 ### Optional — remote relay and push (PRD §7.6 remote push)
 
-BlueBubbles REST/webhook provider (§6.4, §11), Keychain-stored credentials, APNs and/or UnifiedPush delivery adapter, remote event fetch with cursor recovery, and an explicit network threat model. Only pursued if a concrete remote-client need justifies it.
+*Superseded as the primary second-provider plan by the Beeper adapter above; retained because it solves a different problem — Messages access across a device boundary.* BlueBubbles REST/webhook provider (§6.4, §11), Keychain-stored credentials, APNs and/or UnifiedPush delivery adapter, remote event fetch with cursor recovery, and an explicit network threat model. Only pursued if a concrete remote-client need justifies it.

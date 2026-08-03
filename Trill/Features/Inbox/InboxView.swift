@@ -528,7 +528,7 @@ private struct SidebarView: View {
     @ViewBuilder
     private var serviceMenuContent: some View {
         Section("Show Services") {
-            ForEach(MessageServiceKind.togglable, id: \.self) { service in
+            ForEach(model.availableServices) { service in
                 Toggle(service.displayLabel, isOn: Binding(
                     get: { model.showsService(service) },
                     set: { _ in model.toggleService(service) }

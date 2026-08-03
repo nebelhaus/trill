@@ -3,8 +3,23 @@ import Foundation
 protocol MessagesProvider: Sendable {
     var id: ProviderID { get }
 
+    /// Every provider whose event cursor is persisted independently. A composite
+    /// returns its children (one `provider_cursors` row each); everyone else
+    /// returns just itself. A merged cursor stored under one id would resume both
+    /// children from the wrong place after a relaunch — replaying or, worse,
+    /// skipping.
+    var eventCursorProviders: [ProviderID] { get }
+
     func health() async -> ProviderHealth
     func capabilities() async -> ProviderCapabilities
+    /// Capabilities for one thread. A composite resolves this through the
+    /// conversation's owning child, because the composer's send gate now depends
+    /// on which thread is open — and because Beeper reports capabilities per
+    /// chat, not per account. Providers with one uniform answer inherit the
+    /// whole-provider default.
+    func capabilities(for conversation: ConversationID) async -> ProviderCapabilities
+    /// Health for one thread's owning provider, for the same reason.
+    func health(for conversation: ConversationID) async -> ProviderHealth
     func conversations(page: ConversationPageRequest) async throws -> ConversationPage
     func messages(in conversation: ConversationID, page: MessagePageRequest) async throws -> MessagePage
     /// Loads a window of messages centered on `date` for the "jump to date"
@@ -17,6 +32,10 @@ protocol MessagesProvider: Sendable {
     func messages(ids: [MessageID]) async throws -> [Message]
     func search(_ query: MessageSearchQuery) async throws -> MessageSearchPage
     func events(after cursor: EventCursor?) async -> AsyncThrowingStream<ProviderEvent, Error>
+    /// Multi-cursor resume: one stored cursor per `eventCursorProviders` entry.
+    /// The default forwards this provider's own cursor to `events(after:)`, so
+    /// only a composite implements it.
+    func events(resumingFrom cursors: [ProviderID: EventCursor]) async -> AsyncThrowingStream<ProviderEvent, Error>
     func send(_ request: SendRequest) async throws -> SendOutcome
     func sendDirect(_ request: DirectSendRequest) async throws -> SendOutcome
     func react(_ request: ReactionRequest) async throws -> ReactionOutcome
@@ -32,6 +51,20 @@ protocol MessagesProvider: Sendable {
 }
 
 extension MessagesProvider {
+    var eventCursorProviders: [ProviderID] { [id] }
+
+    func capabilities(for conversation: ConversationID) async -> ProviderCapabilities {
+        await capabilities()
+    }
+
+    func health(for conversation: ConversationID) async -> ProviderHealth {
+        await health()
+    }
+
+    func events(resumingFrom cursors: [ProviderID: EventCursor]) async -> AsyncThrowingStream<ProviderEvent, Error> {
+        await events(after: cursors[id])
+    }
+
     /// Default: providers that can't resolve a date to a position fall back to the
     /// newest page with no anchor, so "jump to date" degrades to a plain reload.
     func messages(in conversation: ConversationID, around date: Date, limit: Int) async throws -> DatedMessagePage {

@@ -31,6 +31,19 @@ The suite verifies:
 - Version-zero SQLite migration plus pins, drafts, and cursors.
 - Permission/schema health mapping and capability gating.
 - No automatic retry for unknown send outcomes.
+- Composite aggregation: merged conversation/search paging across children with
+  interleaved timestamps, routing (a call for one child's conversation never
+  reaches another), identifiers never re-qualified, merged events with per-child
+  cursors, partial failure, and composite-cursor round-trip — including a cursor
+  naming a child that's since gone, a child added after the cursor was minted,
+  and a child rejecting the cursor handed to it.
+- `ServiceIdentity`: the hidden-service filter's `UserDefaults` migration off the
+  old `MessageServiceKind` raw values, and per-account filter identity.
+
+The Inbox suites each run against their own `UserDefaults` suite
+(`InboxModel(defaults:)`). XCTest runs suites in parallel *processes* that share
+one defaults domain, so the sidebar filter / provider mode / open-tab keys would
+otherwise race.
 
 ## Manual fixture checklist
 

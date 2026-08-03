@@ -13,10 +13,21 @@ final class InboxModelTabsTests: XCTestCase {
     private var b: ConversationID { ConversationID(provider: provider, externalGUID: "fixture-direct-sms") }
     private var c: ConversationID { ConversationID(provider: provider, externalGUID: "fixture-group-weekend") }
 
+    /// Own defaults domain: every key this suite drives (tabs, provider mode,
+    /// the service filter) is process-global in `UserDefaults.standard`, and the
+    /// test processes share it — two suites driving an `InboxModel` at once used
+    /// to race each other's tab state.
+    private var suiteName = "TrillTests.tabs"
+    private var defaults = UserDefaults(suiteName: "TrillTests.tabs")!
+
+    override func setUp() {
+        super.setUp()
+        suiteName = "TrillTests.tabs-\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suiteName)!
+    }
+
     override func tearDown() {
-        UserDefaults.standard.removeObject(forKey: "openTabs")
-        UserDefaults.standard.removeObject(forKey: "activeTab")
-        UserDefaults.standard.removeObject(forKey: "providerMode")
+        defaults.removePersistentDomain(forName: suiteName)
         super.tearDown()
     }
 
@@ -25,15 +36,15 @@ final class InboxModelTabsTests: XCTestCase {
     /// the persistence test seeds those keys itself and opts out.
     private func makeLoadedModel(clearTabs: Bool = true) async throws -> InboxModel {
         if clearTabs {
-            UserDefaults.standard.removeObject(forKey: "openTabs")
-            UserDefaults.standard.removeObject(forKey: "activeTab")
+            defaults.removeObject(forKey: "openTabs")
+            defaults.removeObject(forKey: "activeTab")
         }
-        UserDefaults.standard.set("fixture", forKey: "providerMode")
+        defaults.set("fixture", forKey: "providerMode")
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("TrillTests-\(UUID().uuidString)", isDirectory: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let database = try AppDatabase(url: root.appendingPathComponent("app.sqlite3"))
-        let model = InboxModel(database: database, snippets: SnippetStore(database: database))
+        let model = InboxModel(database: database, snippets: SnippetStore(database: database), defaults: defaults)
         model.load()
         for _ in 0..<300 {
             if model.state == .loaded { break }
@@ -159,12 +170,37 @@ final class InboxModelTabsTests: XCTestCase {
         // Seed one real thread and one that no longer exists; only the real one
         // should come back, and the persisted active tab should win.
         let bogus = ConversationID(provider: provider, externalGUID: "fixture-gone")
-        UserDefaults.standard.set([a.persistenceKey, bogus.persistenceKey, b.persistenceKey], forKey: "openTabs")
-        UserDefaults.standard.set(b.persistenceKey, forKey: "activeTab")
+        defaults.set([a.persistenceKey, bogus.persistenceKey, b.persistenceKey], forKey: "openTabs")
+        defaults.set(b.persistenceKey, forKey: "activeTab")
 
         let model = try await makeLoadedModel(clearTabs: false)
 
         XCTAssertEqual(model.openTabs, [a, b])   // bogus filtered out, order preserved
         XCTAssertEqual(model.selectedConversationID, b)
+    }
+
+    /// The service filter's effect on the *loaded* list — it needs a real
+    /// conversation list, which is what this suite already sets up.
+    func testHidingAServiceRemovesItsThreadsButNeverTheOpenOne() async throws {
+        let model = try await makeLoadedModel()
+        model.showAllServices()
+        model.select(nil)
+        let sms = try XCTUnwrap(
+            model.conversations.first { $0.service.key == ServiceIdentity.sms.key }
+        )
+        XCTAssertTrue(model.visibleConversations.contains { $0.id == sms.id })
+
+        model.toggleService(.sms)
+        XCTAssertFalse(model.showsService(.sms))
+        XCTAssertFalse(model.visibleConversations.contains { $0.id == sms.id })
+
+        model.select(sms.id)
+        XCTAssertTrue(
+            model.visibleConversations.contains { $0.id == sms.id },
+            "the open thread survives its own service being hidden"
+        )
+
+        model.showAllServices()
+        XCTAssertTrue(model.hiddenServices.isEmpty)
     }
 }

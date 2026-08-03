@@ -89,7 +89,7 @@ enum PlatformIMessageMapper {
 
     static func conversation(_ source: PlatformSDK.Thread) -> Conversation {
         let participants = source.participants.items.map(participant)
-        let service = isSMS(extra: source.extra) ? MessageServiceKind.sms : .iMessage
+        let service: ServiceIdentity = isSMS(extra: source.extra) ? .sms : .iMessage
         return Conversation(
             id: ConversationID(provider: providerID, externalGUID: source.id),
             displayName: source.title?.nonEmpty ?? participants.first?.displayName ?? participants.first?.handle ?? "Conversation",
@@ -108,7 +108,7 @@ enum PlatformIMessageMapper {
     }
 
     static func message(_ source: PlatformSDK.Message, conversationID: ConversationID) -> Message {
-        let service: MessageServiceKind = conversationID.externalGUID.hasPrefix("SMS;") ? .sms : .iMessage
+        let service: ServiceIdentity = conversationID.externalGUID.hasPrefix("SMS;") ? .sms : .iMessage
         let sender = source.isSender == true ? nil : Participant(
             id: source.senderID,
             displayName: nil,

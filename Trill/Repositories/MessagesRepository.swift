@@ -33,6 +33,12 @@ actor MessagesRepository {
         await provider.capabilities()
     }
 
+    /// Capabilities and health for one thread's owning provider — the pair the
+    /// composer's send gate needs now that two providers can back one inbox.
+    func gate(for conversation: ConversationID) async -> (ProviderCapabilities, ProviderHealth) {
+        await (provider.capabilities(for: conversation), provider.health(for: conversation))
+    }
+
     func conversations(page: ConversationPageRequest) async throws -> ConversationPage {
         let clock = ContinuousClock()
         let start = clock.now
@@ -120,11 +126,22 @@ actor MessagesRepository {
         return result
     }
 
+    /// `provider_cursors` is one row per *provider*, and a composite has several.
+    /// So the resume position is read per `eventCursorProviders` entry, and each
+    /// event's cursor is saved under the provider its payload actually came from
+    /// — never under the composite's own id, which would resume both children
+    /// from one merged position after a relaunch, replaying some events and
+    /// skipping others.
     func eventStream() async -> AsyncThrowingStream<ProviderEvent, Error> {
-        let storedCursor = try? await database.cursor(providerID: provider.id)
-        let upstream = await provider.events(after: storedCursor)
+        var stored: [ProviderID: EventCursor] = [:]
+        for child in provider.eventCursorProviders {
+            if let cursor = try? await database.cursor(providerID: child) {
+                stored[child] = cursor
+            }
+        }
+        let upstream = await provider.events(resumingFrom: stored)
         let database = database
-        let providerID = provider.id
+        let fallbackID = provider.id
         let deduplicator = eventDeduplicator
 
         return AsyncThrowingStream { continuation in
@@ -133,7 +150,10 @@ actor MessagesRepository {
                     for try await event in upstream {
                         guard await deduplicator.shouldAccept(event) else { continue }
                         if let cursor = Self.cursor(from: event) {
-                            try await database.saveCursor(cursor, providerID: providerID)
+                            try await database.saveCursor(
+                                cursor,
+                                providerID: Self.owner(of: event) ?? fallbackID
+                            )
                         }
                         continuation.yield(event)
                     }
@@ -149,6 +169,17 @@ actor MessagesRepository {
     private static func cursor(from event: ProviderEvent) -> EventCursor? {
         switch event {
         case let .messageAdded(_, cursor), let .conversationUpdated(_, cursor): cursor
+        case .healthChanged, .databaseChanged: nil
+        }
+    }
+
+    /// The provider an event came from, read off its payload's already
+    /// provider-qualified identifier. Nothing new has to be threaded through the
+    /// event type to know this.
+    private static func owner(of event: ProviderEvent) -> ProviderID? {
+        switch event {
+        case let .messageAdded(message, _): message.id.provider
+        case let .conversationUpdated(conversation, _): conversation.id.provider
         case .healthChanged, .databaseChanged: nil
         }
     }

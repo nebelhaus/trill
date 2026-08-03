@@ -176,6 +176,25 @@ final class ComposerModel: ObservableObject {
         }
     }
 
+    /// Re-resolves the send gate for the thread that's already selected, once its
+    /// *owning* provider's per-conversation answer arrives. `select` runs
+    /// synchronously off a cached per-provider gate so a tab switch never flashes
+    /// a disabled composer; this refines that without touching the draft, the
+    /// text, or the pending-send machinery. A no-op if the user has since moved
+    /// to another thread.
+    func updateGate(
+        for conversationID: ConversationID,
+        capabilities: ProviderCapabilities,
+        health: ProviderHealth
+    ) {
+        guard self.conversationID == conversationID, sendAction != nil else { return }
+        isSendEnabled = CapabilityGate.canSend(capabilities: capabilities, health: health)
+        canSendAttachments = isSendEnabled && capabilities.supports(.sendAttachments)
+        disabledExplanation = isSendEnabled
+            ? ""
+            : "This provider cannot send; your draft is saved locally."
+    }
+
     func stageAttachments(_ urls: [URL]) {
         guard canSendAttachments else { return }
         let incoming = urls.filter { url in

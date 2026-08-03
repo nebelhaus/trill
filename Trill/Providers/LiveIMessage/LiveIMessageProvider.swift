@@ -721,7 +721,7 @@ actor LiveIMessageProvider: MessagesProvider {
         Int64((date.timeIntervalSince1970 - appleEpochOffset) * 1_000_000_000)
     }
 
-    private static func service(from serviceName: String?, chatGUID: String? = nil) -> MessageServiceKind {
+    private static func service(from serviceName: String?, chatGUID: String? = nil) -> ServiceIdentity {
         let name = serviceName ?? chatGUID?.split(separator: ";").first.map(String.init) ?? ""
         return switch name {
         case "iMessage": .iMessage

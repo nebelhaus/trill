@@ -61,11 +61,15 @@ BeeperProvider ──────┘
 
 ## Task list
 
-### 1. Aggregation foundation
+### 1. Aggregation foundation — shipped
 
-- [ ] Add per-provider/per-conversation capabilities and health.
-- [ ] Introduce dynamic service/account identity and migrate persisted filters.
-- [ ] Implement and test composite paging, routing, search, events, and partial failure.
+See [ADR 0003](architecture-decisions/0003-provider-aggregation.md).
+
+- [x] Add per-provider/per-conversation capabilities and health.
+- [x] Introduce dynamic service/account identity and migrate the persisted filter.
+      (`hiddenServices` is a `UserDefaults` CSV, migrated on read — not a schema
+      migration; `AppDatabase.currentSchemaVersion` is untouched.)
+- [x] Implement and test composite paging, routing, search, events, and partial failure.
 
 ### 2. Beeper adapter
 

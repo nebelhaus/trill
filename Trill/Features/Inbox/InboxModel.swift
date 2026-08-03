@@ -74,9 +74,9 @@ final class InboxModel: ObservableObject {
     /// Active folder scope for the sidebar. `nil` = All Messages. Applied before
     /// the `filter` axis in `visibleConversations`, and persisted across launches
     /// (validated against existing folders on load, since a folder can be deleted).
-    @Published var selectedFolderID: String? = UserDefaults.standard.string(forKey: InboxModel.selectedFolderKey) {
+    @Published var selectedFolderID: String? {
         didSet {
-            UserDefaults.standard.set(selectedFolderID, forKey: InboxModel.selectedFolderKey)
+            defaults.set(selectedFolderID, forKey: InboxModel.selectedFolderKey)
         }
     }
     /// Conversations the user has archived — hidden from every normal scope and
@@ -137,8 +137,8 @@ final class InboxModel: ObservableObject {
     /// `showsUnreadOnly` bool the first time so an existing unread-only view is
     /// preserved. `showsUnreadOnly` / `showsNeedsReplyOnly` are convenience
     /// toggles over this single source of truth.
-    @Published var filter: InboxFilter = InboxModel.loadPersistedFilter() {
-        didSet { UserDefaults.standard.set(filter.rawValue, forKey: InboxModel.filterKey) }
+    @Published var filter: InboxFilter {
+        didSet { defaults.set(filter.rawValue, forKey: InboxModel.filterKey) }
     }
 
     var showsUnreadOnly: Bool {
@@ -161,31 +161,62 @@ final class InboxModel: ObservableObject {
     /// when there's nothing to show.
     var hasDrafts: Bool { !draftIDs.isEmpty }
 
-    /// Services hidden from the sidebar. Unlike `filter`, this is a *composable*
-    /// axis (you can hide SMS while also scoping to a folder or unread), so it's
-    /// a set rather than a mutually-exclusive case. Empty = show everything. Only
-    /// `MessageServiceKind.togglable` services are ever placed here; `.unknown`
-    /// is never hidden. Persisted across launches.
-    @Published var hiddenServices: Set<MessageServiceKind> = InboxModel.loadHiddenServices() {
+    /// `ServiceIdentity.key`s hidden from the sidebar. Unlike `filter`, this is a
+    /// *composable* axis (you can hide SMS while also scoping to a folder or
+    /// unread), so it's a set rather than a mutually-exclusive case. Empty = show
+    /// everything. Stored as keys rather than identities because the set is
+    /// persisted and a network's display name can change under it; `.unknown` is
+    /// never placed here.
+    @Published var hiddenServices: Set<String> {
         didSet {
-            UserDefaults.standard.set(
-                hiddenServices.map(\.rawValue).sorted().joined(separator: ","),
+            defaults.set(
+                hiddenServices.sorted().joined(separator: ","),
                 forKey: InboxModel.hiddenServicesKey
             )
         }
     }
 
+    /// The services the filter menu offers: the three natives always, in their
+    /// old order — they're properties of the Mac, not of what happens to be
+    /// loaded, and dropping RCS from the menu because no RCS thread exists yet
+    /// would be a visible change — then every network actually present,
+    /// alphabetically.
+    ///
+    /// `.unknown` is excluded: it's a catch-all we never hide, so a thread we
+    /// couldn't classify can't vanish behind a filter the user can't see. A
+    /// service that's currently *hidden* stays listed even when nothing of it is
+    /// loaded, so the filter that's hiding it is always reachable to switch off.
+    var availableServices: [ServiceIdentity] {
+        var byKey: [String: ServiceIdentity] = [:]
+        for service in ServiceIdentity.wellKnown {
+            byKey[service.key] = service
+        }
+        for conversation in conversations where conversation.service.isTogglable {
+            byKey[conversation.service.key] = conversation.service
+        }
+        for key in hiddenServices where byKey[key] == nil {
+            byKey[key] = ServiceIdentity(key: key, displayName: key, networkKey: key)
+        }
+        let wellKnownOrder = ServiceIdentity.wellKnown.map(\.key)
+        return byKey.values.sorted { left, right in
+            let leftRank = wellKnownOrder.firstIndex(of: left.key) ?? wellKnownOrder.count
+            let rightRank = wellKnownOrder.firstIndex(of: right.key) ?? wellKnownOrder.count
+            if leftRank != rightRank { return leftRank < rightRank }
+            return left.displayName.localizedCaseInsensitiveCompare(right.displayName) == .orderedAscending
+        }
+    }
+
     /// Whether a service is currently shown (drives the menu's checkmarks).
-    func showsService(_ service: MessageServiceKind) -> Bool {
-        !hiddenServices.contains(service)
+    func showsService(_ service: ServiceIdentity) -> Bool {
+        !hiddenServices.contains(service.key)
     }
 
     /// Flip one service in or out of the sidebar.
-    func toggleService(_ service: MessageServiceKind) {
-        if hiddenServices.contains(service) {
-            hiddenServices.remove(service)
+    func toggleService(_ service: ServiceIdentity) {
+        if hiddenServices.contains(service.key) {
+            hiddenServices.remove(service.key)
         } else {
-            hiddenServices.insert(service)
+            hiddenServices.insert(service.key)
         }
     }
 
@@ -196,6 +227,15 @@ final class InboxModel: ObservableObject {
 
     @Published private(set) var providerMode: ProviderMode = .fixture
     @Published private(set) var errorSummary: String?
+    /// Providers that couldn't contribute to the last conversation load. Distinct
+    /// from `errorSummary`, which means the *whole* load failed: this is a
+    /// partial result and the inbox is still usable. Carried (and logged) here in
+    /// phase 1; the banner that surfaces it lands with the Beeper connection UI.
+    @Published private(set) var partialFailures: [ProviderFailure] = []
+
+    /// Non-primary providers that are unwell. Never blanks the inbox — a remote
+    /// provider being unreachable is a degradation, not a permission failure.
+    var degradedProviders: [ProviderDegradation] { health.degraded }
 
     /// Open conversation tabs, in strip order. The active tab is
     /// `selectedConversationID`; the strip hides itself below two entries.
@@ -220,6 +260,13 @@ final class InboxModel: ObservableObject {
     /// through `selectedConversationID`'s onChange doesn't re-point (and re-restore
     /// the draft on) an already-active thread.
     private var composerConversationID: ConversationID?
+    /// Last-resolved (capabilities, health) per *owning provider*, so a tab
+    /// switch can gate the composer synchronously. The exact per-conversation
+    /// answer replaces it a moment later via `ComposerModel.updateGate`; this is
+    /// only ever a first approximation, and it's the right one because every
+    /// conversation on a given provider shares that provider's floor.
+    private var providerGates: [ProviderID: (ProviderCapabilities, ProviderHealth)] = [:]
+    private var composerGateTask: Task<Void, Never>?
     /// Cap on warm tabs. Opens are explicit, so this only bites pathological cases;
     /// the oldest non-active tab is evicted past it.
     private static let maxTabs = 12
@@ -228,6 +275,7 @@ final class InboxModel: ObservableObject {
     let linkPreviewLoader: LinkPreviewLoader
 
     private let database: AppDatabase
+    private let defaults: UserDefaults
     private let notifications = NotificationCoordinator()
     private var repository: MessagesRepository
     private var loadTask: Task<Void, Never>?
@@ -261,8 +309,7 @@ final class InboxModel: ObservableObject {
     private static let openTabsKey = "openTabs"
     private static let activeTabKey = "activeTab"
 
-    private static func loadPersistedFilter() -> InboxFilter {
-        let defaults = UserDefaults.standard
+    private static func loadPersistedFilter(_ defaults: UserDefaults) -> InboxFilter {
         if let raw = defaults.string(forKey: filterKey), let stored = InboxFilter(rawValue: raw) {
             return stored
         }
@@ -270,17 +317,26 @@ final class InboxModel: ObservableObject {
         return defaults.bool(forKey: "showsUnreadOnly") ? .unread : .all
     }
 
-    private static func loadHiddenServices() -> Set<MessageServiceKind> {
-        guard let raw = UserDefaults.standard.string(forKey: hiddenServicesKey), !raw.isEmpty else {
+    private static func loadHiddenServices(_ defaults: UserDefaults) -> Set<String> {
+        guard let raw = defaults.string(forKey: hiddenServicesKey), !raw.isEmpty else {
             return []
         }
-        return Set(raw.split(separator: ",").compactMap { MessageServiceKind(rawValue: String($0)) })
+        return ServiceIdentity.migratedHiddenServices(csv: raw)
     }
 
-    init(database: AppDatabase, snippets: SnippetStore) {
+    /// `defaults` is injectable purely so tests get an isolated domain: the
+    /// sidebar's filter, folder scope, service filter, provider mode and open
+    /// tabs all live in `UserDefaults`, which is one shared store per process
+    /// *and* across the parallel test processes — three suites driving an
+    /// `InboxModel` at once would otherwise race each other's tab state.
+    init(database: AppDatabase, snippets: SnippetStore, defaults: UserDefaults = .standard) {
         self.database = database
+        self.defaults = defaults
+        filter = Self.loadPersistedFilter(defaults)
+        hiddenServices = Self.loadHiddenServices(defaults)
+        selectedFolderID = defaults.string(forKey: Self.selectedFolderKey)
         linkPreviewLoader = LinkPreviewLoader(database: database)
-        let mode = UserDefaults.standard.string(forKey: Self.providerModeKey)
+        let mode = defaults.string(forKey: Self.providerModeKey)
             .flatMap(ProviderMode.init(rawValue:)) ?? .messages
         providerMode = mode
         let repository = MessagesRepository(provider: Self.makeProvider(mode), database: database)
@@ -316,6 +372,7 @@ final class InboxModel: ObservableObject {
         eventTask?.cancel()
         snoozeWakeTask?.cancel()
         healthRefreshTask?.cancel()
+        composerGateTask?.cancel()
         if let foregroundObserver {
             NotificationCenter.default.removeObserver(foregroundObserver)
         }
@@ -351,10 +408,22 @@ final class InboxModel: ObservableObject {
         }
     }
 
+    /// Fixture mode stays a *bare* `FixtureProvider` — no composite wrapper, no
+    /// network, no second child. It's the dev default and the whole test suite
+    /// runs on it, so it must stay the one thing with nothing behind it.
+    ///
+    /// Live mode is the composite from here on, even while it has a single child:
+    /// a one-child composite is behaviorally the child (its merge is the
+    /// identity, its routing is trivial), so this ships the aggregation seam in
+    /// production and makes the Beeper adapter an additive child rather than a
+    /// second rewiring.
     private static func makeProvider(_ mode: ProviderMode) -> any MessagesProvider {
         switch mode {
-        case .fixture: FixtureProvider()
-        case .messages: LiveIMessageProvider()
+        case .fixture:
+            return FixtureProvider()
+        case .messages:
+            let native = LiveIMessageProvider()
+            return CompositeMessagesProvider(children: [native], primary: native.id)
         }
     }
 
@@ -419,6 +488,10 @@ final class InboxModel: ObservableObject {
                     selectedFolderID = nil
                 }
                 conversations = sort(loadedPage.conversations)
+                partialFailures = loadedPage.failures
+                for failure in loadedPage.failures {
+                    AppLog.ui.error("Inbox loaded partially provider=\(failure.providerID.rawValue, privacy: .public) error=\(failure.category, privacy: .public)")
+                }
                 restoreTabs()
                 state = conversations.isEmpty ? .empty : .loaded
                 updateDockBadge()
@@ -439,7 +512,7 @@ final class InboxModel: ObservableObject {
     func switchProvider(to mode: ProviderMode) {
         guard mode != providerMode else { return }
         providerMode = mode
-        UserDefaults.standard.set(mode.rawValue, forKey: Self.providerModeKey)
+        defaults.set(mode.rawValue, forKey: Self.providerModeKey)
         selectedConversationID = nil
         conversations = []
         // The trail and open tabs belong to the old provider's thread list; a
@@ -449,6 +522,9 @@ final class InboxModel: ObservableObject {
         openTabs.removeAll()
         tabModels.removeAll()
         composerConversationID = nil
+        providerGates.removeAll()
+        partialFailures = []
+        composerGateTask?.cancel()
         eventTask?.cancel()
         composerModel.select(nil, capabilities: ProviderCapabilities(), health: .fixture, sendAction: nil)
 
@@ -493,7 +569,7 @@ final class InboxModel: ObservableObject {
             serviced = scoped
         } else {
             serviced = scoped.filter {
-                !hiddenServices.contains($0.service) || $0.id == selectedConversationID
+                !hiddenServices.contains($0.service.key) || $0.id == selectedConversationID
             }
         }
         switch filter {
@@ -721,13 +797,24 @@ final class InboxModel: ObservableObject {
             return
         }
         let repository = repository
-        composerModel.select(conversation.id, capabilities: capabilities, health: health) { text, attachments in
+        // Point synchronously off the cached per-provider gate so switching tabs
+        // never flashes a disabled composer or delays the draft restore, then
+        // refine to the owning provider's *per-conversation* answer as it lands.
+        let cached = providerGates[id.provider] ?? (capabilities, health)
+        composerModel.select(conversation.id, capabilities: cached.0, health: cached.1) { text, attachments in
             try await repository.send(SendRequest(
                 operationID: UUID(),
                 conversationID: conversation.id,
                 text: text,
                 attachments: attachments
             ))
+        }
+        composerGateTask?.cancel()
+        composerGateTask = Task { [weak self] in
+            let gate = await repository.gate(for: id)
+            guard let self, !Task.isCancelled else { return }
+            providerGates[id.provider] = gate
+            composerModel.updateGate(for: id, capabilities: gate.0, health: gate.1)
         }
     }
 
@@ -742,24 +829,24 @@ final class InboxModel: ObservableObject {
     // MARK: - Tab persistence
 
     private func persistOpenTabs() {
-        UserDefaults.standard.set(openTabs.map(\.persistenceKey), forKey: Self.openTabsKey)
+        defaults.set(openTabs.map(\.persistenceKey), forKey: Self.openTabsKey)
     }
 
     private func persistActiveTab() {
-        UserDefaults.standard.set(selectedConversationID?.persistenceKey, forKey: Self.activeTabKey)
+        defaults.set(selectedConversationID?.persistenceKey, forKey: Self.activeTabKey)
     }
 
     /// Rebuild the open tabs from the persisted keys, dropping any thread that's no
     /// longer in the loaded list, then activate the persisted (or first) tab.
     private func restoreTabs() {
         guard openTabs.isEmpty else { return }
-        let keys = UserDefaults.standard.stringArray(forKey: Self.openTabsKey) ?? []
+        let keys = defaults.stringArray(forKey: Self.openTabsKey) ?? []
         let ids = keys
             .compactMap(ConversationID.init(persistenceKey:))
             .filter { id in conversations.contains { $0.id == id } }
         guard !ids.isEmpty else { return }
         for id in ids { ensureOpen(id, mode: .newTab) }
-        let active = UserDefaults.standard.string(forKey: Self.activeTabKey)
+        let active = defaults.string(forKey: Self.activeTabKey)
             .flatMap(ConversationID.init(persistenceKey:))
         activate(active.flatMap { ids.contains($0) ? $0 : nil } ?? ids[0], focus: nil)
     }
