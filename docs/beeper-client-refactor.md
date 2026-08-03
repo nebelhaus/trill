@@ -71,13 +71,21 @@ See [ADR 0003](architecture-decisions/0003-provider-aggregation.md).
       migration; `AppDatabase.currentSchemaVersion` is untouched.)
 - [x] Implement and test composite paging, routing, search, events, and partial failure.
 
-### 2. Beeper adapter
+### 2. Beeper adapter — shipped (not yet validated against a live Server)
 
-- [ ] Add typed REST client, confined DTOs, Keychain auth, configurable endpoint.
-- [ ] Map accounts, chats, participants, messages, replies, reactions, attachments,
+See [ADR 0004](architecture-decisions/0004-beeper-transport.md).
+
+- [x] Add typed REST client, confined DTOs, Keychain auth, configurable endpoint.
+- [x] Map accounts, chats, participants, messages, replies, reactions, attachments,
       delivery state, and cursors into Domain models.
-- [ ] Implement read-only conversations, messages, search, contacts, media, and health.
-- [ ] Add contract fixtures captured from the versioned API without real user data.
+- [x] Implement read-only conversations, messages, search, contacts, media, and health.
+- [x] Add contract fixtures **synthesized** from the versioned API's published types,
+      with no real user data. (The doc said "captured"; a capture of this API is a
+      capture of the user's messages and must never be committed — hand-write the
+      fixture from the observed shape.)
+- [ ] **Run it against a real Beeper Server and record the validated `app.version`.**
+      The contract was derived from the official `@beeper/desktop-api` 5.0.0 types,
+      not from a running Server — no response has ever been observed. This blocks §5.
 
 ### 3. Product integration
 
@@ -97,6 +105,7 @@ See [ADR 0003](architecture-decisions/0003-provider-aggregation.md).
 ### 5. Ship gate
 
 - [ ] Validate supported Server release, update/removal path, license, CPU/RAM, and logs.
+      (Blocked: no Server has been available yet — see §2.)
 - [ ] Test native-only, Beeper-only, combined, offline, expired-auth, and multi-account.
 - [ ] Update PRD/architecture/security/README when implementation changes shipped truth.
 

@@ -2,7 +2,11 @@
 
 ## Fixture policy
 
-All automated and normal development tests use `FixtureProvider`. Its content is deterministic and synthetic; it does not copy or derive from a developer's Messages database. The fixture covers direct iMessage, SMS, a group conversation, pagination, search, events, reply/reaction relationships, available and missing attachments, and metadata-only image rendering.
+All automated and normal development tests use `FixtureProvider`. The Beeper
+adapter's tests run against **synthesized** contract fixtures
+(`TrillTests/BeeperFixtures.swift`) through a stubbed `URLProtocol`: no test
+reaches the network or the Keychain, and no capture of a real Beeper Server —
+which holds the user's actual messages — may ever be committed. Its content is deterministic and synthetic; it does not copy or derive from a developer's Messages database. The fixture covers direct iMessage, SMS, a group conversation, pagination, search, events, reply/reaction relationships, available and missing attachments, and metadata-only image rendering.
 
 Automated tests must never enable a send capability or invoke a real send. An unknown send result is explicitly non-retryable.
 
@@ -39,6 +43,13 @@ The suite verifies:
   and a child rejecting the cursor handed to it.
 - `ServiceIdentity`: the hidden-service filter's `UserDefaults` migration off the
   old `MessageServiceKind` raw values, and per-account filter identity.
+- Beeper adapter: wire decoding (including `seen`'s three shapes), account →
+  service identity with two accounts on one network, `Chat.id` used as the
+  identifier rather than `localChatID`, Beeper's iMessage excluded both at
+  request time and at mapping time, Matrix HTML flattening, non-messages
+  (`REACTION`/`NOTICE`/deleted/hidden) filtered out, delivery-state and reaction
+  mapping, attachments left `.downloadRequired`, search push-down, health landing
+  on `remoteRelay` rather than `messagesDatabase`, and sends staying refused.
 
 The Inbox suites each run against their own `UserDefaults` suite
 (`InboxModel(defaults:)`). XCTest runs suites in parallel *processes* that share
