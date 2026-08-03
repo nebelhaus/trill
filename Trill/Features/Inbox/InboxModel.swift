@@ -412,19 +412,32 @@ final class InboxModel: ObservableObject {
     /// network, no second child. It's the dev default and the whole test suite
     /// runs on it, so it must stay the one thing with nothing behind it.
     ///
-    /// Live mode is the composite from here on, even while it has a single child:
-    /// a one-child composite is behaviorally the child (its merge is the
-    /// identity, its routing is trivial), so this ships the aggregation seam in
-    /// production and makes the Beeper adapter an additive child rather than a
-    /// second rewiring.
+    /// Live mode is the composite: the native provider always, plus the Beeper
+    /// adapter when a token is configured. The native provider is **primary**, so
+    /// its failures are the blocking ones and Beeper's degrade to a health row —
+    /// a Beeper outage can't blank an inbox of iMessage threads.
+    ///
+    /// With no token the composite has one child and is behaviorally that child,
+    /// so an install that never touches Beeper behaves exactly as it did before
+    /// any of this existed.
     private static func makeProvider(_ mode: ProviderMode) -> any MessagesProvider {
         switch mode {
         case .fixture:
             return FixtureProvider()
         case .messages:
             let native = LiveIMessageProvider()
-            return CompositeMessagesProvider(children: [native], primary: native.id)
+            var children: [any MessagesProvider] = [native]
+            if isBeeperConfigured() { children.append(BeeperProvider()) }
+            return CompositeMessagesProvider(children: children, primary: native.id)
         }
+    }
+
+    /// Whether a Beeper token exists at all. Deliberately only a *presence*
+    /// check — validating it needs the network, and provider construction is
+    /// synchronous and on the main actor. A token that's present but rejected
+    /// surfaces as a degraded health row, not as a missing provider.
+    private static func isBeeperConfigured() -> Bool {
+        ((try? BeeperConfigurationSource().current()) ?? nil) != nil
     }
 
     func load() {
