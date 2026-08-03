@@ -86,12 +86,25 @@ See [ADR 0004](architecture-decisions/0004-beeper-transport.md).
 - [ ] **Run it against a real Beeper Server and record the validated `app.version`.**
       The contract was derived from the official `@beeper/desktop-api` 5.0.0 types,
       not from a running Server — no response has ever been observed. This blocks §5.
+      `scripts/beeper-contract-check.sh` performs the check: it calls the endpoints
+      `BeeperClient` calls with the parameters it sends, and reports `app.version`,
+      field presence, unmodelled fields, and whether the iMessage exclusion holds.
+      Its output carries field names, types and counts only — never content.
 
 ### 3. Product integration
 
-- [ ] Make live mode the composite provider; preserve fixture mode.
-- [ ] Keep “All” implicit and extend the existing service filter for networks/accounts.
+- [x] Make live mode the composite provider; preserve fixture mode. (Landed with §2:
+      `InboxModel.makeProvider` builds the composite and adds the Beeper child only
+      when a token is stored.)
+- [x] Keep “All” implicit and extend the existing service filter for networks/accounts.
+      (Landed with §1: `ServiceIdentity` plus a dynamic `availableServices` menu.)
 - [ ] Add Beeper connection settings, onboarding, reconnect, and partial-health UI.
+      Until this exists the token has to be put in the Keychain by hand
+      (`security add-generic-password -s com.nebelhaus.trill -a beeper.accessToken`),
+      which is fine for validation and not fine for a user.
+- [ ] **Decide the provider-mode label.** “Messages” is now a composite of native
+      iMessage plus Beeper, so the dropdown lies. User-visible, so ADR 0003 proposes
+      the rename rather than making it.
 - [ ] Ensure tabs, drafts, folders, saved messages, exports, stats, and notifications
       work across provider-qualified IDs.
 
@@ -105,8 +118,11 @@ See [ADR 0004](architecture-decisions/0004-beeper-transport.md).
 ### 5. Ship gate
 
 - [ ] Validate supported Server release, update/removal path, license, CPU/RAM, and logs.
-      (Blocked: no Server has been available yet — see §2.)
+      (Blocked: no Server has been available yet — see §2. Run
+      `scripts/beeper-contract-check.sh` first; it produces the version to record.)
 - [ ] Test native-only, Beeper-only, combined, offline, expired-auth, and multi-account.
+      The in-app half of this is the Beeper checklist in
+      [`testing.md`](testing.md#beeper-contract-check-manual-needs-a-server--not-part-of-the-suite).
 - [ ] Update PRD/architecture/security/README when implementation changes shipped truth.
 
 ## Acceptance
