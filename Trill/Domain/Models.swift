@@ -1,17 +1,5 @@
 import Foundation
 
-enum MessageServiceKind: String, Codable, Sendable {
-    case iMessage
-    case sms
-    case rcs
-    case unknown
-
-    /// Services the user can show/hide via the sidebar's service filter, in menu
-    /// order. `.unknown` is intentionally excluded — it's a catch-all we never
-    /// hide, so a stray thread can't vanish behind a filter the user can't see.
-    static let togglable: [MessageServiceKind] = [.iMessage, .sms, .rcs]
-}
-
 enum ConversationKind: String, Codable, Sendable {
     case direct
     case group
@@ -37,7 +25,7 @@ struct Conversation: Hashable, Codable, Sendable, Identifiable {
     let systemName: String?
     let participants: [Participant]
     let kind: ConversationKind
-    let service: MessageServiceKind
+    let service: ServiceIdentity
     let lastActivity: Date
     let lastMessagePreview: String
     let unreadCount: Int?
@@ -139,7 +127,7 @@ struct Message: Hashable, Codable, Sendable, Identifiable {
     let reactions: [MessageReaction]
     let replyTo: MessageID?
     let threadOrigin: MessageID?
-    let service: MessageServiceKind
+    let service: ServiceIdentity
     let deliveryState: MessageDeliveryState
     let readAt: Date?
     let isEdited: Bool
@@ -159,7 +147,7 @@ struct Message: Hashable, Codable, Sendable, Identifiable {
         reactions: [MessageReaction],
         replyTo: MessageID?,
         threadOrigin: MessageID?,
-        service: MessageServiceKind,
+        service: ServiceIdentity,
         deliveryState: MessageDeliveryState,
         readAt: Date? = nil,
         isEdited: Bool = false,
@@ -211,9 +199,40 @@ struct ConversationPageRequest: Hashable, Sendable {
     }
 }
 
+/// One provider's contribution to an aggregated read that didn't arrive.
+///
+/// Aggregation fails soft — one child throwing must not fail the merged call —
+/// but a partial page that looks complete is how "half my messages vanished"
+/// ships. Every page type carries these so the caller can tell the difference,
+/// and the same sidecar is used everywhere rather than a per-call-site
+/// convention. Deliberately carries a non-content category string, never the
+/// underlying error's message: these reach `OSLog`.
+struct ProviderFailure: Hashable, Sendable {
+    let providerID: ProviderID
+    /// Error *type* name — non-content and safe to log (`docs/security.md`).
+    let category: String
+
+    init(providerID: ProviderID, category: String) {
+        self.providerID = providerID
+        self.category = category
+    }
+
+    init(providerID: ProviderID, error: Error) {
+        self.init(providerID: providerID, category: String(describing: type(of: error)))
+    }
+}
+
 struct ConversationPage: Sendable {
     let conversations: [Conversation]
     let nextCursor: String?
+    /// Providers that failed to contribute to this page. Empty on a whole page.
+    let failures: [ProviderFailure]
+
+    init(conversations: [Conversation], nextCursor: String?, failures: [ProviderFailure] = []) {
+        self.conversations = conversations
+        self.nextCursor = nextCursor
+        self.failures = failures
+    }
 }
 
 struct MessagePageRequest: Hashable, Sendable {
@@ -229,6 +248,13 @@ struct MessagePageRequest: Hashable, Sendable {
 struct MessagePage: Sendable {
     let messages: [Message]
     let nextBefore: String?
+    let failures: [ProviderFailure]
+
+    init(messages: [Message], nextBefore: String?, failures: [ProviderFailure] = []) {
+        self.messages = messages
+        self.nextBefore = nextBefore
+        self.failures = failures
+    }
 }
 
 /// A page loaded by the "jump to date" scrubber: a window of messages around a
@@ -306,6 +332,13 @@ struct MessageSearchQuery: Hashable, Sendable {
 struct MessageSearchPage: Sendable {
     let messages: [Message]
     let nextCursor: String?
+    let failures: [ProviderFailure]
+
+    init(messages: [Message], nextCursor: String?, failures: [ProviderFailure] = []) {
+        self.messages = messages
+        self.nextCursor = nextCursor
+        self.failures = failures
+    }
 }
 
 struct SendRequest: Sendable {

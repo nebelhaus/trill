@@ -12,7 +12,12 @@ final class InboxNavigationHistoryTests: XCTestCase {
             .appendingPathComponent("TrillTests-\(UUID().uuidString)", isDirectory: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let database = try AppDatabase(url: root.appendingPathComponent("app.sqlite3"))
-        return InboxModel(database: database, snippets: SnippetStore(database: database))
+        // Its own defaults domain — `select` persists the active tab, which
+        // would otherwise stomp the suites that assert on tab restore.
+        let suiteName = "TrillTests.nav-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        return InboxModel(database: database, snippets: SnippetStore(database: database), defaults: defaults)
     }
 
     private func id(_ guid: String) -> ConversationID {

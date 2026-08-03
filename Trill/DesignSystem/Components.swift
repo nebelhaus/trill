@@ -86,29 +86,27 @@ struct EmptyStateView: View {
     }
 }
 
-extension MessageServiceKind {
-    var displayLabel: String {
-        switch self {
-        case .iMessage: "iMessage"
-        case .sms: "SMS"
-        case .rcs: "RCS"
-        case .unknown: "Chat"
-        }
-    }
+extension ServiceIdentity {
+    var displayLabel: String { displayName }
 
+    /// Well-known services keep the exact colors they had; anything else gets a
+    /// stable per-network accent, so a new network is immediately legible and two
+    /// accounts on one network share a color (they're keyed by `networkKey`, not
+    /// by the account-qualified `key`).
     var chipColor: Color {
-        switch self {
-        case .iMessage: Rice.blue
-        case .sms: Rice.green
-        case .rcs: Rice.teal
-        case .unknown: Rice.overlay0
+        switch networkKey {
+        case ServiceIdentity.iMessage.networkKey: Rice.blue
+        case ServiceIdentity.sms.networkKey: Rice.green
+        case ServiceIdentity.rcs.networkKey: Rice.teal
+        case ServiceIdentity.unknown.networkKey: Rice.overlay0
+        default: Rice.accent(seededBy: networkKey)
         }
     }
 }
 
-/// Tiny uppercase service tag ("SMS" / "RCS" / "IMESSAGE").
+/// Tiny uppercase service tag ("SMS" / "RCS" / "IMESSAGE" / "WHATSAPP").
 struct ServiceChip: View {
-    let service: MessageServiceKind
+    let service: ServiceIdentity
 
     var body: some View {
         Text(service.displayLabel)

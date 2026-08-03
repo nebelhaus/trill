@@ -31,6 +31,25 @@ struct HealthState: Hashable, Codable, Sendable {
     static let disabled = HealthState(availability: .limited, reason: .disabled, recoverySuggestion: nil)
 }
 
+/// A non-primary provider that is unwell, carried alongside the aggregate health
+/// rather than folded into it.
+///
+/// Aggregation is deliberately *not* a `min()` over the health dimensions.
+/// `InboxModel.load` turns `messagesDatabase`'s failure reasons into a
+/// full-screen recovery view that replaces the conversation list — correct when
+/// the native provider can't read `chat.db`, catastrophic when a remote server
+/// is merely unreachable. So the composite reports the **primary** child's
+/// health verbatim for the blocking dimensions and lists every other unwell
+/// child here, where it can degrade to a banner and a health row instead of
+/// blanking the inbox.
+struct ProviderDegradation: Hashable, Codable, Sendable, Identifiable {
+    let providerID: ProviderID
+    /// Which dimension is unwell — the one worth naming to the user.
+    let state: HealthState
+
+    var id: String { providerID.rawValue }
+}
+
 struct ProviderHealth: Hashable, Codable, Sendable {
     var messagesDatabase: HealthState
     var liveEvents: HealthState
@@ -38,6 +57,27 @@ struct ProviderHealth: Hashable, Codable, Sendable {
     var contacts: HealthState
     var notifications: HealthState
     var remoteRelay: HealthState?
+    /// Non-blocking failures from auxiliary providers. Never influences the
+    /// dimensions above; see `ProviderDegradation`.
+    var degraded: [ProviderDegradation]
+
+    init(
+        messagesDatabase: HealthState,
+        liveEvents: HealthState,
+        sending: HealthState,
+        contacts: HealthState,
+        notifications: HealthState,
+        remoteRelay: HealthState? = nil,
+        degraded: [ProviderDegradation] = []
+    ) {
+        self.messagesDatabase = messagesDatabase
+        self.liveEvents = liveEvents
+        self.sending = sending
+        self.contacts = contacts
+        self.notifications = notifications
+        self.remoteRelay = remoteRelay
+        self.degraded = degraded
+    }
 
     static let fixture = ProviderHealth(
         messagesDatabase: .fixture,

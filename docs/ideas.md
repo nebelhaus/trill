@@ -263,3 +263,24 @@ the running app's, because Full Disk Access is keyed to that identity.
 |------|------|--------|-------|-------|
 | **Update check + nudge card** | Hourly release poll, sidebar card, cohort-aware action | M | ✅ 🚢 | Shipped. Settings › Updates toggles the poll; ⌘-menu › Check for Updates always works. |
 | **Delta/background download** | Pre-fetch the ZIP so "Update" is instant | M | ⚠️ | Only worth it if releases get big; the current flow is ~10s on a normal connection. |
+
+## Provider aggregation landed (2026-08-03)
+
+Live mode is now a `CompositeMessagesProvider` rather than a single provider —
+the foundation for [the Beeper client refactor](beeper-client-refactor.md)'s
+second transport. Nothing user-visible moved: with one child a composite *is*
+that child, and fixture mode stays a bare `FixtureProvider` with no path to a
+network. What changed underneath is that a second provider is now additive
+instead of structural. [ADR 0003](architecture-decisions/0003-provider-aggregation.md)
+has the reasoning; the three rules that matter are that child identifiers pass
+through verbatim (re-qualifying one would orphan every overlay row for that
+thread), that health aggregates by policy rather than `min()` so a remote
+provider being down can't blank the inbox, and that merged paging over-fetches
+and cuts at a watermark rather than interleaving fixed shares.
+
+| Idea | What | Effort | Feas. | Notes |
+|------|------|--------|-------|-------|
+| **Composite provider** | One inbox over N providers: routing, merged paging/search/events, partial failure | L | ✅ 🚢 | Shipped. Live mode runs it with a single child today. |
+| **Dynamic service/account identity** | `ServiceIdentity` replaces the closed `MessageServiceKind`; two accounts on one network filter independently | M | ✅ 🚢 | Shipped. Hidden-service filter migrates on read. |
+| **Beeper read-only adapter** | REST client against a headless Beeper Server for non-iMessage networks | L | 🔨 | Next. Needs a running Server to derive the contract from. |
+| **Partial-failure banner** | Surface `partialFailures` / `degraded` in the sidebar instead of only logging | S | 🔨 | Carried by the model already; the UI lands with the Beeper connection settings. |
