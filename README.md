@@ -12,10 +12,35 @@ the messages — iMessage, SMS, and RCS in a real macOS window, read straight fr
 ![themed by nebelung](https://img.shields.io/badge/themed_by-nebelung-c9a8f1?labelColor=202020)
 ![brew](https://img.shields.io/badge/brew-nebelhaus%2Ftap-f5b58e?labelColor=202020)
 ![license](https://img.shields.io/badge/license-MIT-d7d7d7?labelColor=202020)
+![status](https://img.shields.io/badge/status-archived-8a8a8a?labelColor=202020)
 
 </div>
 
 ---
+
+> ## Archived — finished, not maintained
+>
+> **As of 2026-08-04 this repository is archived: no new features, no releases,
+> no issues or pull requests.** What's installed keeps working exactly as
+> described below, the last release stays downloadable, and the code stays MIT
+> and readable.
+>
+> **Why.** Trill reads and sends, and that is where it stops. Tapbacks, threaded
+> replies, marking conversations read upstream, edits — every one of them needs
+> either a write to `chat.db` or private automation Messages.app doesn't expose,
+> so none of them were ever coming. The Beeper adapter that would have brought
+> other networks into the same inbox rode an experimental third-party API and
+> was frozen with it ([the refactor doc](docs/beeper-client-refactor.md) has the
+> reasoning). What's left is a good read-and-reply client that will not grow
+> into more than that, and pretending otherwise served nobody.
+>
+> It is also **no longer part of a default nebelhaus machine** —
+> `nebelhaus.trill.enable` now defaults to `false`. Set it true and it installs
+> and themes exactly as it always did.
+>
+> If you're running it and want it to keep updating itself, make sure
+> `/Library/Application Support/nebelhaus/trill.installed-from` is gone; trill
+> reads that marker to decide whether the rice owns its updates.
 
 Trill is a fast, flat, provider-neutral Messages client in SwiftUI. It reads your
 real conversations directly from Apple's `chat.db` — **always read-only** — and
@@ -23,7 +48,7 @@ sends by driving Messages.app over Apple Events.
 
 Your messages stay on your Mac. Nothing is relayed, uploaded, or phoned home.
 
-📖 **[nebelhaus.com/trill](https://nebelhaus.com/trill)**
+📖 **[The trill guide](https://nebelhaus.com/guides/trill/)**
 
 ## why trill
 
@@ -42,12 +67,13 @@ brew install --cask nebelhaus/tap/trill
 Signed with our Apple Developer ID and notarized, so it opens straight away — no
 Gatekeeper prompt, no quarantine hack.
 
-Trill ships by default in the [nebelhaus](https://github.com/nebelhaus) rice, but
-it stands alone — the cask works on any Mac running macOS 14 or newer.
+Trill is opt-in in the [nebelhaus](https://github.com/nebelhaus) rice
+(`nebelhaus.trill.enable = true`) and stands alone besides — the cask works on
+any Mac running macOS 14 or newer.
 
 ## the taste
 
-Launch it and pick **Messages** in the provider picker. That's it — if Full Disk
+Launch it and pick **Live** in the provider picker. That's it — if Full Disk
 Access is granted, your threads are there. Without it, Trill explains what's
 missing and links you to the right System Settings pane.
 
@@ -86,7 +112,6 @@ opening a thread clears its badge locally, in Trill's own database.
 
 ## more
 
-- [nebelhaus.com/trill](https://nebelhaus.com/trill) — the product page
 - [Reference](docs/reference.md) — building, testing, and the provider architecture
 - [Permissions](docs/permissions.md) — what Trill asks for, and why
 - [Architecture](ARCHITECTURE.md) · [Security boundaries](docs/security.md) · [Testing guide](docs/testing.md)
