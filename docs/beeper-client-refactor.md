@@ -102,9 +102,9 @@ See [ADR 0004](architecture-decisions/0004-beeper-transport.md).
       Until this exists the token has to be put in the Keychain by hand
       (`security add-generic-password -s com.nebelhaus.trill -a beeper.accessToken`),
       which is fine for validation and not fine for a user.
-- [ ] **Decide the provider-mode label.** “Messages” is now a composite of native
-      iMessage plus Beeper, so the dropdown lies. User-visible, so ADR 0003 proposes
-      the rename rather than making it.
+- [x] **Provider-mode label.** “Messages” lied once live mode became a composite;
+      the picker now says **“Live”**. The persisted `providerMode` value is
+      unchanged (`messages`), so no stored preference moved.
 - [ ] Ensure tabs, drafts, folders, saved messages, exports, stats, and notifications
       work across provider-qualified IDs.
 

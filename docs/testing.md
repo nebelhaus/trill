@@ -72,7 +72,7 @@ otherwise race.
 
 This is a diagnostic checklist, not authorization to enable live reads or sends.
 
-1. Select **Messages (Safety-gated)** without Full Disk Access. Confirm the permission-specific recovery screen appears rather than an empty inbox.
+1. Select **Live** without Full Disk Access. Confirm the permission-specific recovery screen appears rather than an empty inbox.
 2. Use **Open Full Disk Access**, grant access to the exact built Trill app if desired, relaunch, and recheck.
 3. Confirm the screen changes to **Live Provider Safety-gated** and still lists no real conversations.
 4. Confirm no Accessibility, Automation, Contacts, or notification prompt appears merely from selecting the provider.

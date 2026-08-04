@@ -54,13 +54,15 @@ allowed".
 
 ## Providers
 
-The provider picker offers **Synthetic Fixture** and **Messages
-(Safety-gated)**.
+The provider picker offers **Synthetic Fixtures** and **Live**. (It said
+"Messages" until live mode became a composite of the native provider and the
+Beeper adapter — see ADR 0003/0004. The persisted `providerMode` value is still
+`messages`; only the label moved.)
 
-Selecting Messages performs only a direct `SQLITE_OPEN_READONLY` probe. If Full
+Selecting Live performs only a direct `SQLITE_OPEN_READONLY` probe. If Full
 Disk Access is absent, the app explains it and links to System Settings. If
-access exists, Messages mode reads live over `LiveIMessageProvider` — nothing
-further gates it.
+access exists, Live reads over `LiveIMessageProvider` — nothing further gates
+it — plus `BeeperProvider` when a Beeper token is stored.
 
 ### The live provider
 

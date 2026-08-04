@@ -205,6 +205,7 @@ the Beeper adapter an additive child rather than a second rewiring.
   to a struct. Neither type is JSON-encoded anywhere in the app (their `Codable`
   conformance now backs the composite cursor), so no persisted or exported format
   moves.
-- "Messages" is a poor name for the live mode now that it is a composite. That
-  label is user-visible and its rename is proposed separately rather than made
-  here.
+- "Messages" was a poor name for the live mode once it became a composite. The
+  label is now **"Live"** (picker, ⌘-menu, command palette). Only the label
+  moved: the enum case and its persisted `providerMode` `UserDefaults` value are
+  still `messages`, so no stored preference is invalidated.
