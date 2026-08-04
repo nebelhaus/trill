@@ -53,7 +53,16 @@ It is *not* equivalent, and the difference is worth naming:
   newer or older than these types must not blank the inbox.
 
 **Before this ships, run it against a real Server** and record the validated
-`app.version` here.
+`app.version` here. `scripts/beeper-contract-check.sh` is that run: it calls the
+same endpoints `BeeperClient` calls, with the same parameters, and reports
+`app.version`, per-field presence across real responses, any key the Server
+returns that `BeeperDTOs.swift` doesn't model, whether the `accountIDs`
+allowlist actually excludes Beeper's iMessage, and whether resending
+`oldestCursor` pages backward as assumed. It prints field names, JSON types and
+counts only, so its report can be shared; a raw capture cannot.
+
+> **Validated `app.version`:** *(none yet — run the script and fill this in,
+> alongside the date and the observed drift, if any)*
 
 ### One contract detail worth recording
 

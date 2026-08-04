@@ -109,9 +109,10 @@ struct AppCommands: Commands {
                     .keyboardShortcut(KeyEquivalent(Character("\(slot)")), modifiers: .command)
             }
             Divider()
+            // Labels track `ProviderMode.title` — keep them in step.
             Menu("Provider") {
                 Button("Synthetic Fixtures", action: useFixture)
-                Button("Messages", action: useMessages)
+                Button("Live", action: useMessages)
             }
         }
 

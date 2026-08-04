@@ -3,14 +3,20 @@ import Foundation
 
 enum ProviderMode: String, CaseIterable, Identifiable, Sendable {
     case fixture
+    /// The live composite. The `rawValue` stays `"messages"` because it is the
+    /// persisted `UserDefaults` value — only the label moved.
     case messages
 
     var id: String { rawValue }
 
+    /// "Messages" was accurate when live mode *was* the native Messages
+    /// provider. It is now a composite of that and the Beeper adapter
+    /// (ADR 0003/0004), so the label is the honest distinction the picker
+    /// actually draws: synthetic data or live ones.
     var title: String {
         switch self {
         case .fixture: "Synthetic Fixtures"
-        case .messages: "Messages"
+        case .messages: "Live"
         }
     }
 }
