@@ -71,10 +71,13 @@ Contacts and Notifications are both optional. Full detail in
 - Update checking that knows how you installed it: a drag-install updates itself, a Homebrew cask defers to `brew`, and a rice/Nix install is told the command to run instead. Hourly, off by a Settings toggle, plus ⌘-menu › Check for Updates.
 
 Beeper networks (WhatsApp, Signal, Slack, Telegram, …) can join the same inbox
-if you run a headless [Beeper Server](https://beeper.com) and paste its API
-token — read-only for now, interleaved by recency with your iMessage threads,
-and entirely optional: with no token, nothing about Trill changes. Beeper's own
-iMessage bridge is deliberately excluded, since Trill reads iMessage natively.
+if you run a [Beeper](https://beeper.com) Server and put its API token in the
+Keychain by hand — read-only, interleaved by recency with your iMessage
+threads, and entirely optional: with no token, nothing about Trill changes.
+Beeper's own iMessage bridge is deliberately excluded, since Trill reads
+iMessage natively. **This track is frozen** — there is no connection UI and
+none is planned; see [the refactor doc](docs/beeper-client-refactor.md) for
+why. Everything above it is native and needs no Beeper at all.
 
 Two things Messages.app gives no automation surface for, so Trill displays but
 cannot send: **tapbacks** and **threaded replies**. Marking conversations read

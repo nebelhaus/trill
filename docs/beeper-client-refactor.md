@@ -1,5 +1,27 @@
 # Beeper client refactor
 
+> **Frozen 2026-08-04, after §1 and §2.** §3, §4 and §5 are **not planned**.
+>
+> The work through §2 stays — it is merged, tested, and inert (with no token
+> stored the Beeper provider isn't constructed, so live mode is behaviourally
+> the native provider it always was). What stops is investment.
+>
+> **Why.** The aggregation this doc buys is *Beeper's*, not ours: it needs their
+> app installed, signed in and running, its networks route through their cloud
+> bridges, and the API it rides is an experimental public beta owned by
+> Automattic — who also own the aggregator client we'd be competing with. The
+> question "why not just use Beeper Desktop?" has no good answer for a user who
+> already has Beeper running, and finishing §3/§4 would deepen a dependency on
+> the one part of Trill nobody here controls.
+>
+> **What would unfreeze it:** Beeper's Desktop API leaving beta with a stability
+> commitment, *and* a reason for a Beeper user to prefer Trill's surface that
+> doesn't depend on Beeper. Both, not either.
+>
+> Until then `scripts/beeper-contract-check.sh` is the only Beeper work worth
+> doing, and only because it's one command. See
+> `workshop/notes/perch-monetization.md` §5 for the product reasoning.
+
 ## Decision
 
 Turn Trill into an always-aggregated native client with two transports:
@@ -91,7 +113,7 @@ See [ADR 0004](architecture-decisions/0004-beeper-transport.md).
       field presence, unmodelled fields, and whether the iMessage exclusion holds.
       Its output carries field names, types and counts only — never content.
 
-### 3. Product integration
+### 3. Product integration — frozen, not planned
 
 - [x] Make live mode the composite provider; preserve fixture mode. (Landed with §2:
       `InboxModel.makeProvider` builds the composite and adds the Beeper child only
@@ -108,14 +130,14 @@ See [ADR 0004](architecture-decisions/0004-beeper-transport.md).
 - [ ] Ensure tabs, drafts, folders, saved messages, exports, stats, and notifications
       work across provider-qualified IDs.
 
-### 4. Writes and liveness
+### 4. Writes and liveness — frozen, not planned
 
 - [ ] Add send text/files, reactions, direct-chat creation, and mark-read only when the
       owning Beeper account reports support.
 - [ ] Add WebSocket events behind a polling fallback; test disconnect and replay.
 - [ ] Prevent duplicate/unknown-outcome sends and cross-provider routing mistakes.
 
-### 5. Ship gate
+### 5. Ship gate — frozen, not planned
 
 - [ ] Validate supported Server release, update/removal path, license, CPU/RAM, and logs.
       (Blocked: no Server has been available yet — see §2. Run
